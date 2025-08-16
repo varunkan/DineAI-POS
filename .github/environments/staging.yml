@@ -1,0 +1,10 @@
+name: staging
+url: https://staging.dineai-pos.com
+protection_rules:
+  required_reviewers:
+    required_approving_review_count: 1
+    dismiss_stale_reviews: false
+  required_status_checks:
+    strict: false
+    contexts:
+      - "Flutter Build & Test" 

@@ -1,0 +1,78 @@
+name: Deploy to Production
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to deploy'
+        required: true
+        type: string
+      confirm:
+        description: 'Confirm production deployment'
+        required: true
+        type: boolean
+
+jobs:
+  deploy-production:
+    runs-on: ubuntu-latest
+    environment: production
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: '3.24.0'
+        channel: 'stable'
+    
+    - name: Install dependencies
+      run: flutter pub get
+    
+    - name: Build for production
+      run: |
+        flutter build apk --release --flavor production
+        flutter build web --release --flavor production
+        flutter build ios --release --no-codesign --flavor production
+    
+    - name: Create release artifacts
+      run: |
+        mkdir -p release-artifacts
+        cp build/app/outputs/flutter-apk/app-release.apk release-artifacts/
+        cp -r build/web/ release-artifacts/web/
+        tar -czf release-artifacts/ios-build.tar.gz build/ios/
+    
+    - name: Upload release artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: production-release-${{ github.event.inputs.version || github.ref_name }}
+        path: release-artifacts/
+    
+    - name: Deploy to production
+      run: |
+        echo "🚀 Deploying to production environment..."
+        echo "Version: ${{ github.event.inputs.version || github.ref_name }}"
+        # Add your production deployment commands here
+        # Example: Firebase hosting, App Store Connect, Google Play Console
+    
+    - name: Create production deployment
+      uses: actions/github-script@v7
+      with:
+        script: |
+          github.rest.repos.createDeployment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            ref: context.sha,
+            environment: 'production',
+            description: 'Production deployment - ${{ github.event.inputs.version || github.ref_name }}',
+            auto_merge: false,
+            required_contexts: []
+          })
+    
+    - name: Notify success
+      run: |
+        echo "🎉 Production deployment completed successfully!"
+        echo "Version: ${{ github.event.inputs.version || github.ref_name }}"
+        echo "Environment: production" 

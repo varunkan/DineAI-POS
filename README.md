@@ -1,4 +1,4 @@
-# 🏪 Multi-Tenant AI POS System v1.1.0
+# 🏪 Multi-Tenant AI POS System v1.2.0
 
 A world-class, cross-platform Point of Sale system built with Flutter for modern restaurants. Features intelligent order management, multi-device synchronization, thermal printing, and a beautiful responsive interface. **Now with enhanced Admin User Management and Multi-Tenant Restaurant Support.**
 
@@ -133,6 +133,33 @@ A world-class, cross-platform Point of Sale system built with Flutter for modern
 - `tables` - Dine-in table management
 - `printer_configurations` - Printer settings
 - `activity_logs` - Audit trail
+
+## 🚀 **Deployment & CI/CD**
+
+### **GitHub Actions Workflows**
+- **Flutter Build & Test** - Automated builds for all platforms
+- **Staging Deployment** - Automatic deployment to staging environment
+- **Production Deployment** - Manual deployment with approval workflow
+
+### **Deployment Environments**
+- **Staging** - Pre-production testing environment
+- **Production** - Live production environment with protection rules
+
+### **Quick Deployment Commands**
+```bash
+# Deploy to staging
+./scripts/deploy.sh staging
+
+# Deploy to production
+./scripts/deploy.sh production 1.2.0
+
+# Check deployment status
+./scripts/deploy.sh status
+```
+
+### **Environment Protection**
+- **Staging**: 1 reviewer approval required
+- **Production**: 2 reviewer approvals required, staging deployment first
 
 ## 🔧 Configuration
 

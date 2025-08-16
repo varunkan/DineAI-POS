@@ -5,6 +5,20 @@ All notable changes to the DineAI-POS system will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2024-08-16
+
+### Added
+- **Complete CI/CD Pipeline**
+  - GitHub Actions workflows for automated builds and testing
+  - Staging and production deployment environments
+  - Environment protection rules and approval workflows
+  - Automated deployment scripts and tools
+- **Deployment Management**
+  - Cross-platform build automation (Android, iOS, Web)
+  - Environment-specific deployment configurations
+  - Deployment status monitoring and rollback capabilities
+  - Comprehensive deployment documentation and guides
+
 ## [1.1.0] - 2024-08-16
 
 ### Added

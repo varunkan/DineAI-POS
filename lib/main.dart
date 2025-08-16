@@ -864,83 +864,80 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   /// Create dummy data for testing
   Future<void> _createDummyData() async {
     try {
-      debugPrint('🎯 Creating clean database with single admin user...');
+      debugPrint('🎯 Creating demo data for testing...');
       
-      // CRITICAL: Force clear all data first
-      if (_orderService != null) {
-        await _orderService!.deleteAllOrders();
-        debugPrint('✅ All existing orders cleared');
-      }
-      
-      // CRITICAL: Force clear all users and recreate only admin
-      if (_userService != null) {
-        debugPrint('🧹 Force clearing all users...');
+      // Check if we already have users (don't clear existing users!)
+      final existingUserCount = _userService?.users.length ?? 0;
+      if (existingUserCount > 0) {
+        debugPrint('👥 Found $existingUserCount existing users - preserving them and skipping user creation');
         
-        // Use the existing clearAllUsersExceptAdmin method
-        await _userService!.clearAllUsersExceptAdmin();
-        debugPrint('✅ All users cleared except admin');
-        
-        // Verify only admin user exists
-        final users = _userService!.users;
-        debugPrint('📋 Current users: ${users.map((u) => '${u.name}(${u.id})').join(', ')}');
-        
-        if (users.length != 1 || users.first.id != 'admin') {
-          debugPrint('⚠️ User cleanup failed - recreating admin user');
-          
-          // Force recreate admin user
-          final adminUser = User(
-            id: 'admin',
-            name: 'Admin',
-            role: UserRole.admin,
-            pin: '1234',
-            isActive: true,
-            adminPanelAccess: true,
-            createdAt: DateTime.now(),
-          );
-          
-          await _userService!.addUser(adminUser);
-          debugPrint('✅ Admin user recreated');
+        // Only create demo orders if none exist
+        final existingOrderCount = _orderService?.allOrders.length ?? 0;
+        if (existingOrderCount == 0) {
+          debugPrint('📋 No existing orders - creating demo order...');
+          await _createDemoOrder();
+        } else {
+          debugPrint('📋 Found $existingOrderCount existing orders - skipping demo order creation');
         }
+        return;
       }
       
-      // Wait a moment for database operations to complete
-      await Future.delayed(const Duration(milliseconds: 500));
+      // Only if NO users exist, create the default admin user
+      debugPrint('🔧 No users found - creating default admin user...');
+      
+      // Create default admin user
+      final adminUser = User(
+        id: 'admin',
+        name: 'Admin',
+        role: UserRole.admin,
+        pin: '1234',
+        isActive: true,
+        adminPanelAccess: true,
+        createdAt: DateTime.now(),
+      );
+      
+      await _userService!.addUser(adminUser);
+      debugPrint('✅ Default admin user created');
       
       // Create a sample order for testing with admin user
-      try {
-        final sampleOrder = await _orderService!.createOrder(
-          orderType: 'dineIn',
-          customerName: 'Demo Customer',
-          userId: 'admin', // Use admin user ID
-        );
-        
-        // Add a sample item to the order (if menu items exist)
-        final menuItems = await _menuService!.getMenuItems();
-        if (menuItems.isNotEmpty) {
-          final orderItem = OrderItem(
-            id: 'demo-item-${DateTime.now().millisecondsSinceEpoch}',
-            menuItem: menuItems.first,
-            quantity: 1,
-          );
-          
-          // Create new order with the item using copyWith
-          final updatedOrder = sampleOrder.copyWith(
-            items: [orderItem],
-          );
-          
-          await _orderService!.saveOrder(updatedOrder);
-        }
-        
-        debugPrint('✅ Sample order created with admin user');
-      } catch (e) {
-        debugPrint('⚠️ Could not create sample order: $e');
-      }
+      await _createDemoOrder();
       
-      debugPrint('🎉 Clean database created with single admin user!');
+      debugPrint('🎉 Demo data created with default admin user!');
       
     } catch (e) {
-      debugPrint('⚠️ Error creating clean database (not critical): $e');
-      // Don't throw error - dummy data creation failure shouldn't stop the app
+      debugPrint('⚠️ Error creating demo data (not critical): $e');
+      // Don't throw error - demo data creation failure shouldn't stop the app
+    }
+  }
+  
+  /// Create a demo order for testing
+  Future<void> _createDemoOrder() async {
+    try {
+      final sampleOrder = await _orderService!.createOrder(
+        orderType: 'dineIn',
+        customerName: 'Demo Customer',
+        userId: 'admin', // Use admin user ID
+      );
+      
+      // Add a sample item to the order (if menu items exist)
+      final menuItems = await _menuService!.getMenuItems();
+      if (menuItems.isNotEmpty) {
+        final orderItem = OrderItem(
+          id: 'demo-item-${DateTime.now().millisecondsSinceEpoch}',
+          menuItem: menuItems.first,
+          quantity: 1,
+        );
+        
+        // Create new order with the item using copyWith
+        final updatedOrder = sampleOrder.copyWith(
+          items: [orderItem],
+        );
+        
+        await _orderService!.saveOrder(updatedOrder);
+        debugPrint('✅ Demo order created with admin user');
+      }
+    } catch (e) {
+      debugPrint('⚠️ Could not create demo order: $e');
     }
   }
   

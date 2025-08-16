@@ -1,0 +1,7 @@
+{
+  "serviceType": "firebase",
+  "serviceUrl": "https://oh-bombay-milton-pos.firebaseapp.com/api",
+  "apiKey": "AIzaSyA-FXYW4mNmtmmJakVQcSSHVw2zf0KpquU",
+  "restaurantId": "ohbombaymilton",
+  "printers": []
+}

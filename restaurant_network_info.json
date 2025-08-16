@@ -1,0 +1,31 @@
+{
+  "restaurant_info": {
+    "public_ip": "72.39.71.69",
+    "local_ip": "192.168.40.186",
+    "scan_date": "2025-07-17T02:32:58.796071"
+  },
+  "printers": [
+    {
+      "ip": "192.168.40.1",
+      "port": 80,
+      "type": "potential_printer"
+    },
+    {
+      "ip": "192.168.40.6",
+      "port": 80,
+      "type": "potential_printer"
+    },
+    {
+      "ip": "192.168.40.10",
+      "port": 80,
+      "type": "potential_printer"
+    }
+  ],
+  "setup_instructions": {
+    "step1": "Your restaurant's public IP is: 72.39.71.69",
+    "step2": "For cloud printing, you'll need to:",
+    "step3": "1. Set up port forwarding on your router",
+    "step4": "2. Forward ports 9100, 515, 631 to your printer IPs",
+    "step5": "3. Use the public IP + port in your cloud setup"
+  }
+}

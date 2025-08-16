@@ -1,0 +1,49 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // TEMPORARY: Allow all access for development (including unauthenticated)
+    // This will be restricted once authentication is working properly
+    match /{document=**} {
+      allow read, write: if true;
+    }
+    
+    // Specific collections for better organization and explicit permissions
+    match /restaurants/{restaurantId} {
+      allow read, write: if true; // TEMPORARY: Allow all access
+    }
+    
+    match /global_restaurants/{restaurantId} {
+      allow read, write: if true; // TEMPORARY: Allow all access
+    }
+    
+    match /tenants/{tenantId} {
+      allow read, write: if true; // TEMPORARY: Allow all access
+      
+      // Allow access to all subcollections within tenants
+      match /{document=**} {
+        allow read, write: if true; // TEMPORARY: Allow all access
+      }
+    }
+    
+    match /devices/{deviceId} {
+      allow read, write: if true; // TEMPORARY: Allow all access
+    }
+    
+    match /global_users/{userId} {
+      allow read, write: if true; // TEMPORARY: Allow all access
+    }
+    
+    match /sync_events/{eventId} {
+      allow read, write: if true; // TEMPORARY: Allow all access
+    }
+    
+    match /active_devices/{deviceId} {
+      allow read, write: if true; // TEMPORARY: Allow all access
+    }
+    
+    // Fallback rule - allow everything temporarily
+    match /{document=**} {
+      allow read, write: if true; // TEMPORARY: Allow all access
+    }
+  }
+}

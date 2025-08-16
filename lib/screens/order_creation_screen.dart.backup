@@ -1,0 +1,1988 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../models/order.dart';
+import '../models/menu_item.dart';
+import '../models/category.dart' as pos_category;
+import '../models/user.dart';
+import '../models/table.dart' as restaurant_table;
+import '../services/order_service.dart';
+import '../services/menu_service.dart';
+import '../services/printing_service.dart';
+import '../services/printer_assignment_service.dart';
+
+import '../widgets/loading_overlay.dart';
+import '../widgets/error_dialog.dart';
+
+import '../widgets/universal_navigation.dart';
+import '../screens/checkout_screen.dart';
+import 'package:uuid/uuid.dart';
+
+class OrderCreationScreen extends StatefulWidget {
+  final User user;
+  final restaurant_table.Table? table;
+  final int? numberOfPeople;
+  final String? orderNumber;
+  final String orderType; // 'dine-in' or 'takeout'
+
+  const OrderCreationScreen({
+    super.key,
+    required this.user,
+    this.table,
+    this.numberOfPeople,
+    this.orderNumber,
+    required this.orderType,
+  });
+
+  @override
+  State<OrderCreationScreen> createState() => _OrderCreationScreenState();
+}
+
+class _OrderCreationScreenState extends State<OrderCreationScreen> {
+  Order? _currentOrder;
+  List<pos_category.Category> _categories = [];
+  final List<MenuItem> _menuItems = [];
+  pos_category.Category? _selectedCategory;
+  bool _isLoading = true;
+  String? _error;
+  final TextEditingController _orderNotesController = TextEditingController();
+  final TextEditingController _chefNotesController = TextEditingController();
+  
+  // Search functionality
+  String _searchQuery = '';
+  
+  // Filtered menu items based on search and category
+  List<MenuItem> get _filteredMenuItems {
+    List<MenuItem> items = _menuItems;
+    
+    // Filter by search query
+    if (_searchQuery.isNotEmpty) {
+      items = items.where((item) {
+        return item.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+               item.description.toLowerCase().contains(_searchQuery.toLowerCase());
+      }).toList();
+    }
+    
+    return items;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeOrder();
+    _loadCategories();
+  }
+
+  @override
+  void dispose() {
+    _orderNotesController.dispose();
+    _chefNotesController.dispose();
+    super.dispose();
+  }
+
+  void _initializeOrder() {
+    final orderNumber = widget.orderNumber ??
+        'DI-${DateTime.now().millisecondsSinceEpoch.toString().substring(8)}';
+
+    _currentOrder = Order(
+      items: [],
+      orderNumber: orderNumber,
+      customerName: widget.table?.customerName,
+      tableId: widget.table?.id,
+      type: widget.orderType == 'dine-in' ? OrderType.dineIn : OrderType.delivery,
+      orderTime: DateTime.now(),
+    );
+  }
+
+  Future<void> _loadCategories() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+    try {
+      final menuService = Provider.of<MenuService>(context, listen: false);
+      final categories = await menuService.getCategories();
+      setState(() {
+        _categories = categories;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+        _error = 'Error loading categories: $e';
+      });
+    }
+  }
+
+  Future<void> _onCategorySelected(pos_category.Category category) async {
+    setState(() {
+      _selectedCategory = category;
+      _isLoading = true;
+      _error = null;
+    });
+    try {
+      final menuService = Provider.of<MenuService>(context, listen: false);
+      final items = await menuService.getMenuItemsByCategoryId(category.id);
+      setState(() {
+        _menuItems.clear();
+        _menuItems.addAll(items);
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+        _error = 'Error loading menu items: $e';
+      });
+    }
+  }
+
+  void _addItemToOrder(MenuItem item) {
+    if (_currentOrder != null) {
+      setState(() {
+        // Look for existing item that hasn't been sent to kitchen yet
+        final existingNewItemIndex = _currentOrder!.items.indexWhere(
+          (orderItem) => orderItem.menuItem.id == item.id && !orderItem.sentToKitchen,
+        );
+
+        if (existingNewItemIndex != -1) {
+          // Update quantity of existing NEW item (not sent to kitchen)
+          final existingItem = _currentOrder!.items[existingNewItemIndex];
+          _currentOrder!.items[existingNewItemIndex] = existingItem.copyWith(
+            quantity: existingItem.quantity + 1,
+          );
+        } else {
+          // Add new item (either first time or additional after sending to kitchen)
+          final orderItem = OrderItem(
+            menuItem: item,
+            quantity: 1,
+            unitPrice: item.price,
+            sentToKitchen: false, // Explicitly mark as new
+          );
+          _currentOrder!.items.add(orderItem);
+        }
+      });
+      _updateOrderWithHST();
+    }
+  }
+
+  void _removeItemFromOrder(int index) {
+    if (_currentOrder != null && index >= 0 && index < _currentOrder!.items.length) {
+      setState(() {
+        _currentOrder!.items.removeAt(index);
+      });
+      _updateOrderWithHST();
+    }
+  }
+
+  void _updateItemQuantity(int index, int newQuantity) {
+    if (_currentOrder != null && index >= 0 && index < _currentOrder!.items.length) {
+      if (newQuantity <= 0) {
+        _removeItemFromOrder(index);
+      } else {
+        setState(() {
+          final item = _currentOrder!.items[index];
+          _currentOrder!.items[index] = item.copyWith(quantity: newQuantity);
+        });
+        _updateOrderWithHST();
+      }
+    }
+  }
+
+  void _updateItemNotes(int index, String notes) {
+    if (_currentOrder != null && index >= 0 && index < _currentOrder!.items.length) {
+      setState(() {
+        final item = _currentOrder!.items[index];
+        final updatedItem = item.copyWith(notes: notes.isEmpty ? null : notes);
+        _currentOrder!.items[index] = updatedItem;
+        // Force rebuild by updating the order reference
+        _currentOrder = _currentOrder!.copyWith(
+          items: List<OrderItem>.from(_currentOrder!.items),
+        );
+      });
+    }
+  }
+
+  void _updateItemSpecialInstructions(int index, String instructions) {
+    if (_currentOrder != null && index >= 0 && index < _currentOrder!.items.length) {
+      setState(() {
+        final item = _currentOrder!.items[index];
+        final updatedItem = item.copyWith(specialInstructions: instructions.isEmpty ? null : instructions);
+        _currentOrder!.items[index] = updatedItem;
+        // Force rebuild by updating the order reference
+        _currentOrder = _currentOrder!.copyWith(
+          items: List<OrderItem>.from(_currentOrder!.items),
+        );
+      });
+    }
+  }
+
+  double _calculateHST(double subtotal) {
+    return subtotal * 0.13; // 13% HST for Ontario
+  }
+
+  void _updateOrderWithHST() {
+    if (_currentOrder != null) {
+      final hstAmount = _calculateHST(_currentOrder!.subtotal);
+      setState(() {
+        _currentOrder = _currentOrder!.copyWith(hstAmount: hstAmount);
+      });
+    }
+  }
+
+  /// Updates chef notes for the entire order
+  void _updateChefNotes(String notes) {
+    if (_currentOrder != null) {
+      setState(() {
+        final chefNote = OrderNote(
+          id: const Uuid().v4(),
+          note: notes,
+          author: widget.user.name,
+          timestamp: DateTime.now(),
+          isInternal: true, // Chef notes are internal
+        );
+        final updatedNotes = List<OrderNote>.from(_currentOrder!.notes)..add(chefNote);
+        _currentOrder = _currentOrder!.copyWith(notes: updatedNotes);
+      });
+    }
+  }
+
+  /// Navigate to checkout screen
+  void _navigateToCheckout() {
+    if (_currentOrder != null && _currentOrder!.items.isNotEmpty) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => CheckoutScreen(
+            order: _currentOrder!,
+            user: widget.user,
+            orderType: widget.orderType == 'dine-in' ? OrderType.dineIn : OrderType.delivery,
+          ),
+        ),
+      );
+    }
+  }
+
+  /// Send order to kitchen
+  Future<void> _sendOrderToKitchen() async {
+    if (_currentOrder == null || _currentOrder!.items.isEmpty) {
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      final orderService = Provider.of<OrderService>(context, listen: false);
+      final printingService = Provider.of<PrintingService>(context, listen: false);
+      
+      // Mark all items as sent to kitchen
+      for (var item in _currentOrder!.items) {
+        if (!item.sentToKitchen) {
+          final index = _currentOrder!.items.indexOf(item);
+          _currentOrder!.items[index] = item.copyWith(sentToKitchen: true);
+        }
+      }
+
+      // Save the updated order
+      await orderService.saveOrder(_currentOrder!);
+
+      // CRITICAL FIX: Print kitchen ticket after saving
+      try {
+        final printed = await printingService.printKitchenTicket(_currentOrder!);
+        if (printed) {
+          debugPrint('Kitchen ticket printed successfully for order: ${_currentOrder!.orderNumber}');
+        } else {
+          debugPrint('Kitchen ticket printing failed - no printer connected');
+        }
+      } catch (printError) {
+        debugPrint('Kitchen ticket printing error: $printError');
+        // Continue even if printing fails - don't block the order
+      }
+
+      setState(() => _isLoading = false);
+
+      // Show success message
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Order sent to kitchen and printed successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() => _isLoading = false);
+      
+      if (mounted) {
+        ErrorDialogHelper.showValidationError(
+          context,
+          message: 'Failed to send order to kitchen: $e',
+        );
+      }
+    }
+  }
+
+  /// Show chef notes dialog
+  void _showChefNotesDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Chef Notes'),
+        content: SizedBox(
+          width: 400,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Add special instructions for the kitchen:',
+                style: TextStyle(fontWeight: FontWeight.w500),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _chefNotesController,
+                decoration: const InputDecoration(
+                  hintText: 'Enter chef notes...',
+                  border: OutlineInputBorder(),
+                ),
+                maxLines: 3,
+              ),
+              const SizedBox(height: 16),
+              if (_currentOrder!.notes.any((note) => note.isInternal)) ...[
+                const Text(
+                  'Existing Chef Notes:',
+                  style: TextStyle(fontWeight: FontWeight.w500),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  height: 100,
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.grey.shade300),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: ListView.builder(
+                    itemCount: _currentOrder!.notes.where((note) => note.isInternal).length,
+                    itemBuilder: (context, index) {
+                      final chefNotes = _currentOrder!.notes.where((note) => note.isInternal).toList();
+                      final note = chefNotes[index];
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Text(
+                          '${note.author}: ${note.note}',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              if (_chefNotesController.text.trim().isNotEmpty) {
+                _updateChefNotes(_chefNotesController.text.trim());
+                _chefNotesController.clear();
+              }
+              Navigator.pop(context);
+            },
+            child: const Text('Add Note'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_currentOrder == null) {
+      return const Scaffold(
+        body: LoadingOverlay(
+          isLoading: true,
+          child: SizedBox(),
+        ),
+      );
+    }
+
+    return LoadingOverlay(
+      isLoading: _isLoading,
+      child: Scaffold(
+        backgroundColor: Colors.grey.shade50,
+        appBar: _buildAppBar(),
+        body: _error != null
+            ? _buildErrorState()
+            : _buildMainContent(),
+        bottomNavigationBar: _buildActionButtons(),
+      ),
+    );
+  }
+
+  PreferredSizeWidget _buildAppBar() {
+    return UniversalAppBar(
+      currentUser: widget.user,
+      title: 'Order #${_currentOrder!.orderNumber} - ${widget.orderType == 'dine-in' ? 'Dine-In' : 'Takeout'}',
+      additionalActions: [
+        // Chef notes quick access
+        IconButton(
+          icon: Stack(
+            children: [
+              const Icon(Icons.restaurant, color: Colors.orange),
+              if (_currentOrder!.notes.any((note) => note.isInternal))
+                Positioned(
+                  right: 0,
+                  top: 0,
+                  child: Container(
+                    width: 8,
+                    height: 8,
+                    decoration: const BoxDecoration(
+                      color: Colors.red,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          onPressed: _showChefNotesDialog,
+          tooltip: 'Chef Notes',
+        ),
+        // Server info
+        Container(
+          margin: const EdgeInsets.only(right: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade200,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Text(
+            'Server: ${widget.user.name}',
+            style: TextStyle(
+              color: Colors.grey.shade700,
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildErrorState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.error_outline, color: Colors.red, size: 64),
+          const SizedBox(height: 16),
+          Text(
+            'Error Loading Menu',
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              color: Colors.red,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _error ?? 'An unknown error occurred',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.grey.shade600),
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton.icon(
+            onPressed: _loadCategories,
+            icon: const Icon(Icons.refresh),
+            label: const Text('Retry'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMainContent() {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Order Panel (Left)
+        Expanded(
+          flex: 2,
+          child: _buildOrderPanel(),
+        ),
+        const VerticalDivider(width: 1),
+        // Menu Panel (Right)
+        Expanded(
+          flex: 3,
+          child: _buildMenuPanel(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildOrderPanel() {
+    return Container(
+      color: Colors.white,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Order Header
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade50,
+              border: Border(
+                bottom: BorderSide(color: Colors.grey.shade200),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.shopping_cart,
+                  color: Theme.of(context).primaryColor,
+                ),
+                const SizedBox(width: 12),
+                const Text(
+                  'Current Order',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).primaryColor.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '${_currentOrder!.items.length} items',
+                    style: TextStyle(
+                      color: Theme.of(context).primaryColor,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Order Items
+          Expanded(
+            child: _currentOrder!.items.isEmpty
+                ? _buildEmptyOrder()
+                : _buildOrderItems(),
+          ),
+          // Order Summary
+          _buildOrderSummary(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyOrder() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.add_shopping_cart,
+            size: 64,
+            color: Colors.grey.shade300,
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'No Items Added',
+            style: TextStyle(
+              color: Colors.grey.shade500,
+              fontSize: 18,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Select items from the menu to add them to your order',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.grey.shade400,
+              fontSize: 14,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOrderItems() {
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: _currentOrder!.items.length,
+      itemBuilder: (context, index) {
+        final item = _currentOrder!.items[index];
+        return _buildOrderItemCard(item, index);
+      },
+    );
+  }
+
+  Widget _buildOrderItemCard(OrderItem item, int index) {
+    final bool hasChefNotes = item.notes?.isNotEmpty == true;
+    final bool hasSpecialInstructions = item.specialInstructions?.isNotEmpty == true;
+    final bool isSentToKitchen = item.sentToKitchen;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      elevation: 2,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: BorderSide(
+          color: isSentToKitchen ? Colors.green.shade200 : Colors.transparent,
+          width: 1,
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Item header
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.menuItem.name,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 16,
+                        ),
+                      ),
+                      Text(
+                        '\$${item.unitPrice.toStringAsFixed(2)} each',
+                        style: TextStyle(
+                          color: Colors.grey.shade600,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (isSentToKitchen)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade100,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      'SENT',
+                      style: TextStyle(
+                        color: Colors.green.shade700,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            // Quantity controls
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey.shade300),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Row(
+                        children: [
+                          IconButton(
+                            onPressed: () => _updateItemQuantity(index, item.quantity - 1),
+                            icon: const Icon(Icons.remove, size: 16),
+                            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            child: Text(
+                              '${item.quantity}',
+                              style: const TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: () => _updateItemQuantity(index, item.quantity + 1),
+                            icon: const Icon(Icons.add, size: 16),
+                            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      '\$${(item.unitPrice * item.quantity).toStringAsFixed(2)}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                        color: Theme.of(context).primaryColor,
+                      ),
+                    ),
+                  ],
+                ),
+                IconButton(
+                  onPressed: () => _removeItemFromOrder(index),
+                  icon: const Icon(Icons.delete_outline, color: Colors.red),
+                  tooltip: 'Remove item',
+                ),
+              ],
+            ),
+            // Notes and instructions
+            if (hasChefNotes || hasSpecialInstructions) ...[
+              const SizedBox(height: 8),
+              if (hasChefNotes)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade50,
+                    border: Border.all(color: Colors.orange.shade200),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    'Chef Notes: ${item.notes}',
+                    style: TextStyle(
+                      color: Colors.orange.shade700,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              if (hasSpecialInstructions) ...[
+                if (hasChefNotes) const SizedBox(height: 4),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    border: Border.all(color: Colors.blue.shade200),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    'Special Instructions: ${item.specialInstructions}',
+                    style: TextStyle(
+                      color: Colors.blue.shade700,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+            const SizedBox(height: 8),
+            // Action buttons
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => _showItemChefNotesDialog(item, index),
+                    icon: Icon(
+                      Icons.restaurant,
+                      size: 16,
+                      color: hasChefNotes ? Colors.orange : Colors.grey.shade600,
+                    ),
+                    label: Text(
+                      hasChefNotes ? 'Edit Chef Notes' : 'Chef Notes',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: hasChefNotes ? Colors.orange : Colors.grey.shade600,
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(
+                        color: hasChefNotes ? Colors.orange : Colors.grey.shade300,
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => _showItemSpecialInstructionsDialog(item, index),
+                    icon: Icon(
+                      Icons.note_add,
+                      size: 16,
+                      color: hasSpecialInstructions ? Colors.blue : Colors.grey.shade600,
+                    ),
+                    label: Text(
+                      hasSpecialInstructions ? 'Edit Instructions' : 'Special Instructions',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: hasSpecialInstructions ? Colors.blue : Colors.grey.shade600,
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(
+                        color: hasSpecialInstructions ? Colors.blue : Colors.grey.shade300,
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Show chef notes dialog for individual item
+  void _showItemChefNotesDialog(OrderItem item, int index) {
+    final controller = TextEditingController(text: item.notes);
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Chef Notes - ${item.menuItem.name}'),
+        content: SizedBox(
+          width: 400,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Add special preparation instructions for the kitchen:',
+                style: TextStyle(fontWeight: FontWeight.w500),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                decoration: const InputDecoration(
+                  hintText: 'e.g., extra spicy, no onions, well done...',
+                  border: OutlineInputBorder(),
+                ),
+                maxLines: 3,
+                autofocus: true,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              _updateItemNotes(index, controller.text.trim());
+              Navigator.pop(context);
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Show special instructions dialog for individual item
+  void _showItemSpecialInstructionsDialog(OrderItem item, int index) {
+    final controller = TextEditingController(text: item.specialInstructions);
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Special Instructions - ${item.menuItem.name}'),
+        content: SizedBox(
+          width: 400,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Add customer requests or preferences:',
+                style: TextStyle(fontWeight: FontWeight.w500),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                decoration: const InputDecoration(
+                  hintText: 'e.g., allergy information, customer preferences...',
+                  border: OutlineInputBorder(),
+                ),
+                maxLines: 3,
+                autofocus: true,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              _updateItemSpecialInstructions(index, controller.text.trim());
+              Navigator.pop(context);
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOrderSummary() {
+    final discount = _currentOrder!.discountAmount ?? 0.0;
+    final gratuity = _currentOrder!.gratuityAmount ?? 0.0;
+    
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        border: Border(
+          top: BorderSide(color: Colors.grey.shade200),
+        ),
+      ),
+      child: Column(
+        children: [
+          _buildSummaryRow('Subtotal', '\$${_currentOrder!.subtotal.toStringAsFixed(2)}'),
+          const SizedBox(height: 8),
+          if (discount > 0) ...[
+            _buildSummaryRow('Discount', '-\$${discount.toStringAsFixed(2)}', isDiscount: true),
+            const SizedBox(height: 8),
+          ],
+          _buildSummaryRow('HST (13%)', '\$${_currentOrder!.hstAmount.toStringAsFixed(2)}'),
+          const SizedBox(height: 8),
+          if (gratuity > 0) ...[
+            _buildSummaryRow('Gratuity', '\$${gratuity.toStringAsFixed(2)}', isGratuity: true),
+            const SizedBox(height: 8),
+          ],
+          const Divider(),
+          _buildSummaryRow(
+            'Total',
+            '\$${_currentOrder!.totalAmount.toStringAsFixed(2)}',
+            isTotal: true,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSummaryRow(String label, String value, {bool isTotal = false, bool isDiscount = false, bool isGratuity = false}) {
+    Color? textColor;
+    if (isTotal) {
+      textColor = Theme.of(context).primaryColor;
+    } else if (isDiscount) {
+      textColor = Colors.red;
+    } else if (isGratuity) {
+      textColor = Colors.green;
+    }
+    
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: isTotal ? 16 : 14,
+            fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
+            color: isDiscount ? Colors.red : (isGratuity ? Colors.green : null),
+          ),
+        ),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: isTotal ? 18 : 14,
+            fontWeight: FontWeight.bold,
+            color: textColor,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMenuPanel() {
+    return Container(
+      color: Colors.white,
+      child: Column(
+        children: [
+          _buildMenuHeader(),
+          const Divider(height: 1),
+          _buildSearchBar(),
+          const Divider(height: 1),
+          _buildCategoriesTabs(),
+          const Divider(height: 1),
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _buildMenuItems(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMenuHeader() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        children: [
+          Icon(
+            Icons.restaurant_menu,
+            color: Theme.of(context).primaryColor,
+          ),
+          const SizedBox(width: 12),
+          const Text(
+            'Menu Items',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const Spacer(),
+          if (_selectedCategory != null)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Theme.of(context).primaryColor.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Text(
+                _selectedCategory!.name,
+                style: TextStyle(
+                  color: Theme.of(context).primaryColor,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSearchBar() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      child: TextField(
+        decoration: InputDecoration(
+          hintText: 'Search menu items...',
+          prefixIcon: const Icon(Icons.search),
+          suffixIcon: _searchQuery.isNotEmpty
+              ? IconButton(
+                  icon: const Icon(Icons.clear),
+                  onPressed: () {
+                    setState(() {
+                      _searchQuery = '';
+                    });
+                  },
+                )
+              : null,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: Colors.grey.shade300),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: Colors.grey.shade300),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: Theme.of(context).primaryColor),
+          ),
+        ),
+        onChanged: (value) {
+          setState(() {
+            _searchQuery = value;
+          });
+        },
+      ),
+    );
+  }
+
+  Widget _buildCategoriesTabs() {
+    if (_categories.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: _categories.map((category) {
+          final isSelected = _selectedCategory?.id == category.id;
+          
+          return FilterChip(
+            label: Text(
+              category.name,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+              ),
+            ),
+            selected: isSelected,
+            onSelected: (selected) {
+              if (selected) {
+                _onCategorySelected(category);
+              }
+            },
+            backgroundColor: Colors.white,
+            selectedColor: Theme.of(context).primaryColor.withValues(alpha: 0.2),
+            checkmarkColor: Theme.of(context).primaryColor,
+            labelStyle: TextStyle(
+              color: isSelected ? Theme.of(context).primaryColor : Colors.black87,
+              fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+            ),
+            side: BorderSide(
+              color: isSelected ? Theme.of(context).primaryColor : Colors.grey.shade300,
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildMenuItems() {
+    if (_filteredMenuItems.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.search_off,
+              size: 64,
+              color: Colors.grey.shade300,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              _searchQuery.isNotEmpty ? 'No items found' : 'No menu items available',
+              style: TextStyle(
+                color: Colors.grey.shade500,
+                fontSize: 16,
+              ),
+            ),
+            if (_searchQuery.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Try adjusting your search terms',
+                style: TextStyle(
+                  color: Colors.grey.shade400,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ],
+        ),
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Responsive grid: more columns for wider screens
+        int crossAxisCount = 4; // Default 4 columns
+        if (constraints.maxWidth > 1200) {
+          crossAxisCount = 6; // 6 columns for very wide screens
+        } else if (constraints.maxWidth > 800) {
+          crossAxisCount = 5; // 5 columns for wide screens
+        }
+
+        return GridView.builder(
+          padding: const EdgeInsets.all(6),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: crossAxisCount,
+            childAspectRatio: 1.1, // Slightly wider than square for better text layout
+            crossAxisSpacing: 6,
+            mainAxisSpacing: 6,
+          ),
+          itemCount: _filteredMenuItems.length,
+          itemBuilder: (context, index) {
+            final item = _filteredMenuItems[index];
+            return _buildMenuItemCard(item);
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildMenuItemCard(MenuItem item) {
+    return Card(
+      elevation: 1,
+      margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: InkWell(
+        onTap: () => _addItemToOrder(item),
+        borderRadius: BorderRadius.circular(6),
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Item name
+              Flexible(
+                flex: 3,
+                child: Text(
+                  item.name,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 11,
+                    height: 1.2,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(height: 2),
+              // Description (optional, only if space allows)
+              if (item.description.isNotEmpty)
+                Flexible(
+                  flex: 2,
+                  child: Text(
+                    item.description,
+                    style: TextStyle(
+                      color: Colors.grey.shade600,
+                      fontSize: 9,
+                      height: 1.1,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              // Price and add button
+              Flexible(
+                flex: 2,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        '\$${item.price.toStringAsFixed(2)}',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                          color: Theme.of(context).primaryColor,
+                        ),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.all(3),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).primaryColor,
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                      child: const Icon(
+                        Icons.add,
+                        color: Colors.white,
+                        size: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActionButtons() {
+    final newItemsCount = _currentOrder!.items.where((item) => !item.sentToKitchen).length;
+    final hasNewItems = newItemsCount > 0;
+    final hasAnyItems = _currentOrder!.items.isNotEmpty;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.1),
+            blurRadius: 5,
+            offset: const Offset(0, -2),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Top row - Quick actions
+          Row(
+            children: [
+              // Print receipt button
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: hasAnyItems ? _printKitchenTicket : null,
+                  icon: const Icon(Icons.print, size: 16),
+                  label: const Text('Print'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.blue,
+                    side: const BorderSide(color: Colors.blue),
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              
+              // Discount button
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: hasAnyItems ? _showDiscountDialog : null,
+                  icon: const Icon(Icons.discount, size: 16),
+                  label: const Text('Discount'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.purple,
+                    side: const BorderSide(color: Colors.purple),
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              
+              // Gratuity button
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: hasAnyItems ? _showGratuityDialog : null,
+                  icon: const Icon(Icons.attach_money, size: 16),
+                  label: const Text('Tip'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.green,
+                    side: const BorderSide(color: Colors.green),
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          
+          const SizedBox(height: 12),
+          
+          // Bottom row - Main actions
+          Row(
+            children: [
+              // Send to Kitchen button
+              Expanded(
+                flex: 2,
+                child: ElevatedButton.icon(
+                  onPressed: hasNewItems ? _sendOrderToKitchen : null,
+                  icon: _isLoading 
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
+                        )
+                      : const Icon(Icons.restaurant),
+                  label: Text(
+                    hasNewItems 
+                        ? 'Send to Kitchen ($newItemsCount)'
+                        : 'All Items Sent',
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: hasNewItems ? Colors.orange : Colors.grey,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              
+              // Checkout button
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: hasAnyItems ? _navigateToCheckout : null,
+                  icon: const Icon(Icons.payment),
+                  label: const Text('Checkout'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: hasAnyItems ? Theme.of(context).primaryColor : Colors.grey,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              
+              // Cancel Order button
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: hasAnyItems ? _cancelOrder : null,
+                  icon: const Icon(Icons.cancel),
+                  label: const Text('Cancel'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: hasAnyItems ? Colors.red : Colors.grey,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Print kitchen ticket with segregated printing
+  Future<void> _printKitchenTicket() async {
+    if (_currentOrder == null) return;
+    
+    try {
+      final printingService = Provider.of<PrintingService>(context, listen: false);
+      final printerAssignmentService = Provider.of<PrinterAssignmentService>(context, listen: false);
+      
+      // Segregate items by printer assignments
+      final itemsByPrinter = await printingService.segregateOrderItems(
+        _currentOrder!,
+        printerAssignmentService,
+      );
+      
+      // Print to segregated printers
+      await printingService.printOrderSegregated(_currentOrder!, itemsByPrinter);
+      
+      // Show success message with printer details
+      final printerCount = itemsByPrinter.length;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Kitchen tickets printed to $printerCount printer${printerCount == 1 ? '' : 's'} successfully'),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 3),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      debugPrint('Error printing kitchen ticket: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to print: ${e.toString()}'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 3),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  // Show discount dialog
+  Future<void> _showDiscountDialog() async {
+    if (_currentOrder == null) return;
+
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.discount, color: Colors.purple.shade700),
+            const SizedBox(width: 8),
+            const Text('Apply Discount'),
+          ],
+        ),
+        content: SizedBox(
+          width: 400,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Order Total: \$${_currentOrder!.totalAmount.toStringAsFixed(2)}',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(context, {'type': 'percentage'}),
+                      child: const Text('Percentage'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(context, {'type': 'fixed'}),
+                      child: const Text('Fixed Amount'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              // Quick discount buttons
+              Wrap(
+                spacing: 8,
+                children: [
+                  _buildQuickDiscountButton('5%', 5),
+                  _buildQuickDiscountButton('10%', 10),
+                  _buildQuickDiscountButton('15%', 15),
+                  _buildQuickDiscountButton('20%', 20),
+                ],
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+
+    if (result == null) return;
+
+    if (result['type'] == 'percentage' || result['type'] == 'fixed') {
+      _showDiscountInputDialog(result['type']);
+    }
+  }
+
+  Widget _buildQuickDiscountButton(String label, double percentage) {
+    return InkWell(
+      onTap: () {
+        Navigator.pop(context);
+        _applyQuickDiscount(percentage);
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.purple.shade50,
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(color: Colors.purple.shade200),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            color: Colors.purple.shade700,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showDiscountInputDialog(String type) async {
+    final controller = TextEditingController();
+    
+    final result = await showDialog<double>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Enter ${type == 'percentage' ? 'Percentage' : 'Amount'}'),
+        content: TextField(
+          controller: controller,
+          keyboardType: TextInputType.number,
+          decoration: InputDecoration(
+            labelText: type == 'percentage' ? 'Percentage (%)' : 'Amount (\$)',
+            border: const OutlineInputBorder(),
+          ),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final value = double.tryParse(controller.text);
+              if (value != null && value > 0) {
+                Navigator.pop(context, value);
+              }
+            },
+            child: const Text('Apply'),
+          ),
+        ],
+      ),
+    );
+
+    if (result != null) {
+      _applyDiscount(type, result);
+    }
+  }
+
+  void _applyQuickDiscount(double percentage) {
+    setState(() {
+      final discountAmount = _currentOrder!.subtotal * (percentage / 100);
+      _currentOrder = _currentOrder!.copyWith(
+        discountAmount: discountAmount,
+      );
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Applied ${percentage}% discount'),
+        backgroundColor: Colors.purple,
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  void _applyDiscount(String type, double value) {
+    setState(() {
+      double discountAmount;
+      if (type == 'percentage') {
+        discountAmount = _currentOrder!.subtotal * (value / 100);
+      } else {
+        discountAmount = value;
+      }
+
+      _currentOrder = _currentOrder!.copyWith(
+        discountAmount: discountAmount,
+      );
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Applied ${type == 'percentage' ? '${value}%' : '\$${value}'} discount'),
+        backgroundColor: Colors.purple,
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  // Show gratuity dialog
+  Future<void> _showGratuityDialog() async {
+    if (_currentOrder == null) return;
+
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.attach_money, color: Colors.green.shade700),
+            const SizedBox(width: 8),
+            const Text('Add Gratuity'),
+          ],
+        ),
+        content: SizedBox(
+          width: 400,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Subtotal: \$${(_currentOrder!.subtotal - (_currentOrder!.discountAmount ?? 0.0)).toStringAsFixed(2)}',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(context, {'type': 'percentage'}),
+                      child: const Text('Percentage'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(context, {'type': 'fixed'}),
+                      child: const Text('Fixed Amount'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              // Quick gratuity buttons
+              Wrap(
+                spacing: 8,
+                children: [
+                  _buildQuickGratuityButton('15%', 15),
+                  _buildQuickGratuityButton('18%', 18),
+                  _buildQuickGratuityButton('20%', 20),
+                  _buildQuickGratuityButton('25%', 25),
+                ],
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+
+    if (result == null) return;
+
+    if (result['type'] == 'percentage' || result['type'] == 'fixed') {
+      _showGratuityInputDialog(result['type']);
+    }
+  }
+
+  Widget _buildQuickGratuityButton(String label, double percentage) {
+    return InkWell(
+      onTap: () {
+        Navigator.pop(context);
+        _applyQuickGratuity(percentage);
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.green.shade50,
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(color: Colors.green.shade200),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            color: Colors.green.shade700,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showGratuityInputDialog(String type) async {
+    final controller = TextEditingController();
+    
+    final result = await showDialog<double>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Enter ${type == 'percentage' ? 'Percentage' : 'Amount'}'),
+        content: TextField(
+          controller: controller,
+          keyboardType: TextInputType.number,
+          decoration: InputDecoration(
+            labelText: type == 'percentage' ? 'Percentage (%)' : 'Amount (\$)',
+            border: const OutlineInputBorder(),
+          ),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final value = double.tryParse(controller.text);
+              if (value != null && value > 0) {
+                Navigator.pop(context, value);
+              }
+            },
+            child: const Text('Apply'),
+          ),
+        ],
+      ),
+    );
+
+    if (result != null) {
+      _applyGratuity(type, result);
+    }
+  }
+
+  void _applyQuickGratuity(double percentage) {
+    setState(() {
+      final subtotalAfterDiscount = _currentOrder!.subtotal - (_currentOrder!.discountAmount ?? 0.0);
+      final gratuityAmount = subtotalAfterDiscount * (percentage / 100);
+      _currentOrder = _currentOrder!.copyWith(
+        gratuityAmount: gratuityAmount,
+      );
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Applied ${percentage}% gratuity'),
+        backgroundColor: Colors.green,
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  void _applyGratuity(String type, double value) {
+    setState(() {
+      double gratuityAmount;
+      if (type == 'percentage') {
+        final subtotalAfterDiscount = _currentOrder!.subtotal - (_currentOrder!.discountAmount ?? 0.0);
+        gratuityAmount = subtotalAfterDiscount * (value / 100);
+      } else {
+        gratuityAmount = value;
+      }
+
+      _currentOrder = _currentOrder!.copyWith(
+        gratuityAmount: gratuityAmount,
+      );
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Applied ${type == 'percentage' ? '${value}%' : '\$${value}'} gratuity'),
+        backgroundColor: Colors.green,
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  // Cancel order with proper validation
+  Future<void> _cancelOrder() async {
+    if (_currentOrder == null || _currentOrder!.items.isEmpty) return;
+
+    // Check if order has items sent to kitchen
+    final sentItems = _currentOrder!.items.where((item) => item.sentToKitchen).toList();
+    final newItems = _currentOrder!.items.where((item) => !item.sentToKitchen).toList();
+
+    // If there are items sent to kitchen, order can be cancelled
+    // If only new items (not sent to kitchen), they must be removed first
+    if (sentItems.isEmpty && newItems.isNotEmpty) {
+      // Show dialog asking to remove items first
+      final result = await showDialog<String>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Cannot Cancel Order'),
+          content: const Text(
+            'This order has items that haven\'t been sent to the kitchen yet. '
+            'Please remove all items first, or send them to the kitchen before cancelling.'
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, 'close'),
+              child: const Text('OK'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, 'remove_all'),
+              child: const Text('Remove All Items'),
+            ),
+          ],
+        ),
+      );
+
+      if (result == 'remove_all') {
+        setState(() {
+          _currentOrder = _currentOrder!.copyWith(
+            items: [],
+            // Reset all totals, discount, and gratuity when items are removed
+            subtotal: 0.0,
+            hstAmount: 0.0,
+            totalAmount: 0.0,
+            discountAmount: 0.0,
+            gratuityAmount: 0.0,
+          );
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('All items removed. Order totals reset.'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return;
+    }
+
+    // Show confirmation dialog for cancellation
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Cancel Order'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Are you sure you want to cancel this order?'),
+            const SizedBox(height: 16),
+            if (sentItems.isNotEmpty)
+              Text(
+                'Warning: ${sentItems.length} item(s) have been sent to the kitchen.',
+                style: const TextStyle(color: Colors.orange, fontWeight: FontWeight.bold),
+              ),
+            const SizedBox(height: 8),
+            Text('Order Total: \$${_currentOrder!.totalAmount.toStringAsFixed(2)}'),
+            if (_currentOrder!.discountAmount != null && _currentOrder!.discountAmount! > 0)
+              Text('Discount: -\$${_currentOrder!.discountAmount!.toStringAsFixed(2)}'),
+            if (_currentOrder!.gratuityAmount != null && _currentOrder!.gratuityAmount! > 0)
+              Text('Gratuity: +\$${_currentOrder!.gratuityAmount!.toStringAsFixed(2)}'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Keep Order'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Cancel Order'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      setState(() {
+        _isLoading = true;
+      });
+
+      // Mark order as cancelled
+      final cancelledOrder = _currentOrder!.copyWith(
+        status: OrderStatus.cancelled,
+        completedTime: DateTime.now(),
+      );
+
+      // Save the cancelled order
+      await Provider.of<OrderService>(context, listen: false).saveOrder(cancelledOrder);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Order cancelled successfully!'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+
+        // Navigate back to previous screen
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to cancel order: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+} 

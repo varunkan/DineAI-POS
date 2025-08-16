@@ -1,0 +1,4037 @@
+import 'dart:async';
+import 'dart:convert';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
+import 'package:sqflite/sqflite.dart';
+import 'package:ai_pos_system/models/order.dart';
+import 'package:ai_pos_system/models/menu_item.dart';
+import 'package:ai_pos_system/models/order_log.dart';
+import 'package:ai_pos_system/services/database_service.dart';
+import 'package:ai_pos_system/services/order_log_service.dart';
+
+/// Custom exception for order operations
+class OrderServiceException implements Exception {
+  final String message;
+  final String? operation;
+  final dynamic originalError;
+
+  OrderServiceException(this.message, {this.operation, this.originalError});
+
+  @override
+  String toString() => 'OrderServiceException: $message${operation != null ? ' (Operation: $operation)' : ''}';
+}
+
+/// Advanced order service with caching and performance optimizations
+class OrderService with ChangeNotifier {
+  DatabaseService _databaseService;
+  OrderLogService? _orderLogService;
+  
+  // Cached data
+  List<Order> _activeOrders = [];
+  List<Order> _completedOrders = [];
+  final Map<String, Order> _orderCache = {};
+  final Map<String, DateTime> _cacheTimestamps = {};
+  
+  // Current user context for logging
+  String? _currentUserId;
+  String? _currentUserName;
+  
+  // Performance tracking
+  bool _isLoading = false;
+  Timer? _cacheCleanupTimer;
+  Timer? _autoRefreshTimer;
+  
+  // Cache configuration
+  static const Duration _cacheValidDuration = Duration(minutes: 5);
+  static const Duration _autoRefreshInterval = Duration(seconds: 30);
+  static const int _maxCacheSize = 1000;
+
+  // Service state management
+  bool _isInitialized = false;
+  bool _initializationInProgress = false;
+  String? _lastError;
+  bool _isDisposed = false;
+
+  // Getters for service state
+  bool get isLoading => _isLoading;
+  bool get isInitialized => _isInitialized;
+  String? get lastError => _lastError;
+
+  OrderService(this._databaseService) {
+    debugPrint('OrderService initialized with advanced caching');
+    // Don't initialize _orderLogService here to avoid LateInitializationError
+  }
+
+  /// Update database service (for multi-tenant support)
+  void updateDatabase(DatabaseService newDatabaseService) {
+    if (_isDisposed) return;
+    
+    _databaseService = newDatabaseService;
+    _isInitialized = false; // Force re-initialization with new database
+    debugPrint('✅ OrderService database updated');
+  }
+
+  /// Initialize the order service
+  Future<void> initialize() async {
+    if (_isDisposed) return;
+    
+    if (_isInitialized || _initializationInProgress) {
+      debugPrint('⚠️ OrderService already initialized or initialization in progress');
+      return;
+    }
+    
+    _initializationInProgress = true;
+    
+    try {
+      debugPrint('📝 Initializing order service...');
+      _lastError = null;
+      
+      // Clean up existing timers before re-initialization
+      _disposeTimers();
+      
+      // Load orders from database
+      await _loadOrders();
+      
+      // Start cache cleanup and auto-refresh
+      _startCacheCleanup();
+      _startAutoRefresh();
+      
+      _isInitialized = true;
+      debugPrint('✅ Order service initialized');
+    } catch (e) {
+      _lastError = e.toString();
+      debugPrint('❌ Failed to initialize order service: $e');
+      rethrow;
+    } finally {
+      _initializationInProgress = false;
+    }
+  }
+
+  /// Dispose timers properly
+  void _disposeTimers() {
+    _cacheCleanupTimer?.cancel();
+    _cacheCleanupTimer = null;
+    
+    _autoRefreshTimer?.cancel();
+    _autoRefreshTimer = null;
+  }
+
+  /// Check if order log service is initialized
+  bool get _isOrderLogServiceInitialized {
+    try {
+      return _orderLogService != null;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  @override
+  void dispose() {
+    if (_isDisposed) {
+      debugPrint('⚠️ OrderService.dispose() called but already disposed');
+      return;
+    }
+    
+    debugPrint('🧹 OrderService.dispose() called - cleaning up resources...');
+    _isDisposed = true;
+    _disposeTimers();
+    
+    // Only dispose the parent ChangeNotifier if we're truly shutting down
+    try {
+      super.dispose();
+      debugPrint('✅ OrderService disposed successfully');
+    } catch (e) {
+      debugPrint('⚠️ Error during OrderService dispose: $e');
+    }
+  }
+
+  /// Reset disposal state for reinitialization (multi-tenant support)
+  void resetDisposalState() {
+    if (_isDisposed) {
+      debugPrint('🔄 OrderService: Resetting disposal state for reinitialization');
+      _isDisposed = false;
+      _isInitialized = false;
+    }
+  }
+
+  /// Set current user context for logging
+  void setCurrentUser(String userId, String userName) {
+    _currentUserId = userId;
+    _currentUserName = userName;
+    _orderLogService?.setCurrentUser(userId, userName);
+  }
+
+  // Getters with lazy loading disabled for stability
+  List<Order> get activeOrders {
+    // Disable automatic loading to prevent crashes
+    // if (_activeOrders.isEmpty && !_isLoading) {
+    //   _loadOrdersLazy();
+    // }
+    return List.unmodifiable(_activeOrders);
+  }
+  
+  List<Order> get completedOrders {
+    // Disable automatic loading to prevent crashes
+    // if (_completedOrders.isEmpty && !_isLoading) {
+    //   _loadOrdersLazy();
+    // }
+    return List.unmodifiable(_completedOrders);
+  }
+
+  
+  /// Manually load orders from database
+  /// Use this instead of automatic loading for better control
+  Future<void> loadOrders() async {
+    if (_isLoading) {
+      debugPrint('OrderService: Already loading orders, skipping...');
+      return;
+    }
+    
+    debugPrint('OrderService: Starting to load all orders...');
+    
+    try {
+      await _loadOrders();
+      debugPrint('OrderService: Successfully loaded ${_activeOrders.length + _completedOrders.length} orders');
+    } catch (e) {
+      debugPrint('OrderService: Error loading orders: $e');
+      // Don't rethrow to prevent crashes, just log the error
+    }
+  }
+
+  /// Lazy loading with debouncing
+  Timer? _loadDebounceTimer;
+  void _loadOrdersLazy() {
+    _loadDebounceTimer?.cancel();
+    _loadDebounceTimer = Timer(const Duration(milliseconds: 100), () {
+      _loadOrders();
+    });
+  }
+
+  /// Start automatic cache cleanup
+  void _startCacheCleanup() {
+    _cacheCleanupTimer = Timer.periodic(const Duration(minutes: 10), (_) {
+      _cleanupCache();
+    });
+  }
+
+  /// Start automatic refresh for real-time updates
+  void _startAutoRefresh() {
+    _autoRefreshTimer = Timer.periodic(_autoRefreshInterval, (_) {
+      if (!_isLoading) {
+        _refreshActiveOrders();
+      }
+    });
+  }
+
+  /// Clean up expired cache entries
+  void _cleanupCache() {
+    final now = DateTime.now();
+    final expiredKeys = _cacheTimestamps.entries
+        .where((entry) => now.difference(entry.value) > _cacheValidDuration)
+        .map((entry) => entry.key)
+        .toList();
+    
+    for (final key in expiredKeys) {
+      _orderCache.remove(key);
+      _cacheTimestamps.remove(key);
+    }
+    
+    // Limit cache size
+    if (_orderCache.length > _maxCacheSize) {
+      final sortedEntries = _cacheTimestamps.entries.toList()
+        ..sort((a, b) => a.value.compareTo(b.value));
+      
+      final keysToRemove = sortedEntries
+          .take(_orderCache.length - _maxCacheSize)
+          .map((e) => e.key);
+      
+      for (final key in keysToRemove) {
+        _orderCache.remove(key);
+        _cacheTimestamps.remove(key);
+      }
+    }
+    
+    debugPrint('Cache cleanup completed. Cache size: ${_orderCache.length}');
+  }
+
+  /// Optimized order loading with caching
+  Future<void> _loadOrders() async {
+    if (_isLoading) return;
+    
+    _setLoading(true);
+    
+    try {
+      debugPrint('OrderService: Starting database query...');
+      // Use optimized database query
+      final ordersData = await _databaseService.getOrdersWithItems(
+        orderBy: 'o.created_at DESC',
+        limit: 500, // Limit for performance
+      );
+      
+      debugPrint('OrderService: Found ${ordersData.length} order rows in database');
+      final ordersMap = <String, Order>{};
+      
+      // Group data by order ID
+      for (final row in ordersData) {
+        final orderId = row['id'] as String;
+        
+        if (!ordersMap.containsKey(orderId)) {
+          ordersMap[orderId] = _buildOrderFromOptimizedData(row);
+        }
+        
+        // Add item if exists
+        if (row['item_id'] != null) {
+          final item = _buildOrderItemFromOptimizedData(row);
+          ordersMap[orderId]!.items.add(item);
+        }
+      }
+      
+      final allOrders = ordersMap.values.toList();
+      
+      // Update cache
+      for (final order in allOrders) {
+        _orderCache[order.id] = order;
+        _cacheTimestamps[order.id] = DateTime.now();
+      }
+      
+      _categorizeOrders(allOrders);
+      _safeNotifyListeners();
+      
+    } catch (e) {
+      debugPrint('Error loading orders: $e');
+      throw OrderServiceException('Failed to load orders', operation: 'load_orders', originalError: e);
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  /// Build order from optimized query data
+  Order _buildOrderFromOptimizedData(Map<String, dynamic> row) {
+    return Order(
+      id: row['id'],
+      orderNumber: row['order_number'],
+      status: OrderStatus.values.firstWhere(
+        (e) => e.toString().split('.').last == row['status'],
+        orElse: () => OrderStatus.pending,
+      ),
+      type: OrderType.values.firstWhere(
+        (e) => e.toString().split('.').last == row['type'],
+        orElse: () => OrderType.dineIn,
+      ),
+      tableId: row['table_id'],
+      userId: row['user_id'],
+      customerName: row['customer_name'],
+      customerPhone: row['customer_phone'],
+      customerEmail: row['customer_email'],
+      customerAddress: row['customer_address'],
+      specialInstructions: row['special_instructions'],
+      subtotal: (row['subtotal'] ?? 0.0).toDouble(),
+      taxAmount: (row['tax_amount'] ?? 0.0).toDouble(),
+      tipAmount: (row['tip_amount'] ?? 0.0).toDouble(),
+      hstAmount: (row['hst_amount'] ?? 0.0).toDouble(),
+      discountAmount: (row['discount_amount'] ?? 0.0).toDouble(),
+      gratuityAmount: (row['gratuity_amount'] ?? 0.0).toDouble(),
+      totalAmount: (row['total_amount'] ?? 0.0).toDouble(),
+      paymentMethod: row['payment_method'],
+      paymentStatus: PaymentStatus.values.firstWhere(
+        (e) => e.toString().split('.').last == (row['payment_status'] ?? 'pending'),
+        orElse: () => PaymentStatus.pending,
+      ),
+      paymentTransactionId: row['payment_transaction_id'],
+      orderTime: DateTime.tryParse(row['order_time']) ?? DateTime.now(),
+      estimatedReadyTime: row['estimated_ready_time'] != null 
+          ? DateTime.tryParse(row['estimated_ready_time']) 
+          : null,
+      actualReadyTime: row['actual_ready_time'] != null 
+          ? DateTime.tryParse(row['actual_ready_time']) 
+          : null,
+      servedTime: row['served_time'] != null 
+          ? DateTime.tryParse(row['served_time']) 
+          : null,
+      completedTime: row['completed_time'] != null 
+          ? DateTime.tryParse(row['completed_time']) 
+          : null,
+      isUrgent: (row['is_urgent'] ?? 0) == 1,
+      priority: row['priority'] ?? 0,
+      assignedTo: row['assigned_to'],
+      customFields: row['custom_fields'] != null 
+          ? jsonDecode(row['custom_fields']) 
+          : {},
+      metadata: row['metadata'] != null 
+          ? jsonDecode(row['metadata']) 
+          : {},
+      createdAt: DateTime.tryParse(row['created_at']) ?? DateTime.now(),
+      updatedAt: DateTime.tryParse(row['updated_at']) ?? DateTime.now(),
+      items: [], // Items will be added separately
+    );
+  }
+
+  /// Builds an OrderItem from database data with comprehensive error handling
+  OrderItem _buildOrderItemFromOptimizedData(Map<String, dynamic> row) {
+    try {
+      // Create a menu item from the data, handling missing menu items gracefully
+      MenuItem menuItem;
+      
+      if (row['menu_item_name'] != null) {
+        // Menu item data is available, create full menu item
+        menuItem = MenuItem(
+          id: row['menu_item_id'] ?? '',
+          name: row['menu_item_name'] ?? 'Unknown Item',
+          description: row['menu_item_description'] ?? '',
+          price: (row['menu_item_price'] ?? 0.0).toDouble(),
+          categoryId: row['menu_item_category_id'] ?? 'unknown',
+          imageUrl: row['menu_item_image_url'],
+          isAvailable: (row['menu_item_available'] ?? 1) == 1,
+          preparationTime: row['preparation_time'] ?? 0,
+          isVegetarian: (row['is_vegetarian'] ?? 0) == 1,
+          isVegan: (row['is_vegan'] ?? 0) == 1,
+          isGlutenFree: (row['is_gluten_free'] ?? 0) == 1,
+          isSpicy: (row['is_spicy'] ?? 0) == 1,
+          spiceLevel: row['spice_level'] ?? 0,
+        );
+      } else {
+        // Menu item is missing, create placeholder
+        debugPrint('⚠️ Creating placeholder for missing menu item: ${row['menu_item_id']}');
+        menuItem = MenuItem(
+          id: row['menu_item_id'] ?? 'unknown',
+          name: 'Item No Longer Available',
+          description: 'This menu item is no longer available',
+          price: (row['unit_price'] ?? 0.0).toDouble(),
+          categoryId: 'unavailable',
+          isAvailable: false,
+        );
+      }
+
+      return OrderItem(
+        id: row['item_id'] ?? '',
+        menuItem: menuItem,
+        quantity: row['quantity'] ?? 1,
+        unitPrice: (row['unit_price'] ?? 0.0).toDouble(),
+        selectedVariant: row['selected_variant'],
+        selectedModifiers: row['selected_modifiers'] != null 
+            ? List<String>.from(jsonDecode(row['selected_modifiers'])) 
+            : [],
+        specialInstructions: row['special_instructions'],
+        notes: row['notes'],
+        customProperties: row['custom_properties'] != null 
+            ? jsonDecode(row['custom_properties']) 
+            : {},
+        isAvailable: (row['item_available'] ?? 1) == 1,
+        sentToKitchen: (row['sent_to_kitchen'] ?? 0) == 1,
+        createdAt: DateTime.tryParse(row['item_created_at'] ?? '') ?? DateTime.now(),
+      );
+    } catch (e) {
+      debugPrint('❌ Error building order item from data: $e');
+      // Return a safe placeholder item
+      return OrderItem(
+        id: row['item_id'] ?? 'error',
+        menuItem: MenuItem(
+          id: 'error',
+          name: 'Error Loading Item',
+          description: 'There was an error loading this item',
+          price: 0.0,
+          categoryId: 'error',
+          isAvailable: false,
+        ),
+        quantity: 1,
+        unitPrice: 0.0,
+      );
+    }
+  }
+
+  /// Fast refresh for active orders only
+  Future<void> _refreshActiveOrders() async {
+    try {
+      final activeOrdersData = await _databaseService.getOrdersWithItems(
+        whereClause: "o.status IN ('pending', 'confirmed', 'preparing', 'ready')",
+        orderBy: 'o.created_at DESC',
+      );
+      
+      final ordersMap = <String, Order>{};
+      
+      for (final row in activeOrdersData) {
+        final orderId = row['id'] as String;
+        
+        if (!ordersMap.containsKey(orderId)) {
+          ordersMap[orderId] = _buildOrderFromOptimizedData(row);
+        }
+        
+        if (row['item_id'] != null) {
+          final item = _buildOrderItemFromOptimizedData(row);
+          ordersMap[orderId]!.items.add(item);
+        }
+      }
+      
+      final newActiveOrders = ordersMap.values.toList();
+      
+      // Check if there are actual changes
+      if (_hasOrdersChanged(_activeOrders, newActiveOrders)) {
+        _activeOrders = newActiveOrders;
+        
+        // Update cache for active orders
+        for (final order in newActiveOrders) {
+          _orderCache[order.id] = order;
+          _cacheTimestamps[order.id] = DateTime.now();
+        }
+        
+        _safeNotifyListeners();
+      }
+      
+    } catch (e) {
+      debugPrint('Error refreshing active orders: $e');
+    }
+  }
+
+  /// Check if orders list has changed
+  bool _hasOrdersChanged(List<Order> oldOrders, List<Order> newOrders) {
+    if (oldOrders.length != newOrders.length) return true;
+    
+    for (int i = 0; i < oldOrders.length; i++) {
+      if (oldOrders[i].id != newOrders[i].id || 
+          oldOrders[i].status != newOrders[i].status ||
+          oldOrders[i].items.length != newOrders[i].items.length) {
+        return true;
+      }
+    }
+    
+    return false;
+  }
+
+  /// Get order from cache or database
+  Future<Order?> getOrderById(String orderId) async {
+    // Check cache first
+    if (_orderCache.containsKey(orderId)) {
+      final cacheTime = _cacheTimestamps[orderId];
+      if (cacheTime != null && 
+          DateTime.now().difference(cacheTime) < _cacheValidDuration) {
+        return _orderCache[orderId];
+      }
+    }
+    
+    // Load from database
+    try {
+      final orderData = await _databaseService.getOrdersWithItems(
+        whereClause: 'o.id = ?',
+        whereArgs: [orderId],
+      );
+      
+      if (orderData.isEmpty) return null;
+      
+      final order = _buildOrderFromOptimizedData(orderData.first);
+      
+      // Add items
+      for (final row in orderData) {
+        if (row['item_id'] != null) {
+          final item = _buildOrderItemFromOptimizedData(row);
+          order.items.add(item);
+        }
+      }
+      
+      // Update cache
+      _orderCache[orderId] = order;
+      _cacheTimestamps[orderId] = DateTime.now();
+      
+      return order;
+    } catch (e) {
+      throw OrderServiceException('Failed to get order by ID', operation: 'get_by_id', originalError: e);
+    }
+  }
+
+  /// Categorizes orders into active and completed lists.
+  /// 
+  /// [orders] is the list of all orders to categorize.
+  void _categorizeOrders(List<Order> orders) {
+    _activeOrders = orders.where((order) => order.isActive).toList();
+    _completedOrders = orders.where((order) => order.isCompleted).toList();
+    
+    // Sort orders by creation time (newest first)
+    _activeOrders.sort((a, b) => b.orderTime.compareTo(a.orderTime));
+    _completedOrders.sort((a, b) => b.orderTime.compareTo(a.orderTime));
+  }
+
+  /// Saves an order to the database.
+  /// 
+  /// [order] is the order to save.
+  /// [logAction] is the action to log (default: 'created').
+  /// Returns true if the order was saved successfully.
+  /// Throws [OrderServiceException] if saving fails.
+  Future<bool> saveOrder(Order order, {String logAction = 'created'}) async {
+    try {
+      debugPrint('💾 Saving order to database: ${order.orderNumber}');
+      
+      // CRITICAL FIX: Validate order integrity before saving
+      if (!await _validateOrderIntegrity(order)) {
+        debugPrint('❌ Order integrity validation failed');
+        return false;
+      }
+      
+      // Use the existing database instance approach
+      final Database? database = await _databaseService.database;
+      if (database == null) {
+        throw OrderServiceException('Database not available', operation: 'save_order');
+      }
+      
+      // CRITICAL FIX: Simplified transaction to prevent deadlocks
+      await database.transaction((txn) async {
+        // First, save the order
+        final orderData = {
+          'id': order.id,
+          'order_number': order.orderNumber,
+          'status': order.status.name,
+          'order_type': order.orderType.name,
+          'table_number': order.tableNumber,
+          'guest_count': order.guestCount,
+          'server_id': order.serverId,
+          'subtotal': order.subtotal,
+          'tax': order.tax,
+          'total': order.total,
+          'created_at': order.createdAt.toIso8601String(),
+          'updated_at': order.updatedAt.toIso8601String(),
+          'notes': order.notes,
+          'customer_name': order.customerName,
+          'customer_phone': order.customerPhone,
+          'customer_email': order.customerEmail,
+          'payment_method': order.paymentMethod?.name,
+          'payment_amount': order.paymentAmount,
+          'payment_status': order.paymentStatus?.name,
+          'scheduled_for': order.scheduledFor?.toIso8601String(),
+          'completed_at': order.completedAt?.toIso8601String(),
+          'cancelled_at': order.cancelledAt?.toIso8601String(),
+          'cancellation_reason': order.cancellationReason,
+          'device_id': order.deviceId,
+          'session_id': order.sessionId,
+          'order_source': order.orderSource.name,
+          'is_test_order': order.isTestOrder ? 1 : 0,
+          'custom_fields': order.customFields.isNotEmpty ? jsonEncode(order.customFields) : null,
+          'metadata': order.metadata.isNotEmpty ? jsonEncode(order.metadata) : null,
+        };
+        
+        // Insert or replace the order
+        await txn.insert('orders', orderData, conflictAlgorithm: ConflictAlgorithm.replace);
+        
+        // Delete existing order items for this order
+        await txn.delete('order_items', where: 'order_id = ?', whereArgs: [order.id]);
+        
+        // Save order items with validation
+        for (int i = 0; i < order.items.length; i++) {
+          final item = order.items[i];
+          
+          // CRITICAL FIX: Validate menu item exists before saving
+          if (!await _validateMenuItemExists(item.menuItem.id)) {
+            debugPrint('❌ Menu item ${item.menuItem.id} does not exist, skipping order item');
+            continue;
+          }
+          
+          final itemData = {
+            'id': '${order.id}_${i}_${DateTime.now().millisecondsSinceEpoch}',
+            'order_id': order.id,
+            'menu_item_id': item.menuItem.id,
+            'quantity': item.quantity,
+            'unit_price': item.unitPrice,
+            'total_price': item.totalPrice,
+            'sent_to_kitchen': item.sentToKitchen ? 1 : 0,
+            'special_instructions': item.specialInstructions,
+            'created_at': DateTime.now().toIso8601String(),
+            'updated_at': DateTime.now().toIso8601String(),
+            'variants': item.variants.isNotEmpty ? jsonEncode(item.variants) : null,
+            'modifiers': item.modifiers.isNotEmpty ? jsonEncode(item.modifiers) : null,
+            'discount_amount': item.discountAmount,
+            'discount_type': item.discountType?.name,
+            'tax_amount': item.taxAmount,
+            'is_complimentary': item.isComplimentary ? 1 : 0,
+            'custom_fields': item.customFields.isNotEmpty ? jsonEncode(item.customFields) : null,
+          };
+          
+          await txn.insert('order_items', itemData, conflictAlgorithm: ConflictAlgorithm.replace);
+        }
+      });
+      
+      // Update in-memory cache
+      final index = _activeOrders.indexWhere((o) => o.id == order.id);
+      if (index != -1) {
+        _activeOrders[index] = order;
+      } else {
+        _activeOrders.add(order);
+      }
+      
+      // Create order log entry
+      await _createOrderLogEntry(order, logAction);
+      
+      // Notify listeners about the change
+      notifyListeners();
+      
+      debugPrint('✅ Order saved successfully: ${order.orderNumber}');
+      return true;
+      
+    } catch (e) {
+      debugPrint('❌ Failed to save order: $e');
+      throw OrderServiceException('Failed to save order', operation: 'save_order', originalError: e);
+    }
+  }
+  
+  /// Validates order integrity before saving
+  Future<bool> _validateOrderIntegrity(Order order) async {
+    // Check if order has valid ID and number
+    if (order.id.isEmpty || order.orderNumber.isEmpty) {
+      debugPrint('❌ Order validation failed: Empty ID or number');
+      return false;
+    }
+    
+    // Check if order has items
+    if (order.items.isEmpty) {
+      debugPrint('❌ Order validation failed: No items');
+      return false;
+    }
+    
+    // Validate all menu items exist
+    for (final item in order.items) {
+      if (item.menuItem.id.isEmpty) {
+        debugPrint('❌ Order validation failed: Order item has empty menu item ID');
+        return false;
+      }
+      
+      if (!await _validateMenuItemExists(item.menuItem.id)) {
+        debugPrint('❌ Order validation failed: Menu item ${item.menuItem.id} does not exist');
+        return false;
+      }
+    }
+    
+    debugPrint('✅ Order integrity validation passed');
+    return true;
+  }
+  
+  /// Validates that a menu item exists in the database
+  Future<bool> _validateMenuItemExists(String menuItemId) async {
+    try {
+      final database = await _databaseService.database;
+      if (database == null) return false;
+      
+      final result = await database.rawQuery(
+        'SELECT COUNT(*) as count FROM menu_items WHERE id = ?',
+        [menuItemId],
+      );
+      
+      return (result.first['count'] as int) > 0;
+    } catch (e) {
+      debugPrint('❌ Error validating menu item existence: $e');
+      return false;
+    }
+  }
+
+  /// Updates the local order state after database operations
+  void _updateLocalOrderState(Order order) {
+    try {
+      debugPrint('About to update local lists for order: ${order.id}');
+      
+      // Remove from existing lists first
+      _activeOrders.removeWhere((o) => o.id == order.id);
+      _completedOrders.removeWhere((o) => o.id == order.id);
+      
+      debugPrint('Adding order to local lists: ${order.id}, isActive: ${order.isActive}');
+      
+      // Add to appropriate list based on status
+      if (order.isActive) {
+        _activeOrders.add(order);
+        debugPrint('Added order to active orders list. Total active: ${_activeOrders.length}');
+      } else {
+        _completedOrders.add(order);
+        debugPrint('Added order to completed orders list. Total completed: ${_completedOrders.length}');
+      }
+      
+      // Remove duplicates
+      _activeOrders = _activeOrders.toSet().toList();
+      _completedOrders = _completedOrders.toSet().toList();
+      debugPrint('Removed duplicates from lists');
+      
+      debugPrint('Order successfully added to local lists: ${order.id}');
+      debugPrint('Local lists updated for order: ${order.id}');
+    } catch (e) {
+      debugPrint('❌ Error updating local order state: $e');
+    }
+  }
+
+  /// Logs order operations with error handling
+  Future<void> _logOrderOperation(Order order, String action) async {
+    try {
+      if (_orderLogService != null) {
+        switch (action) {
+          case 'created':
+            await _orderLogService!.logOrderCreated(
+              order,
+              _currentUserId ?? order.userId ?? 'system',
+              _currentUserName,
+            );
+            break;
+          case 'updated':
+          case 'modified':
+            // Use the note added method to log order updates
+            await _orderLogService!.logNoteAdded(
+              order,
+              'Order updated',
+              _currentUserId ?? order.userId ?? 'system',
+              _currentUserName,
+            );
+            break;
+          case 'cancelled':
+            await _orderLogService!.logOrderCancelled(
+              order,
+              _currentUserId ?? order.userId ?? 'system',
+              _currentUserName,
+            );
+            break;
+          case 'completed':
+            await _orderLogService!.logOrderCompleted(
+              order,
+              _currentUserId ?? order.userId ?? 'system',
+              _currentUserName,
+            );
+            break;
+          default:
+            debugPrint('⚠️ Log action not supported: $action');
+            break;
+        }
+        debugPrint('✅ Logged order $action');
+      } else {
+        debugPrint('⚠️ Order log service not available');
+      }
+    } catch (e) {
+      debugPrint('⚠️ Failed to log order operation: $e');
+      // Don't throw error - logging failure shouldn't break order operations
+    }
+  }
+
+  /// Updates the status of an order.
+  /// 
+  /// [orderId] is the ID of the order to update.
+  /// [newStatus] is the new status to set.
+  /// Throws [OrderServiceException] if updating fails.
+  Future<void> updateOrderStatus(String orderId, OrderStatus newStatus) async {
+    try {
+      final orderIndex = _activeOrders.indexWhere((order) => order.id == orderId);
+      if (orderIndex == -1) {
+        throw OrderServiceException('Order not found: $orderId', operation: 'update_status');
+      }
+      
+      final order = _activeOrders[orderIndex];
+      final oldStatus = order.status;
+      final updatedOrder = order.copyWith(status: newStatus);
+      
+      // Update in database
+      await _databaseService.update(
+        'orders',
+        {'status': newStatus.toString().split('.').last},
+        where: 'id = ?',
+        whereArgs: [orderId],
+      );
+      
+      // Update local list
+      _activeOrders[orderIndex] = updatedOrder;
+      
+      // Move to completed if needed
+      if (updatedOrder.isCompleted) {
+        _activeOrders.removeAt(orderIndex);
+        _completedOrders.insert(0, updatedOrder);
+      }
+      
+      // Log status change
+      try {
+        await _orderLogService?.logStatusChange(
+          updatedOrder,
+          oldStatus,
+          newStatus,
+          _currentUserId ?? 'system',
+          _currentUserName,
+        );
+        debugPrint('✅ Logged status change: ${order.orderNumber} -> ${newStatus.toString().split('.').last}');
+      } catch (e) {
+        debugPrint('⚠️ Failed to log status change: $e');
+      }
+      
+      // Safely notify listeners
+      try {
+        SchedulerBinding.instance.addPostFrameCallback((_) {
+          try {
+            notifyListeners();
+          } catch (e) {
+            debugPrint('Error notifying listeners during status update: $e');
+          }
+        });
+      } catch (e) {
+        debugPrint('Error scheduling notification during status update: $e');
+      }
+      
+      debugPrint('Order status updated: ${order.orderNumber} -> ${newStatus.toString().split('.').last}');
+    } catch (e) {
+      throw OrderServiceException('Failed to update order status', operation: 'update_status', originalError: e);
+    }
+  }
+
+  /// Gets all orders for a specific user.
+  /// 
+  /// [userId] is the ID of the user.
+  /// Returns a list of orders for that user.
+  Future<List<Order>> getOrdersByUser(String userId) async {
+    try {
+      final orderData = await _databaseService.query(
+        'orders',
+        where: 'user_id = ?',
+        whereArgs: [userId],
+        orderBy: 'created_at DESC',
+      );
+      
+      final orders = <Order>[];
+      for (final data in orderData) {
+        try {
+          final order = await _buildOrderFromData(data);
+          orders.add(order);
+        } catch (e) {
+          debugPrint('Error loading order for user: $e');
+          // Continue loading other orders
+        }
+      }
+      
+      return orders;
+    } catch (e) {
+      throw OrderServiceException('Failed to get orders by user', operation: 'get_by_user', originalError: e);
+    }
+  }
+
+  /// Gets all orders for a specific table.
+  /// 
+  /// [tableId] is the ID of the table.
+  /// Returns a list of orders for that table.
+  Future<List<Order>> getOrdersByTable(String tableId) async {
+    try {
+      final orderData = await _databaseService.query(
+        'orders',
+        where: 'table_id = ?',
+        whereArgs: [tableId],
+        orderBy: 'created_at DESC',
+      );
+      
+      final orders = <Order>[];
+      for (final data in orderData) {
+        try {
+          final order = await _buildOrderFromData(data);
+          orders.add(order);
+        } catch (e) {
+          debugPrint('Error loading order for table: $e');
+          // Continue loading other orders
+        }
+      }
+      
+      return orders;
+    } catch (e) {
+      throw OrderServiceException('Failed to get orders by table', operation: 'get_by_table', originalError: e);
+    }
+  }
+
+  /// Refreshes the order lists from the database.
+  /// 
+  /// This method can be called to reload all orders from the database.
+  Future<void> refreshOrders() async {
+    await _loadOrders();
+  }
+
+  /// Sets the loading state and notifies listeners.
+  /// 
+  /// [loading] is the new loading state.
+  void _setLoading(bool loading) {
+    _isLoading = loading;
+    
+    // FIXED: Safely notify listeners with comprehensive error handling
+    try {
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        try {
+          notifyListeners();
+        } catch (e) {
+          debugPrint('⚠️ Error notifying listeners during loading state change: $e');
+        }
+      });
+    } catch (e) {
+      debugPrint('⚠️ Error scheduling notification during loading state change: $e');
+    }
+  }
+
+  /// Converts an Order object to a database map.
+  /// 
+  /// [order] is the order to convert.
+  /// Returns a map suitable for database insertion.
+  Map<String, dynamic> _orderToMap(Order order) {
+    return {
+      'id': order.id,
+      'order_number': order.orderNumber,
+      'status': order.status.toString().split('.').last,
+      'type': order.type.toString().split('.').last,
+      'table_id': order.tableId,
+      'user_id': order.userId,
+      'customer_name': order.customerName,
+      'customer_phone': order.customerPhone,
+      'customer_email': order.customerEmail,
+      'customer_address': order.customerAddress,
+      'special_instructions': order.specialInstructions,
+      'subtotal': order.subtotal,
+      'tax_amount': order.taxAmount,
+      'tip_amount': order.tipAmount,
+      'hst_amount': order.hstAmount,
+      'discount_amount': order.discountAmount,
+      'gratuity_amount': order.gratuityAmount,
+      'total_amount': order.totalAmount,
+      'payment_method': order.paymentMethod,
+      'payment_status': order.paymentStatus.toString().split('.').last,
+      'payment_transaction_id': order.paymentTransactionId,
+      'order_time': order.orderTime.toIso8601String(),
+      'estimated_ready_time': order.estimatedReadyTime?.toIso8601String(),
+      'actual_ready_time': order.actualReadyTime?.toIso8601String(),
+      'served_time': order.servedTime?.toIso8601String(),
+      'completed_time': order.completedTime?.toIso8601String(),
+      'is_urgent': order.isUrgent ? 1 : 0,
+      'priority': order.priority,
+      'assigned_to': order.assignedTo,
+      'custom_fields': jsonEncode(order.customFields),
+      'metadata': jsonEncode(order.metadata),
+      'created_at': order.createdAt.toIso8601String(),
+      'updated_at': order.updatedAt.toIso8601String(),
+    };
+  }
+
+  /// Converts an OrderItem object to a database map.
+  /// 
+  /// [item] is the order item to convert.
+  /// [orderId] is the ID of the parent order.
+  /// Returns a map suitable for database insertion.
+  Map<String, dynamic> _orderItemToMap(OrderItem item, String orderId) {
+    return {
+      'id': item.id,
+      'order_id': orderId,
+      'menu_item_id': item.menuItem.id,
+      'quantity': item.quantity,
+      'unit_price': item.unitPrice,
+      'total_price': item.totalPrice,
+      'selected_variant': item.selectedVariant,
+      'selected_modifiers': jsonEncode(item.selectedModifiers),
+      'special_instructions': item.specialInstructions,
+      'notes': item.notes, // Include notes field
+      'custom_properties': jsonEncode(item.customProperties),
+      'is_available': item.isAvailable ? 1 : 0,
+      'sent_to_kitchen': item.sentToKitchen ? 1 : 0,
+      'kitchen_status': item.sentToKitchen ? 'preparing' : 'pending', // Include kitchen_status
+      'created_at': item.createdAt.toIso8601String(),
+    };
+  }
+
+  /// Gets all orders from the database.
+  /// 
+  /// Returns a list of all orders sorted by creation time (newest first).
+  Future<List<Order>> getAllOrders() async {
+    try {
+      debugPrint('OrderService: Starting to load all orders...');
+      
+      final orderData = await _databaseService.query(
+        'orders',
+        orderBy: 'created_at DESC',
+      );
+      
+      debugPrint('OrderService: Found ${orderData.length} orders in database');
+      
+      final orders = <Order>[];
+      for (int i = 0; i < orderData.length; i++) {
+        final data = orderData[i];
+        try {
+          final order = await _buildOrderFromData(data);
+          orders.add(order);
+        } catch (e) {
+          debugPrint('Error loading order ${i + 1}/${orderData.length} (ID: ${data['id']}): $e');
+          // Continue loading other orders
+        }
+      }
+      
+      debugPrint('OrderService: Successfully loaded ${orders.length}/${orderData.length} orders');
+      return orders;
+    } catch (e) {
+      debugPrint('OrderService: Failed to get all orders: $e');
+      throw OrderServiceException('Failed to get all orders', operation: 'get_all', originalError: e);
+    }
+  }
+
+  /// Deletes an order from the database.
+  /// 
+  /// [orderId] is the ID of the order to delete.
+  /// Throws [OrderServiceException] if deletion fails.
+  Future<void> deleteOrder(String orderId) async {
+    try {
+      // Delete in a transaction
+      final db = await _databaseService.database;
+      if (db != null) {
+        await db.transaction((txn) async {
+          // Delete order items first
+          await txn.delete(
+            'order_items',
+            where: 'order_id = ?',
+            whereArgs: [orderId],
+          );
+          
+          // Delete the order
+          await txn.delete(
+            'orders',
+            where: 'id = ?',
+            whereArgs: [orderId],
+          );
+        });
+      }
+      
+      // Remove from local lists
+      _activeOrders.removeWhere((order) => order.id == orderId);
+      _completedOrders.removeWhere((order) => order.id == orderId);
+      
+      // Safely notify listeners
+      try {
+        SchedulerBinding.instance.addPostFrameCallback((_) {
+          try {
+            notifyListeners();
+          } catch (e) {
+            debugPrint('Error notifying listeners during order deletion: $e');
+          }
+        });
+      } catch (e) {
+        debugPrint('Error scheduling notification during order deletion: $e');
+      }
+      
+      debugPrint('Order deleted: $orderId');
+    } catch (e) {
+      throw OrderServiceException('Failed to delete order', operation: 'delete', originalError: e);
+    }
+  }
+
+  /// Get active orders for a specific server
+  List<Order> getActiveOrdersByServer(String serverId) {
+    final filtered = _activeOrders.where((order) => order.userId == serverId).toList();
+    
+    return filtered;
+  }
+
+  /// Get completed orders for a specific server
+  List<Order> getCompletedOrdersByServer(String serverId) {
+    final filtered = _completedOrders.where((order) => order.userId == serverId).toList();
+    
+    return filtered;
+  }
+
+  /// Get all orders for a specific server
+  List<Order> getAllOrdersByServer(String serverId) {
+    final allOrders = [..._activeOrders, ..._completedOrders];
+    final filtered = allOrders.where((order) => order.userId == serverId).toList();
+    
+    return filtered;
+  }
+
+  /// Get all orders (active + completed) - public access
+  List<Order> get allOrders => [..._activeOrders, ..._completedOrders];
+
+
+
+  /// Deletes all orders from the database and local lists.
+  /// This is for one-time cleanup only.
+  Future<void> deleteAllOrders() async {
+    try {
+      debugPrint('🗑️ Starting to delete all orders...');
+      
+      final db = await _databaseService.database;
+      if (db != null) {
+        await db.transaction((txn) async {
+          // Delete all order items first
+          await txn.delete('order_items');
+          debugPrint('✅ Deleted all order items');
+          
+          // Delete all orders
+          await txn.delete('orders');
+          debugPrint('✅ Deleted all orders');
+          
+          // Delete all order logs
+          await txn.delete('order_logs');
+          debugPrint('✅ Deleted all order logs');
+        });
+      }
+      
+      // Clear local lists
+      _activeOrders.clear();
+      _completedOrders.clear();
+      _orderCache.clear();
+      _cacheTimestamps.clear();
+      
+      debugPrint('✅ All orders deleted successfully');
+      notifyListeners();
+    } catch (e) {
+      debugPrint('❌ Error deleting all orders: $e');
+      throw OrderServiceException('Failed to delete all orders: $e');
+    }
+  }
+
+  /// Builds an Order object from database row data.
+  /// 
+  /// This method loads order items separately from the database.
+  /// [data] is the database row containing order data.
+  /// Returns a complete Order object with its items.
+  Future<Order> _buildOrderFromData(Map<String, dynamic> data) async {
+    try {
+      // Create the order from the main data
+      final order = Order(
+        id: data['id'],
+        orderNumber: data['order_number'],
+        status: OrderStatus.values.firstWhere(
+          (e) => e.toString().split('.').last == data['status'],
+          orElse: () => OrderStatus.pending,
+        ),
+        type: OrderType.values.firstWhere(
+          (e) => e.toString().split('.').last == data['type'],
+          orElse: () => OrderType.dineIn,
+        ),
+        tableId: data['table_id'],
+        userId: data['user_id'],
+        customerName: data['customer_name'],
+        customerPhone: data['customer_phone'],
+        customerEmail: data['customer_email'],
+        customerAddress: data['customer_address'],
+        specialInstructions: data['special_instructions'],
+        subtotal: (data['subtotal'] ?? 0.0).toDouble(),
+        taxAmount: (data['tax_amount'] ?? 0.0).toDouble(),
+        tipAmount: (data['tip_amount'] ?? 0.0).toDouble(),
+        hstAmount: (data['hst_amount'] ?? 0.0).toDouble(),
+        discountAmount: (data['discount_amount'] ?? 0.0).toDouble(),
+        gratuityAmount: (data['gratuity_amount'] ?? 0.0).toDouble(),
+        totalAmount: (data['total_amount'] ?? 0.0).toDouble(),
+        paymentMethod: data['payment_method'],
+        paymentStatus: PaymentStatus.values.firstWhere(
+          (e) => e.toString().split('.').last == (data['payment_status'] ?? 'pending'),
+          orElse: () => PaymentStatus.pending,
+        ),
+        paymentTransactionId: data['payment_transaction_id'],
+        orderTime: DateTime.tryParse(data['order_time']) ?? DateTime.now(),
+        estimatedReadyTime: data['estimated_ready_time'] != null 
+            ? DateTime.tryParse(data['estimated_ready_time']) 
+            : null,
+        actualReadyTime: data['actual_ready_time'] != null 
+            ? DateTime.tryParse(data['actual_ready_time']) 
+            : null,
+        servedTime: data['served_time'] != null 
+            ? DateTime.tryParse(data['served_time']) 
+            : null,
+        completedTime: data['completed_time'] != null 
+            ? DateTime.tryParse(data['completed_time']) 
+            : null,
+        isUrgent: (data['is_urgent'] ?? 0) == 1,
+        priority: data['priority'] ?? 0,
+        assignedTo: data['assigned_to'],
+        customFields: data['custom_fields'] != null 
+            ? jsonDecode(data['custom_fields']) 
+            : {},
+        metadata: data['metadata'] != null 
+            ? jsonDecode(data['metadata']) 
+            : {},
+        createdAt: DateTime.tryParse(data['created_at']) ?? DateTime.now(),
+        updatedAt: DateTime.tryParse(data['updated_at']) ?? DateTime.now(),
+        items: [], // Will be loaded separately
+      );
+
+      // Load order items for this order with validation
+      final orderItemsData = await _databaseService.query(
+        'order_items',
+        where: 'order_id = ? AND menu_item_id IS NOT NULL AND menu_item_id != ""',
+        whereArgs: [order.id],
+      );
+
+      // Load each order item with its menu item data
+      final validItems = <OrderItem>[];
+      for (final itemData in orderItemsData) {
+        try {
+          final menuItemId = itemData['menu_item_id'] as String?;
+          
+          // Skip items with invalid menu_item_id
+          if (menuItemId == null || menuItemId.isEmpty) {
+            debugPrint('⚠️ Skipping order item with invalid menu_item_id: $menuItemId');
+            continue;
+          }
+          
+          // Get menu item details
+          final menuItemData = await _databaseService.query(
+            'menu_items',
+            where: 'id = ?',
+            whereArgs: [menuItemId],
+          );
+
+          MenuItem menuItem;
+          if (menuItemData.isNotEmpty) {
+            final menuItemRow = menuItemData.first;
+            menuItem = MenuItem(
+              id: menuItemRow['id'],
+              name: menuItemRow['name'] ?? 'Unknown Item',
+              description: menuItemRow['description'],
+              price: (menuItemRow['price'] ?? 0.0).toDouble(),
+              categoryId: menuItemRow['category_id'] ?? 'default-category',
+              imageUrl: menuItemRow['image_url'],
+              isAvailable: (menuItemRow['is_available'] ?? 1) == 1,
+              preparationTime: menuItemRow['preparation_time'] ?? 15,
+              isVegetarian: (menuItemRow['is_vegetarian'] ?? 0) == 1,
+              isVegan: (menuItemRow['is_vegan'] ?? 0) == 1,
+              isGlutenFree: (menuItemRow['is_gluten_free'] ?? 0) == 1,
+              isSpicy: (menuItemRow['is_spicy'] ?? 0) == 1,
+              spiceLevel: menuItemRow['spice_level'] ?? 0,
+            );
+          } else {
+            // Create placeholder for missing menu item but log the issue
+            debugPrint('⚠️ Creating placeholder for missing menu item: $menuItemId');
+            menuItem = MenuItem(
+              id: menuItemId,
+              name: 'Missing Item',
+              description: 'Item no longer available',
+              price: (itemData['unit_price'] ?? 0.0).toDouble(),
+              categoryId: 'default-category',
+              isAvailable: false,
+            );
+          }
+
+          // Create order item with validation
+          final orderItem = OrderItem(
+            id: itemData['id'],
+            menuItem: menuItem,
+            quantity: itemData['quantity'] ?? 1,
+            unitPrice: (itemData['unit_price'] ?? 0.0).toDouble(),
+            selectedVariant: itemData['selected_variant'],
+            selectedModifiers: itemData['selected_modifiers'] != null 
+                ? List<String>.from(jsonDecode(itemData['selected_modifiers']))
+                : [],
+            specialInstructions: itemData['special_instructions'],
+            notes: itemData['notes'],
+            customProperties: itemData['custom_properties'] != null 
+                ? jsonDecode(itemData['custom_properties'])
+                : {},
+            isAvailable: (itemData['is_available'] ?? 1) == 1,
+            sentToKitchen: (itemData['sent_to_kitchen'] ?? 0) == 1,
+            createdAt: DateTime.tryParse(itemData['created_at']) ?? DateTime.now(),
+          );
+          
+          validItems.add(orderItem);
+        } catch (e) {
+          debugPrint('⚠️ Error loading order item: $e');
+          // Continue loading other items instead of failing the entire order
+        }
+      }
+
+      // Return order with valid items only
+      return order.copyWith(items: validItems);
+    } catch (e) {
+      debugPrint('Error building order from data: $e');
+      rethrow;
+    }
+  }
+
+  /// Creates a missing menu item in the database.
+  /// 
+  /// This method ensures that the menu item and its category exist
+  /// before creating the menu item to prevent foreign key constraints.
+  /// [menuItem] is the menu item to create.
+  Future<void> _createMissingMenuItem(MenuItem menuItem) async {
+    try {
+      debugPrint('🔧 Creating missing menu item: ${menuItem.name} (${menuItem.id})');
+      
+      // Ensure default category exists first
+      await _ensureDefaultCategoryExists();
+      
+      // Use the default category if the menuItem's category is empty or null
+      String categoryId = menuItem.categoryId;
+      if (categoryId.isEmpty) {
+        categoryId = 'default-category';
+      }
+      
+      // Check if category exists, create if it doesn't
+      final categoryExists = await _databaseService.query(
+        'categories',
+        where: 'id = ?',
+        whereArgs: [categoryId],
+      );
+      
+      if (categoryExists.isEmpty && categoryId != 'default-category') {
+        debugPrint('🔧 Creating missing category: $categoryId');
+        await _databaseService.insert('categories', {
+          'id': categoryId,
+          'name': categoryId.replaceAll('-', ' ').replaceAll('_', ' ').toUpperCase(),
+          'description': 'Auto-created category',
+          'is_active': 1,
+          'sort_order': 999,
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        });
+      }
+      
+      // Create the menu item with validated category
+      final menuItemData = {
+        'id': menuItem.id,
+        'name': menuItem.name.isNotEmpty ? menuItem.name : 'Unknown Item',
+        'description': menuItem.description ?? 'Auto-created menu item',
+        'price': menuItem.price,
+        'category_id': categoryId, // Use validated category ID
+        'image_url': menuItem.imageUrl,
+        'is_available': menuItem.isAvailable ? 1 : 0,
+        'preparation_time': menuItem.preparationTime ?? 15,
+        'is_vegetarian': menuItem.isVegetarian ? 1 : 0,
+        'is_vegan': menuItem.isVegan ? 1 : 0,
+        'is_gluten_free': menuItem.isGlutenFree ? 1 : 0,
+        'is_spicy': menuItem.isSpicy ? 1 : 0,
+        'spice_level': menuItem.spiceLevel ?? 0,
+        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      
+      await _databaseService.insert('menu_items', menuItemData);
+      debugPrint('✅ Created missing menu item: ${menuItem.id}');
+    } catch (e) {
+      debugPrint('❌ Failed to create missing menu item ${menuItem.id}: $e');
+      throw OrderServiceException('Failed to create menu item', operation: 'create_menu_item', originalError: e);
+    }
+  }
+  
+  /// Ensures the default category exists in the database.
+  Future<void> _ensureDefaultCategoryExists() async {
+    try {
+      final defaultCategory = await _databaseService.query(
+        'categories',
+        where: 'id = ?',
+        whereArgs: ['default-category'],
+      );
+      
+      if (defaultCategory.isEmpty) {
+        debugPrint('🔧 Creating default category');
+        await _databaseService.insert('categories', {
+          'id': 'default-category',
+          'name': 'Default Category',
+          'description': 'Default category for auto-created items',
+          'is_active': 1,
+          'sort_order': 0,
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        });
+        debugPrint('✅ Created default category');
+      }
+    } catch (e) {
+      debugPrint('⚠️ Failed to ensure default category exists: $e');
+      // Don't throw error for category creation failure
+    }
+  }
+
+  /// Safely notifies listeners with error handling
+  void _safeNotifyListeners() {
+    try {
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        try {
+          notifyListeners();
+        } catch (e) {
+          debugPrint('⚠️ Error in notifyListeners: $e');
+        }
+      });
+    } catch (e) {
+      debugPrint('⚠️ Error scheduling listener notification: $e');
+    }
+  }
+
+  /// Creates a missing menu item in the database.
+  /// 
+  /// This method ensures that the menu item and its category exist
+  /// before creating the menu item to prevent foreign key constraints.
+  /// [menuItem] is the menu item to create.
+  Future<void> _createMissingMenuItem(MenuItem menuItem) async {
+    try {
+      debugPrint('🔧 Creating missing menu item: ${menuItem.name} (${menuItem.id})');
+      
+      // Ensure default category exists first
+      await _ensureDefaultCategoryExists();
+      
+      // Use the default category if the menuItem's category is empty or null
+      String categoryId = menuItem.categoryId;
+      if (categoryId.isEmpty) {
+        categoryId = 'default-category';
+      }
+      
+      // Check if category exists, create if it doesn't
+      final categoryExists = await _databaseService.query(
+        'categories',
+        where: 'id = ?',
+        whereArgs: [categoryId],
+      );
+      
+      if (categoryExists.isEmpty && categoryId != 'default-category') {
+        debugPrint('🔧 Creating missing category: $categoryId');
+        await _databaseService.insert('categories', {
+          'id': categoryId,
+          'name': categoryId.replaceAll('-', ' ').replaceAll('_', ' ').toUpperCase(),
+          'description': 'Auto-created category',
+          'is_active': 1,
+          'sort_order': 999,
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        });
+      }
+      
+      // Create the menu item with validated category
+      final menuItemData = {
+        'id': menuItem.id,
+        'name': menuItem.name.isNotEmpty ? menuItem.name : 'Unknown Item',
+        'description': menuItem.description ?? 'Auto-created menu item',
+        'price': menuItem.price,
+        'category_id': categoryId, // Use validated category ID
+        'image_url': menuItem.imageUrl,
+        'is_available': menuItem.isAvailable ? 1 : 0,
+        'preparation_time': menuItem.preparationTime ?? 15,
+        'is_vegetarian': menuItem.isVegetarian ? 1 : 0,
+        'is_vegan': menuItem.isVegan ? 1 : 0,
+        'is_gluten_free': menuItem.isGlutenFree ? 1 : 0,
+        'is_spicy': menuItem.isSpicy ? 1 : 0,
+        'spice_level': menuItem.spiceLevel ?? 0,
+        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      
+      await _databaseService.insert('menu_items', menuItemData);
+      debugPrint('✅ Created missing menu item: ${menuItem.id}');
+    } catch (e) {
+      debugPrint('❌ Failed to create missing menu item ${menuItem.id}: $e');
+      throw OrderServiceException('Failed to create menu item', operation: 'create_menu_item', originalError: e);
+    }
+  }
+  
+  /// Ensures the default category exists in the database.
+  Future<void> _ensureDefaultCategoryExists() async {
+    try {
+      final defaultCategory = await _databaseService.query(
+        'categories',
+        where: 'id = ?',
+        whereArgs: ['default-category'],
+      );
+      
+      if (defaultCategory.isEmpty) {
+        debugPrint('🔧 Creating default category');
+        await _databaseService.insert('categories', {
+          'id': 'default-category',
+          'name': 'Default Category',
+          'description': 'Default category for auto-created items',
+          'is_active': 1,
+          'sort_order': 0,
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        });
+        debugPrint('✅ Created default category');
+      }
+    } catch (e) {
+      debugPrint('⚠️ Failed to ensure default category exists: $e');
+      // Don't throw error for category creation failure
+    }
+  }
+
+  /// Creates a missing menu item in the database.
+  /// 
+  /// This method ensures that the menu item and its category exist
+  /// before creating the menu item to prevent foreign key constraints.
+  /// [menuItem] is the menu item to create.
+  Future<void> _createMissingMenuItem(MenuItem menuItem) async {
+    try {
+      debugPrint('🔧 Creating missing menu item: ${menuItem.name} (${menuItem.id})');
+      
+      // Ensure default category exists first
+      await _ensureDefaultCategoryExists();
+      
+      // Use the default category if the menuItem's category is empty or null
+      String categoryId = menuItem.categoryId;
+      if (categoryId.isEmpty) {
+        categoryId = 'default-category';
+      }
+      
+      // Check if category exists, create if it doesn't
+      final categoryExists = await _databaseService.query(
+        'categories',
+        where: 'id = ?',
+        whereArgs: [categoryId],
+      );
+      
+      if (categoryExists.isEmpty && categoryId != 'default-category') {
+        debugPrint('🔧 Creating missing category: $categoryId');
+        await _databaseService.insert('categories', {
+          'id': categoryId,
+          'name': categoryId.replaceAll('-', ' ').replaceAll('_', ' ').toUpperCase(),
+          'description': 'Auto-created category',
+          'is_active': 1,
+          'sort_order': 999,
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        });
+      }
+      
+      // Create the menu item with validated category
+      final menuItemData = {
+        'id': menuItem.id,
+        'name': menuItem.name.isNotEmpty ? menuItem.name : 'Unknown Item',
+        'description': menuItem.description ?? 'Auto-created menu item',
+        'price': menuItem.price,
+        'category_id': categoryId, // Use validated category ID
+        'image_url': menuItem.imageUrl,
+        'is_available': menuItem.isAvailable ? 1 : 0,
+        'preparation_time': menuItem.preparationTime ?? 15,
+        'is_vegetarian': menuItem.isVegetarian ? 1 : 0,
+        'is_vegan': menuItem.isVegan ? 1 : 0,
+        'is_gluten_free': menuItem.isGlutenFree ? 1 : 0,
+        'is_spicy': menuItem.isSpicy ? 1 : 0,
+        'spice_level': menuItem.spiceLevel ?? 0,
+        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      
+      await _databaseService.insert('menu_items', menuItemData);
+      debugPrint('✅ Created missing menu item: ${menuItem.id}');
+    } catch (e) {
+      debugPrint('❌ Failed to create missing menu item ${menuItem.id}: $e');
+      throw OrderServiceException('Failed to create menu item', operation: 'create_menu_item', originalError: e);
+    }
+  }
+
+  /// Creates a missing menu item in the database.
+  /// 
+  /// This method ensures that the menu item and its category exist
+  /// before creating the menu item to prevent foreign key constraints.
+  /// [menuItem] is the menu item to create.
+  Future<void> _createMissingMenuItem(MenuItem menuItem) async {
+    try {
+      debugPrint('🔧 Creating missing menu item: ${menuItem.name} (${menuItem.id})');
+      
+      // Ensure default category exists first
+      await _ensureDefaultCategoryExists();
+      
+      // Use the default category if the menuItem's category is empty or null
+      String categoryId = menuItem.categoryId;
+      if (categoryId.isEmpty) {
+        categoryId = 'default-category';
+      }
+      
+      // Check if category exists, create if it doesn't
+      final categoryExists = await _databaseService.query(
+        'categories',
+        where: 'id = ?',
+        whereArgs: [categoryId],
+      );
+      
+      if (categoryExists.isEmpty && categoryId != 'default-category') {
+        debugPrint('🔧 Creating missing category: $categoryId');
+        await _databaseService.insert('categories', {
+          'id': categoryId,
+          'name': categoryId.replaceAll('-', ' ').replaceAll('_', ' ').toUpperCase(),
+          'description': 'Auto-created category',
+          'is_active': 1,
+          'sort_order': 999,
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        });
+      }
+      
+      // Create the menu item with validated category
+      final menuItemData = {
+        'id': menuItem.id,
+        'name': menuItem.name.isNotEmpty ? menuItem.name : 'Unknown Item',
+        'description': menuItem.description ?? 'Auto-created menu item',
+        'price': menuItem.price,
+        'category_id': categoryId, // Use validated category ID
+        'image_url': menuItem.imageUrl,
+        'is_available': menuItem.isAvailable ? 1 : 0,
+        'preparation_time': menuItem.preparationTime ?? 15,
+        'is_vegetarian': menuItem.isVegetarian ? 1 : 0,
+        'is_vegan': menuItem.isVegan ? 1 : 0,
+        'is_gluten_free': menuItem.isGlutenFree ? 1 : 0,
+        'is_spicy': menuItem.isSpicy ? 1 : 0,
+        'spice_level': menuItem.spiceLevel ?? 0,
+        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      
+      await _databaseService.insert('menu_items', menuItemData);
+      debugPrint('✅ Created missing menu item: ${menuItem.id}');
+    } catch (e) {
+      debugPrint('❌ Failed to create missing menu item ${menuItem.id}: $e');
+      throw OrderServiceException('Failed to create menu item', operation: 'create_menu_item', originalError: e);
+    }
+  }
+
+  /// Creates a missing menu item in the database.
+  /// 
+  /// This method ensures that the menu item and its category exist
+  /// before creating the menu item to prevent foreign key constraints.
+  /// [menuItem] is the menu item to create.
+  Future<void> _createMissingMenuItem(MenuItem menuItem) async {
+    try {
+      debugPrint('🔧 Creating missing menu item: ${menuItem.name} (${menuItem.id})');
+      
+      // Ensure default category exists first
+      await _ensureDefaultCategoryExists();
+      
+      // Use the default category if the menuItem's category is empty or null
+      String categoryId = menuItem.categoryId;
+      if (categoryId.isEmpty) {
+        categoryId = 'default-category';
+      }
+      
+      // Check if category exists, create if it doesn't
+      final categoryExists = await _databaseService.query(
+        'categories',
+        where: 'id = ?',
+        whereArgs: [categoryId],
+      );
+      
+      if (categoryExists.isEmpty && categoryId != 'default-category') {
+        debugPrint('🔧 Creating missing category: $categoryId');
+        await _databaseService.insert('categories', {
+          'id': categoryId,
+          'name': categoryId.replaceAll('-', ' ').replaceAll('_', ' ').toUpperCase(),
+          'description': 'Auto-created category',
+          'is_active': 1,
+          'sort_order': 999,
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        });
+      }
+      
+      // Create the menu item with validated category
+      final menuItemData = {
+        'id': menuItem.id,
+        'name': menuItem.name.isNotEmpty ? menuItem.name : 'Unknown Item',
+        'description': menuItem.description ?? 'Auto-created menu item',
+        'price': menuItem.price,
+        'category_id': categoryId, // Use validated category ID
+        'image_url': menuItem.imageUrl,
+        'is_available': menuItem.isAvailable ? 1 : 0,
+        'preparation_time': menuItem.preparationTime ?? 15,
+        'is_vegetarian': menuItem.isVegetarian ? 1 : 0,
+        'is_vegan': menuItem.isVegan ? 1 : 0,
+        'is_gluten_free': menuItem.isGlutenFree ? 1 : 0,
+        'is_spicy': menuItem.isSpicy ? 1 : 0,
+        'spice_level': menuItem.spiceLevel ?? 0,
+        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      
+      await _databaseService.insert('menu_items', menuItemData);
+      debugPrint('✅ Created missing menu item: ${menuItem.id}');
+    } catch (e) {
+      debugPrint('❌ Failed to create missing menu item ${menuItem.id}: $e');
+      throw OrderServiceException('Failed to create menu item', operation: 'create_menu_item', originalError: e);
+    }
+  }
+
+  /// Creates a missing menu item in the database.
+  /// 
+  /// This method ensures that the menu item and its category exist
+  /// before creating the menu item to prevent foreign key constraints.
+  /// [menuItem] is the menu item to create.
+  Future<void> _createMissingMenuItem(MenuItem menuItem) async {
+    try {
+      debugPrint('🔧 Creating missing menu item: ${menuItem.name} (${menuItem.id})');
+      
+      // Ensure default category exists first
+      await _ensureDefaultCategoryExists();
+      
+      // Use the default category if the menuItem's category is empty or null
+      String categoryId = menuItem.categoryId;
+      if (categoryId.isEmpty) {
+        categoryId = 'default-category';
+      }
+      
+      // Check if category exists, create if it doesn't
+      final categoryExists = await _databaseService.query(
+        'categories',
+        where: 'id = ?',
+        whereArgs: [categoryId],
+      );
+      
+      if (categoryExists.isEmpty && categoryId != 'default-category') {
+        debugPrint('🔧 Creating missing category: $categoryId');
+        await _databaseService.insert('categories', {
+          'id': categoryId,
+          'name': categoryId.replaceAll('-', ' ').replaceAll('_', ' ').toUpperCase(),
+          'description': 'Auto-created category',
+          'is_active': 1,
+          'sort_order': 999,
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        });
+      }
+      
+      // Create the menu item with validated category
+      final menuItemData = {
+        'id': menuItem.id,
+        'name': menuItem.name.isNotEmpty ? menuItem.name : 'Unknown Item',
+        'description': menuItem.description ?? 'Auto-created menu item',
+        'price': menuItem.price,
+        'category_id': categoryId, // Use validated category ID
+        'image_url': menuItem.imageUrl,
+        'is_available': menuItem.isAvailable ? 1 : 0,
+        'preparation_time': menuItem.preparationTime ?? 15,
+        'is_vegetarian': menuItem.isVegetarian ? 1 : 0,
+        'is_vegan': menuItem.isVegan ? 1 : 0,
+        'is_gluten_free': menuItem.isGlutenFree ? 1 : 0,
+        'is_spicy': menuItem.isSpicy ? 1 : 0,
+        'spice_level': menuItem.spiceLevel ?? 0,
+        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      
+      await _databaseService.insert('menu_items', menuItemData);
+      debugPrint('✅ Created missing menu item: ${menuItem.id}');
+    } catch (e) {
+      debugPrint('❌ Failed to create missing menu item ${menuItem.id}: $e');
+      throw OrderServiceException('Failed to create menu item', operation: 'create_menu_item', originalError: e);
+    }
+  }
+
+  /// Creates a missing menu item in the database.
+  /// 
+  /// This method ensures that the menu item and its category exist
+  /// before creating the menu item to prevent foreign key constraints.
+  /// [menuItem] is the menu item to create.
+  Future<void> _createMissingMenuItem(MenuItem menuItem) async {
+    try {
+      debugPrint('🔧 Creating missing menu item: ${menuItem.name} (${menuItem.id})');
+      
+      // Ensure default category exists first
+      await _ensureDefaultCategoryExists();
+      
+      // Use the default category if the menuItem's category is empty or null
+      String categoryId = menuItem.categoryId;
+      if (categoryId.isEmpty) {
+        categoryId = 'default-category';
+      }
+      
+      // Check if category exists, create if it doesn't
+      final categoryExists = await _databaseService.query(
+        'categories',
+        where: 'id = ?',
+        whereArgs: [categoryId],
+      );
+      
+      if (categoryExists.isEmpty && categoryId != 'default-category') {
+        debugPrint('🔧 Creating missing category: $categoryId');
+        await _databaseService.insert('categories', {
+          'id': categoryId,
+          'name': categoryId.replaceAll('-', ' ').replaceAll('_', ' ').toUpperCase(),
+          'description': 'Auto-created category',
+          'is_active': 1,
+          'sort_order': 999,
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        });
+      }
+      
+      // Create the menu item with validated category
+      final menuItemData = {
+        'id': menuItem.id,
+        'name': menuItem.name.isNotEmpty ? menuItem.name : 'Unknown Item',
+        'description': menuItem.description ?? 'Auto-created menu item',
+        'price': menuItem.price,
+        'category_id': categoryId, // Use validated category ID
+        'image_url': menuItem.imageUrl,
+        'is_available': menuItem.isAvailable ? 1 : 0,
+        'preparation_time': menuItem.preparationTime ?? 15,
+        'is_vegetarian': menuItem.isVegetarian ? 1 : 0,
+        'is_vegan': menuItem.isVegan ? 1 : 0,
+        'is_gluten_free': menuItem.isGlutenFree ? 1 : 0,
+        'is_spicy': menuItem.isSpicy ? 1 : 0,
+        'spice_level': menuItem.spiceLevel ?? 0,
+        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      
+      await _databaseService.insert('menu_items', menuItemData);
+      debugPrint('✅ Created missing menu item: ${menuItem.id}');
+    } catch (e) {
+      debugPrint('❌ Failed to create missing menu item ${menuItem.id}: $e');
+      throw OrderServiceException('Failed to create menu item', operation: 'create_menu_item', originalError: e);
+    }
+  }
+
+  /// Creates a missing menu item in the database.
+  /// 
+  /// This method ensures that the menu item and its category exist
+  /// before creating the menu item to prevent foreign key constraints.
+  /// [menuItem] is the menu item to create.
+  Future<void> _createMissingMenuItem(MenuItem menuItem) async {
+    try {
+      debugPrint('🔧 Creating missing menu item: ${menuItem.name} (${menuItem.id})');
+      
+      // Ensure default category exists first
+      await _ensureDefaultCategoryExists();
+      
+      // Use the default category if the menuItem's category is empty or null
+      String categoryId = menuItem.categoryId;
+      if (categoryId.isEmpty) {
+        categoryId = 'default-category';
+      }
+      
+      // Check if category exists, create if it doesn't
+      final categoryExists = await _databaseService.query(
+        'categories',
+        where: 'id = ?',
+        whereArgs: [categoryId],
+      );
+      
+      if (categoryExists.isEmpty && categoryId != 'default-category') {
+        debugPrint('🔧 Creating missing category: $categoryId');
+        await _databaseService.insert('categories', {
+          'id': categoryId,
+          'name': categoryId.replaceAll('-', ' ').replaceAll('_', ' ').toUpperCase(),
+          'description': 'Auto-created category',
+          'is_active': 1,
+          'sort_order': 999,
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        });
+      }
+      
+      // Create the menu item with validated category
+      final menuItemData = {
+        'id': menuItem.id,
+        'name': menuItem.name.isNotEmpty ? menuItem.name : 'Unknown Item',
+        'description': menuItem.description ?? 'Auto-created menu item',
+        'price': menuItem.price,
+        'category_id': categoryId, // Use validated category ID
+        'image_url': menuItem.imageUrl,
+        'is_available': menuItem.isAvailable ? 1 : 0,
+        'preparation_time': menuItem.preparationTime ?? 15,
+        'is_vegetarian': menuItem.isVegetarian ? 1 : 0,
+        'is_vegan': menuItem.isVegan ? 1 : 0,
+        'is_gluten_free': menuItem.isGlutenFree ? 1 : 0,
+        'is_spicy': menuItem.isSpicy ? 1 : 0,
+        'spice_level': menuItem.spiceLevel ?? 0,
+        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      
+      await _databaseService.insert('menu_items', menuItemData);
+      debugPrint('✅ Created missing menu item: ${menuItem.id}');
+    } catch (e) {
+      debugPrint('❌ Failed to create missing menu item ${menuItem.id}: $e');
+      throw OrderServiceException('Failed to create menu item', operation: 'create_menu_item', originalError: e);
+    }
+  }
+
+  /// Creates a missing menu item in the database.
+  /// 
+  /// This method ensures that the menu item and its category exist
+  /// before creating the menu item to prevent foreign key constraints.
+  /// [menuItem] is the menu item to create.
+  Future<void> _createMissingMenuItem(MenuItem menuItem) async {
+    try {
+      debugPrint('🔧 Creating missing menu item: ${menuItem.name} (${menuItem.id})');
+      
+      // Ensure default category exists first
+      await _ensureDefaultCategoryExists();
+      
+      // Use the default category if the menuItem's category is empty or null
+      String categoryId = menuItem.categoryId;
+      if (categoryId.isEmpty) {
+        categoryId = 'default-category';
+      }
+      
+      // Check if category exists, create if it doesn't
+      final categoryExists = await _databaseService.query(
+        'categories',
+        where: 'id = ?',
+        whereArgs: [categoryId],
+      );
+      
+      if (categoryExists.isEmpty && categoryId != 'default-category') {
+        debugPrint('🔧 Creating missing category: $categoryId');
+        await _databaseService.insert('categories', {
+          'id': categoryId,
+          'name': categoryId.replaceAll('-', ' ').replaceAll('_', ' ').toUpperCase(),
+          'description': 'Auto-created category',
+          'is_active': 1,
+          'sort_order': 999,
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        });
+      }
+      
+      // Create the menu item with validated category
+      final menuItemData = {
+        'id': menuItem.id,
+        'name': menuItem.name.isNotEmpty ? menuItem.name : 'Unknown Item',
+        'description': menuItem.description ?? 'Auto-created menu item',
+        'price': menuItem.price,
+        'category_id': categoryId, // Use validated category ID
+        'image_url': menuItem.imageUrl,
+        'is_available': menuItem.isAvailable ? 1 : 0,
+        'preparation_time': menuItem.preparationTime ?? 15,
+        'is_vegetarian': menuItem.isVegetarian ? 1 : 0,
+        'is_vegan': menuItem.isVegan ? 1 : 0,
+        'is_gluten_free': menuItem.isGlutenFree ? 1 : 0,
+        'is_spicy': menuItem.isSpicy ? 1 : 0,
+        'spice_level': menuItem.spiceLevel ?? 0,
+        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      
+      await _databaseService.insert('menu_items', menuItemData);
+      debugPrint('✅ Created missing menu item: ${menuItem.id}');
+    } catch (e) {
+      debugPrint('❌ Failed to create missing menu item ${menuItem.id}: $e');
+      throw OrderServiceException('Failed to create menu item', operation: 'create_menu_item', originalError: e);
+    }
+  }
+
+  /// Creates a missing menu item in the database.
+  /// 
+  /// This method ensures that the menu item and its category exist
+  /// before creating the menu item to prevent foreign key constraints.
+  /// [menuItem] is the menu item to create.
+  Future<void> _createMissingMenuItem(MenuItem menuItem) async {
+    try {
+      debugPrint('🔧 Creating missing menu item: ${menuItem.name} (${menuItem.id})');
+      
+      // Ensure default category exists first
+      await _ensureDefaultCategoryExists();
+      
+      // Use the default category if the menuItem's category is empty or null
+      String categoryId = menuItem.categoryId;
+      if (categoryId.isEmpty) {
+        categoryId = 'default-category';
+      }
+      
+      // Check if category exists, create if it doesn't
+      final categoryExists = await _databaseService.query(
+        'categories',
+        where: 'id = ?',
+        whereArgs: [categoryId],
+      );
+      
+      if (categoryExists.isEmpty && categoryId != 'default-category') {
+        debugPrint('🔧 Creating missing category: $categoryId');
+        await _databaseService.insert('categories', {
+          'id': categoryId,
+          'name': categoryId.replaceAll('-', ' ').replaceAll('_', ' ').toUpperCase(),
+          'description': 'Auto-created category',
+          'is_active': 1,
+          'sort_order': 999,
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        });
+      }
+      
+      // Create the menu item with validated category
+      final menuItemData = {
+        'id': menuItem.id,
+        'name': menuItem.name.isNotEmpty ? menuItem.name : 'Unknown Item',
+        'description': menuItem.description ?? 'Auto-created menu item',
+        'price': menuItem.price,
+        'category_id': categoryId, // Use validated category ID
+        'image_url': menuItem.imageUrl,
+        'is_available': menuItem.isAvailable ? 1 : 0,
+        'preparation_time': menuItem.preparationTime ?? 15,
+        'is_vegetarian': menuItem.isVegetarian ? 1 : 0,
+        'is_vegan': menuItem.isVegan ? 1 : 0,
+        'is_gluten_free': menuItem.isGlutenFree ? 1 : 0,
+        'is_spicy': menuItem.isSpicy ? 1 : 0,
+        'spice_level': menuItem.spiceLevel ?? 0,
+        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      
+      await _databaseService.insert('menu_items', menuItemData);
+      debugPrint('✅ Created missing menu item: ${menuItem.id}');
+    } catch (e) {
+      debugPrint('❌ Failed to create missing menu item ${menuItem.id}: $e');
+      throw OrderServiceException('Failed to create menu item', operation: 'create_menu_item', originalError: e);
+    }
+  }
+
+  /// Creates a missing menu item in the database.
+  /// 
+  /// This method ensures that the menu item and its category exist
+  /// before creating the menu item to prevent foreign key constraints.
+  /// [menuItem] is the menu item to create.
+  Future<void> _createMissingMenuItem(MenuItem menuItem) async {
+    try {
+      debugPrint('🔧 Creating missing menu item: ${menuItem.name} (${menuItem.id})');
+      
+      // Ensure default category exists first
+      await _ensureDefaultCategoryExists();
+      
+      // Use the default category if the menuItem's category is empty or null
+      String categoryId = menuItem.categoryId;
+      if (categoryId.isEmpty) {
+        categoryId = 'default-category';
+      }
+      
+      // Check if category exists, create if it doesn't
+      final categoryExists = await _databaseService.query(
+        'categories',
+        where: 'id = ?',
+        whereArgs: [categoryId],
+      );
+      
+      if (categoryExists.isEmpty && categoryId != 'default-category') {
+        debugPrint('🔧 Creating missing category: $categoryId');
+        await _databaseService.insert('categories', {
+          'id': categoryId,
+          'name': categoryId.replaceAll('-', ' ').replaceAll('_', ' ').toUpperCase(),
+          'description': 'Auto-created category',
+          'is_active': 1,
+          'sort_order': 999,
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        });
+      }
+      
+      // Create the menu item with validated category
+      final menuItemData = {
+        'id': menuItem.id,
+        'name': menuItem.name.isNotEmpty ? menuItem.name : 'Unknown Item',
+        'description': menuItem.description ?? 'Auto-created menu item',
+        'price': menuItem.price,
+        'category_id': categoryId, // Use validated category ID
+        'image_url': menuItem.imageUrl,
+        'is_available': menuItem.isAvailable ? 1 : 0,
+        'preparation_time': menuItem.preparationTime ?? 15,
+        'is_vegetarian': menuItem.isVegetarian ? 1 : 0,
+        'is_vegan': menuItem.isVegan ? 1 : 0,
+        'is_gluten_free': menuItem.isGlutenFree ? 1 : 0,
+        'is_spicy': menuItem.isSpicy ? 1 : 0,
+        'spice_level': menuItem.spiceLevel ?? 0,
+        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      
+      await _databaseService.insert('menu_items', menuItemData);
+      debugPrint('✅ Created missing menu item: ${menuItem.id}');
+    } catch (e) {
+      debugPrint('❌ Failed to create missing menu item ${menuItem.id}: $e');
+      throw OrderServiceException('Failed to create menu item', operation: 'create_menu_item', originalError: e);
+    }
+  }
+
+  /// Creates a missing menu item in the database.
+  /// 
+  /// This method ensures that the menu item and its category exist
+  /// before creating the menu item to prevent foreign key constraints.
+  /// [menuItem] is the menu item to create.
+  Future<void> _createMissingMenuItem(MenuItem menuItem) async {
+    try {
+      debugPrint('🔧 Creating missing menu item: ${menuItem.name} (${menuItem.id})');
+      
+      // Ensure default category exists first
+      await _ensureDefaultCategoryExists();
+      
+      // Use the default category if the menuItem's category is empty or null
+      String categoryId = menuItem.categoryId;
+      if (categoryId.isEmpty) {
+        categoryId = 'default-category';
+      }
+      
+      // Check if category exists, create if it doesn't
+      final categoryExists = await _databaseService.query(
+        'categories',
+        where: 'id = ?',
+        whereArgs: [categoryId],
+      );
+      
+      if (categoryExists.isEmpty && categoryId != 'default-category') {
+        debugPrint('🔧 Creating missing category: $categoryId');
+        await _databaseService.insert('categories', {
+          'id': categoryId,
+          'name': categoryId.replaceAll('-', ' ').replaceAll('_', ' ').toUpperCase(),
+          'description': 'Auto-created category',
+          'is_active': 1,
+          'sort_order': 999,
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        });
+      }
+      
+      // Create the menu item with validated category
+      final menuItemData = {
+        'id': menuItem.id,
+        'name': menuItem.name.isNotEmpty ? menuItem.name : 'Unknown Item',
+        'description': menuItem.description ?? 'Auto-created menu item',
+        'price': menuItem.price,
+        'category_id': categoryId, // Use validated category ID
+        'image_url': menuItem.imageUrl,
+        'is_available': menuItem.isAvailable ? 1 : 0,
+        'preparation_time': menuItem.preparationTime ?? 15,
+        'is_vegetarian': menuItem.isVegetarian ? 1 : 0,
+        'is_vegan': menuItem.isVegan ? 1 : 0,
+        'is_gluten_free': menuItem.isGlutenFree ? 1 : 0,
+        'is_spicy': menuItem.isSpicy ? 1 : 0,
+        'spice_level': menuItem.spiceLevel ?? 0,
+        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      
+      await _databaseService.insert('menu_items', menuItemData);
+      debugPrint('✅ Created missing menu item: ${menuItem.id}');
+    } catch (e) {
+      debugPrint('❌ Failed to create missing menu item ${menuItem.id}: $e');
+      throw OrderServiceException('Failed to create menu item', operation: 'create_menu_item', originalError: e);
+    }
+  }
+
+  /// Creates a missing menu item in the database.
+  /// 
+  /// This method ensures that the menu item and its category exist
+  /// before creating the menu item to prevent foreign key constraints.
+  /// [menuItem] is the menu item to create.
+  Future<void> _createMissingMenuItem(MenuItem menuItem) async {
+    try {
+      debugPrint('🔧 Creating missing menu item: ${menuItem.name} (${menuItem.id})');
+      
+      // Ensure default category exists first
+      await _ensureDefaultCategoryExists();
+      
+      // Use the default category if the menuItem's category is empty or null
+      String categoryId = menuItem.categoryId;
+      if (categoryId.isEmpty) {
+        categoryId = 'default-category';
+      }
+      
+      // Check if category exists, create if it doesn't
+      final categoryExists = await _databaseService.query(
+        'categories',
+        where: 'id = ?',
+        whereArgs: [categoryId],
+      );
+      
+      if (categoryExists.isEmpty && categoryId != 'default-category') {
+        debugPrint('🔧 Creating missing category: $categoryId');
+        await _databaseService.insert('categories', {
+          'id': categoryId,
+          'name': categoryId.replaceAll('-', ' ').replaceAll('_', ' ').toUpperCase(),
+          'description': 'Auto-created category',
+          'is_active': 1,
+          'sort_order': 999,
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        });
+      }
+      
+      // Create the menu item with validated category
+      final menuItemData = {
+        'id': menuItem.id,
+        'name': menuItem.name.isNotEmpty ? menuItem.name : 'Unknown Item',
+        'description': menuItem.description ?? 'Auto-created menu item',
+        'price': menuItem.price,
+        'category_id': categoryId, // Use validated category ID
+        'image_url': menuItem.imageUrl,
+        'is_available': menuItem.isAvailable ? 1 : 0,
+        'preparation_time': menuItem.preparationTime ?? 15,
+        'is_vegetarian': menuItem.isVegetarian ? 1 : 0,
+        'is_vegan': menuItem.isVegan ? 1 : 0,
+        'is_gluten_free': menuItem.isGlutenFree ? 1 : 0,
+        'is_spicy': menuItem.isSpicy ? 1 : 0,
+        'spice_level': menuItem.spiceLevel ?? 0,
+        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      
+      await _databaseService.insert('menu_items', menuItemData);
+      debugPrint('✅ Created missing menu item: ${menuItem.id}');
+    } catch (e) {
+      debugPrint('❌ Failed to create missing menu item ${menuItem.id}: $e');
+      throw OrderServiceException('Failed to create menu item', operation: 'create_menu_item', originalError: e);
+    }
+  }
+
+  /// Creates a missing menu item in the database.
+  /// 
+  /// This method ensures that the menu item and its category exist
+  /// before creating the menu item to prevent foreign key constraints.
+  /// [menuItem] is the menu item to create.
+  Future<void> _createMissingMenuItem(MenuItem menuItem) async {
+    try {
+      debugPrint('🔧 Creating missing menu item: ${menuItem.name} (${menuItem.id})');
+      
+      // Ensure default category exists first
+      await _ensureDefaultCategoryExists();
+      
+      // Use the default category if the menuItem's category is empty or null
+      String categoryId = menuItem.categoryId;
+      if (categoryId.isEmpty) {
+        categoryId = 'default-category';
+      }
+      
+      // Check if category exists, create if it doesn't
+      final categoryExists = await _databaseService.query(
+        'categories',
+        where: 'id = ?',
+        whereArgs: [categoryId],
+      );
+      
+      if (categoryExists.isEmpty && categoryId != 'default-category') {
+        debugPrint('🔧 Creating missing category: $categoryId');
+        await _databaseService.insert('categories', {
+          'id': categoryId,
+          'name': categoryId.replaceAll('-', ' ').replaceAll('_', ' ').toUpperCase(),
+          'description': 'Auto-created category',
+          'is_active': 1,
+          'sort_order': 999,
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        });
+      }
+      
+      // Create the menu item with validated category
+      final menuItemData = {
+        'id': menuItem.id,
+        'name': menuItem.name.isNotEmpty ? menuItem.name : 'Unknown Item',
+        'description': menuItem.description ?? 'Auto-created menu item',
+        'price': menuItem.price,
+        'category_id': categoryId, // Use validated category ID
+        'image_url': menuItem.imageUrl,
+        'is_available': menuItem.isAvailable ? 1 : 0,
+        'preparation_time': menuItem.preparationTime ?? 15,
+        'is_vegetarian': menuItem.isVegetarian ? 1 : 0,
+        'is_vegan': menuItem.isVegan ? 1 : 0,
+        'is_gluten_free': menuItem.isGlutenFree ? 1 : 0,
+        'is_spicy': menuItem.isSpicy ? 1 : 0,
+        'spice_level': menuItem.spiceLevel ?? 0,
+        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      
+      await _databaseService.insert('menu_items', menuItemData);
+      debugPrint('✅ Created missing menu item: ${menuItem.id}');
+    } catch (e) {
+      debugPrint('❌ Failed to create missing menu item ${menuItem.id}: $e');
+      throw OrderServiceException('Failed to create menu item', operation: 'create_menu_item', originalError: e);
+    }
+  }
+
+  /// Creates a missing menu item in the database.
+  /// 
+  /// This method ensures that the menu item and its category exist
+  /// before creating the menu item to prevent foreign key constraints.
+  /// [menuItem] is the menu item to create.
+  Future<void> _createMissingMenuItem(MenuItem menuItem) async {
+    try {
+      debugPrint('🔧 Creating missing menu item: ${menuItem.name} (${menuItem.id})');
+      
+      // Ensure default category exists first
+      await _ensureDefaultCategoryExists();
+      
+      // Use the default category if the menuItem's category is empty or null
+      String categoryId = menuItem.categoryId;
+      if (categoryId.isEmpty) {
+        categoryId = 'default-category';
+      }
+      
+      // Check if category exists, create if it doesn't
+      final categoryExists = await _databaseService.query(
+        'categories',
+        where: 'id = ?',
+        whereArgs: [categoryId],
+      );
+      
+      if (categoryExists.isEmpty && categoryId != 'default-category') {
+        debugPrint('🔧 Creating missing category: $categoryId');
+        await _databaseService.insert('categories', {
+          'id': categoryId,
+          'name': categoryId.replaceAll('-', ' ').replaceAll('_', ' ').toUpperCase(),
+          'description': 'Auto-created category',
+          'is_active': 1,
+          'sort_order': 999,
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        });
+      }
+      
+      // Create the menu item with validated category
+      final menuItemData = {
+        'id': menuItem.id,
+        'name': menuItem.name.isNotEmpty ? menuItem.name : 'Unknown Item',
+        'description': menuItem.description ?? 'Auto-created menu item',
+        'price': menuItem.price,
+        'category_id': categoryId, // Use validated category ID
+        'image_url': menuItem.imageUrl,
+        'is_available': menuItem.isAvailable ? 1 : 0,
+        'preparation_time': menuItem.preparationTime ?? 15,
+        'is_vegetarian': menuItem.isVegetarian ? 1 : 0,
+        'is_vegan': menuItem.isVegan ? 1 : 0,
+        'is_gluten_free': menuItem.isGlutenFree ? 1 : 0,
+        'is_spicy': menuItem.isSpicy ? 1 : 0,
+        'spice_level': menuItem.spiceLevel ?? 0,
+        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      
+      await _databaseService.insert('menu_items', menuItemData);
+      debugPrint('✅ Created missing menu item: ${menuItem.id}');
+    } catch (e) {
+      debugPrint('❌ Failed to create missing menu item ${menuItem.id}: $e');
+      throw OrderServiceException('Failed to create menu item', operation: 'create_menu_item', originalError: e);
+    }
+  }
+
+  /// Creates a missing menu item in the database.
+  /// 
+  /// This method ensures that the menu item and its category exist
+  /// before creating the menu item to prevent foreign key constraints.
+  /// [menuItem] is the menu item to create.
+  Future<void> _createMissingMenuItem(MenuItem menuItem) async {
+    try {
+      debugPrint('🔧 Creating missing menu item: ${menuItem.name} (${menuItem.id})');
+      
+      // Ensure default category exists first
+      await _ensureDefaultCategoryExists();
+      
+      // Use the default category if the menuItem's category is empty or null
+      String categoryId = menuItem.categoryId;
+      if (categoryId.isEmpty) {
+        categoryId = 'default-category';
+      }
+      
+      // Check if category exists, create if it doesn't
+      final categoryExists = await _databaseService.query(
+        'categories',
+        where: 'id = ?',
+        whereArgs: [categoryId],
+      );
+      
+      if (categoryExists.isEmpty && categoryId != 'default-category') {
+        debugPrint('🔧 Creating missing category: $categoryId');
+        await _databaseService.insert('categories', {
+          'id': categoryId,
+          'name': categoryId.replaceAll('-', ' ').replaceAll('_', ' ').toUpperCase(),
+          'description': 'Auto-created category',
+          'is_active': 1,
+          'sort_order': 999,
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        });
+      }
+      
+      // Create the menu item with validated category
+      final menuItemData = {
+        'id': menuItem.id,
+        'name': menuItem.name.isNotEmpty ? menuItem.name : 'Unknown Item',
+        'description': menuItem.description ?? 'Auto-created menu item',
+        'price': menuItem.price,
+        'category_id': categoryId, // Use validated category ID
+        'image_url': menuItem.imageUrl,
+        'is_available': menuItem.isAvailable ? 1 : 0,
+        'preparation_time': menuItem.preparationTime ?? 15,
+        'is_vegetarian': menuItem.isVegetarian ? 1 : 0,
+        'is_vegan': menuItem.isVegan ? 1 : 0,
+        'is_gluten_free': menuItem.isGlutenFree ? 1 : 0,
+        'is_spicy': menuItem.isSpicy ? 1 : 0,
+        'spice_level': menuItem.spiceLevel ?? 0,
+        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      
+      await _databaseService.insert('menu_items', menuItemData);
+      debugPrint('✅ Created missing menu item: ${menuItem.id}');
+    } catch (e) {
+      debugPrint('❌ Failed to create missing menu item ${menuItem.id}: $e');
+      throw OrderServiceException('Failed to create menu item', operation: 'create_menu_item', originalError: e);
+    }
+  }
+
+  /// Creates a missing menu item in the database.
+  /// 
+  /// This method ensures that the menu item and its category exist
+  /// before creating the menu item to prevent foreign key constraints.
+  /// [menuItem] is the menu item to create.
+  Future<void> _createMissingMenuItem(MenuItem menuItem) async {
+    try {
+      debugPrint('🔧 Creating missing menu item: ${menuItem.name} (${menuItem.id})');
+      
+      // Ensure default category exists first
+      await _ensureDefaultCategoryExists();
+      
+      // Use the default category if the menuItem's category is empty or null
+      String categoryId = menuItem.categoryId;
+      if (categoryId.isEmpty) {
+        categoryId = 'default-category';
+      }
+      
+      // Check if category exists, create if it doesn't
+      final categoryExists = await _databaseService.query(
+        'categories',
+        where: 'id = ?',
+        whereArgs: [categoryId],
+      );
+      
+      if (categoryExists.isEmpty && categoryId != 'default-category') {
+        debugPrint('🔧 Creating missing category: $categoryId');
+        await _databaseService.insert('categories', {
+          'id': categoryId,
+          'name': categoryId.replaceAll('-', ' ').replaceAll('_', ' ').toUpperCase(),
+          'description': 'Auto-created category',
+          'is_active': 1,
+          'sort_order': 999,
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        });
+      }
+      
+      // Create the menu item with validated category
+      final menuItemData = {
+        'id': menuItem.id,
+        'name': menuItem.name.isNotEmpty ? menuItem.name : 'Unknown Item',
+        'description': menuItem.description ?? 'Auto-created menu item',
+        'price': menuItem.price,
+        'category_id': categoryId, // Use validated category ID
+        'image_url': menuItem.imageUrl,
+        'is_available': menuItem.isAvailable ? 1 : 0,
+        'preparation_time': menuItem.preparationTime ?? 15,
+        'is_vegetarian': menuItem.isVegetarian ? 1 : 0,
+        'is_vegan': menuItem.isVegan ? 1 : 0,
+        'is_gluten_free': menuItem.isGlutenFree ? 1 : 0,
+        'is_spicy': menuItem.isSpicy ? 1 : 0,
+        'spice_level': menuItem.spiceLevel ?? 0,
+        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      
+      await _databaseService.insert('menu_items', menuItemData);
+      debugPrint('✅ Created missing menu item: ${menuItem.id}');
+    } catch (e) {
+      debugPrint('❌ Failed to create missing menu item ${menuItem.id}: $e');
+      throw OrderServiceException('Failed to create menu item', operation: 'create_menu_item', originalError: e);
+    }
+  }
+
+  /// Creates a missing menu item in the database.
+  /// 
+  /// This method ensures that the menu item and its category exist
+  /// before creating the menu item to prevent foreign key constraints.
+  /// [menuItem] is the menu item to create.
+  Future<void> _createMissingMenuItem(MenuItem menuItem) async {
+    try {
+      debugPrint('🔧 Creating missing menu item: ${menuItem.name} (${menuItem.id})');
+      
+      // Ensure default category exists first
+      await _ensureDefaultCategoryExists();
+      
+      // Use the default category if the menuItem's category is empty or null
+      String categoryId = menuItem.categoryId;
+      if (categoryId.isEmpty) {
+        categoryId = 'default-category';
+      }
+      
+      // Check if category exists, create if it doesn't
+      final categoryExists = await _databaseService.query(
+        'categories',
+        where: 'id = ?',
+        whereArgs: [categoryId],
+      );
+      
+      if (categoryExists.isEmpty && categoryId != 'default-category') {
+        debugPrint('🔧 Creating missing category: $categoryId');
+        await _databaseService.insert('categories', {
+          'id': categoryId,
+          'name': categoryId.replaceAll('-', ' ').replaceAll('_', ' ').toUpperCase(),
+          'description': 'Auto-created category',
+          'is_active': 1,
+          'sort_order': 999,
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        });
+      }
+      
+      // Create the menu item with validated category
+      final menuItemData = {
+        'id': menuItem.id,
+        'name': menuItem.name.isNotEmpty ? menuItem.name : 'Unknown Item',
+        'description': menuItem.description ?? 'Auto-created menu item',
+        'price': menuItem.price,
+        'category_id': categoryId, // Use validated category ID
+        'image_url': menuItem.imageUrl,
+        'is_available': menuItem.isAvailable ? 1 : 0,
+        'preparation_time': menuItem.preparationTime ?? 15,
+        'is_vegetarian': menuItem.isVegetarian ? 1 : 0,
+        'is_vegan': menuItem.isVegan ? 1 : 0,
+        'is_gluten_free': menuItem.isGlutenFree ? 1 : 0,
+        'is_spicy': menuItem.isSpicy ? 1 : 0,
+        'spice_level': menuItem.spiceLevel ?? 0,
+        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      
+      await _databaseService.insert('menu_items', menuItemData);
+      debugPrint('✅ Created missing menu item: ${menuItem.id}');
+    } catch (e) {
+      debugPrint('❌ Failed to create missing menu item ${menuItem.id}: $e');
+      throw OrderServiceException('Failed to create menu item', operation: 'create_menu_item', originalError: e);
+    }
+  }
+
+  /// Creates a missing menu item in the database.
+  /// 
+  /// This method ensures that the menu item and its category exist
+  /// before creating the menu item to prevent foreign key constraints.
+  /// [menuItem] is the menu item to create.
+  Future<void> _createMissingMenuItem(MenuItem menuItem) async {
+    try {
+      debugPrint('🔧 Creating missing menu item: ${menuItem.name} (${menuItem.id})');
+      
+      // Ensure default category exists first
+      await _ensureDefaultCategoryExists();
+      
+      // Use the default category if the menuItem's category is empty or null
+      String categoryId = menuItem.categoryId;
+      if (categoryId.isEmpty) {
+        categoryId = 'default-category';
+      }
+      
+      // Check if category exists, create if it doesn't
+      final categoryExists = await _databaseService.query(
+        'categories',
+        where: 'id = ?',
+        whereArgs: [categoryId],
+      );
+      
+      if (categoryExists.isEmpty && categoryId != 'default-category') {
+        debugPrint('🔧 Creating missing category: $categoryId');
+        await _databaseService.insert('categories', {
+          'id': categoryId,
+          'name': categoryId.replaceAll('-', ' ').replaceAll('_', ' ').toUpperCase(),
+          'description': 'Auto-created category',
+          'is_active': 1,
+          'sort_order': 999,
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        });
+      }
+      
+      // Create the menu item with validated category
+      final menuItemData = {
+        'id': menuItem.id,
+        'name': menuItem.name.isNotEmpty ? menuItem.name : 'Unknown Item',
+        'description': menuItem.description ?? 'Auto-created menu item',
+        'price': menuItem.price,
+        'category_id': categoryId, // Use validated category ID
+        'image_url': menuItem.imageUrl,
+        'is_available': menuItem.isAvailable ? 1 : 0,
+        'preparation_time': menuItem.preparationTime ?? 15,
+        'is_vegetarian': menuItem.isVegetarian ? 1 : 0,
+        'is_vegan': menuItem.isVegan ? 1 : 0,
+        'is_gluten_free': menuItem.isGlutenFree ? 1 : 0,
+        'is_spicy': menuItem.isSpicy ? 1 : 0,
+        'spice_level': menuItem.spiceLevel ?? 0,
+        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      
+      await _databaseService.insert('menu_items', menuItemData);
+      debugPrint('✅ Created missing menu item: ${menuItem.id}');
+    } catch (e) {
+      debugPrint('❌ Failed to create missing menu item ${menuItem.id}: $e');
+      throw OrderServiceException('Failed to create menu item', operation: 'create_menu_item', originalError: e);
+    }
+  }
+
+  /// Creates a missing menu item in the database.
+  /// 
+  /// This method ensures that the menu item and its category exist
+  /// before creating the menu item to prevent foreign key constraints.
+  /// [menuItem] is the menu item to create.
+  Future<void> _createMissingMenuItem(MenuItem menuItem) async {
+    try {
+      debugPrint('🔧 Creating missing menu item: ${menuItem.name} (${menuItem.id})');
+      
+      // Ensure default category exists first
+      await _ensureDefaultCategoryExists();
+      
+      // Use the default category if the menuItem's category is empty or null
+      String categoryId = menuItem.categoryId;
+      if (categoryId.isEmpty) {
+        categoryId = 'default-category';
+      }
+      
+      // Check if category exists, create if it doesn't
+      final categoryExists = await _databaseService.query(
+        'categories',
+        where: 'id = ?',
+        whereArgs: [categoryId],
+      );
+      
+      if (categoryExists.isEmpty && categoryId != 'default-category') {
+        debugPrint('🔧 Creating missing category: $categoryId');
+        await _databaseService.insert('categories', {
+          'id': categoryId,
+          'name': categoryId.replaceAll('-', ' ').replaceAll('_', ' ').toUpperCase(),
+          'description': 'Auto-created category',
+          'is_active': 1,
+          'sort_order': 999,
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        });
+      }
+      
+      // Create the menu item with validated category
+      final menuItemData = {
+        'id': menuItem.id,
+        'name': menuItem.name.isNotEmpty ? menuItem.name : 'Unknown Item',
+        'description': menuItem.description ?? 'Auto-created menu item',
+        'price': menuItem.price,
+        'category_id': categoryId, // Use validated category ID
+        'image_url': menuItem.imageUrl,
+        'is_available': menuItem.isAvailable ? 1 : 0,
+        'preparation_time': menuItem.preparationTime ?? 15,
+        'is_vegetarian': menuItem.isVegetarian ? 1 : 0,
+        'is_vegan': menuItem.isVegan ? 1 : 0,
+        'is_gluten_free': menuItem.isGlutenFree ? 1 : 0,
+        'is_spicy': menuItem.isSpicy ? 1 : 0,
+        'spice_level': menuItem.spiceLevel ?? 0,
+        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      
+      await _databaseService.insert('menu_items', menuItemData);
+      debugPrint('✅ Created missing menu item: ${menuItem.id}');
+    } catch (e) {
+      debugPrint('❌ Failed to create missing menu item ${menuItem.id}: $e');
+      throw OrderServiceException('Failed to create menu item', operation: 'create_menu_item', originalError: e);
+    }
+  }
+
+  /// Creates a missing menu item in the database.
+  /// 
+  /// This method ensures that the menu item and its category exist
+  /// before creating the menu item to prevent foreign key constraints.
+  /// [menuItem] is the menu item to create.
+  Future<void> _createMissingMenuItem(MenuItem menuItem) async {
+    try {
+      debugPrint('🔧 Creating missing menu item: ${menuItem.name} (${menuItem.id})');
+      
+      // Ensure default category exists first
+      await _ensureDefaultCategoryExists();
+      
+      // Use the default category if the menuItem's category is empty or null
+      String categoryId = menuItem.categoryId;
+      if (categoryId.isEmpty) {
+        categoryId = 'default-category';
+      }
+      
+      // Check if category exists, create if it doesn't
+      final categoryExists = await _databaseService.query(
+        'categories',
+        where: 'id = ?',
+        whereArgs: [categoryId],
+      );
+      
+      if (categoryExists.isEmpty && categoryId != 'default-category') {
+        debugPrint('🔧 Creating missing category: $categoryId');
+        await _databaseService.insert('categories', {
+          'id': categoryId,
+          'name': categoryId.replaceAll('-', ' ').replaceAll('_', ' ').toUpperCase(),
+          'description': 'Auto-created category',
+          'is_active': 1,
+          'sort_order': 999,
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        });
+      }
+      
+      // Create the menu item with validated category
+      final menuItemData = {
+        'id': menuItem.id,
+        'name': menuItem.name.isNotEmpty ? menuItem.name : 'Unknown Item',
+        'description': menuItem.description ?? 'Auto-created menu item',
+        'price': menuItem.price,
+        'category_id': categoryId, // Use validated category ID
+        'image_url': menuItem.imageUrl,
+        'is_available': menuItem.isAvailable ? 1 : 0,
+        'preparation_time': menuItem.preparationTime ?? 15,
+        'is_vegetarian': menuItem.isVegetarian ? 1 : 0,
+        'is_vegan': menuItem.isVegan ? 1 : 0,
+        'is_gluten_free': menuItem.isGlutenFree ? 1 : 0,
+        'is_spicy': menuItem.isSpicy ? 1 : 0,
+        'spice_level': menuItem.spiceLevel ?? 0,
+        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      
+      await _databaseService.insert('menu_items', menuItemData);
+      debugPrint('✅ Created missing menu item: ${menuItem.id}');
+    } catch (e) {
+      debugPrint('❌ Failed to create missing menu item ${menuItem.id}: $e');
+      throw OrderServiceException('Failed to create menu item', operation: 'create_menu_item', originalError: e);
+    }
+  }
+
+  /// Creates a missing menu item in the database.
+  /// 
+  /// This method ensures that the menu item and its category exist
+  /// before creating the menu item to prevent foreign key constraints.
+  /// [menuItem] is the menu item to create.
+  Future<void> _createMissingMenuItem(MenuItem menuItem) async {
+    try {
+      debugPrint('🔧 Creating missing menu item: ${menuItem.name} (${menuItem.id})');
+      
+      // Ensure default category exists first
+      await _ensureDefaultCategoryExists();
+      
+      // Use the default category if the menuItem's category is empty or null
+      String categoryId = menuItem.categoryId;
+      if (categoryId.isEmpty) {
+        categoryId = 'default-category';
+      }
+      
+      // Check if category exists, create if it doesn't
+      final categoryExists = await _databaseService.query(
+        'categories',
+        where: 'id = ?',
+        whereArgs: [categoryId],
+      );
+      
+      if (categoryExists.isEmpty && categoryId != 'default-category') {
+        debugPrint('🔧 Creating missing category: $categoryId');
+        await _databaseService.insert('categories', {
+          'id': categoryId,
+          'name': categoryId.replaceAll('-', ' ').replaceAll('_', ' ').toUpperCase(),
+          'description': 'Auto-created category',
+          'is_active': 1,
+          'sort_order': 999,
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        });
+      }
+      
+      // Create the menu item with validated category
+      final menuItemData = {
+        'id': menuItem.id,
+        'name': menuItem.name.isNotEmpty ? menuItem.name : 'Unknown Item',
+        'description': menuItem.description ?? 'Auto-created menu item',
+        'price': menuItem.price,
+        'category_id': categoryId, // Use validated category ID
+        'image_url': menuItem.imageUrl,
+        'is_available': menuItem.isAvailable ? 1 : 0,
+        'preparation_time': menuItem.preparationTime ?? 15,
+        'is_vegetarian': menuItem.isVegetarian ? 1 : 0,
+        'is_vegan': menuItem.isVegan ? 1 : 0,
+        'is_gluten_free': menuItem.isGlutenFree ? 1 : 0,
+        'is_spicy': menuItem.isSpicy ? 1 : 0,
+        'spice_level': menuItem.spiceLevel ?? 0,
+        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      
+      await _databaseService.insert('menu_items', menuItemData);
+      debugPrint('✅ Created missing menu item: ${menuItem.id}');
+    } catch (e) {
+      debugPrint('❌ Failed to create missing menu item ${menuItem.id}: $e');
+      throw OrderServiceException('Failed to create menu item', operation: 'create_menu_item', originalError: e);
+    }
+  }
+
+  /// Creates a missing menu item in the database.
+  /// 
+  /// This method ensures that the menu item and its category exist
+  /// before creating the menu item to prevent foreign key constraints.
+  /// [menuItem] is the menu item to create.
+  Future<void> _createMissingMenuItem(MenuItem menuItem) async {
+    try {
+      debugPrint('🔧 Creating missing menu item: ${menuItem.name} (${menuItem.id})');
+      
+      // Ensure default category exists first
+      await _ensureDefaultCategoryExists();
+      
+      // Use the default category if the menuItem's category is empty or null
+      String categoryId = menuItem.categoryId;
+      if (categoryId.isEmpty) {
+        categoryId = 'default-category';
+      }
+      
+      // Check if category exists, create if it doesn't
+      final categoryExists = await _databaseService.query(
+        'categories',
+        where: 'id = ?',
+        whereArgs: [categoryId],
+      );
+      
+      if (categoryExists.isEmpty && categoryId != 'default-category') {
+        debugPrint('🔧 Creating missing category: $categoryId');
+        await _databaseService.insert('categories', {
+          'id': categoryId,
+          'name': categoryId.replaceAll('-', ' ').replaceAll('_', ' ').toUpperCase(),
+          'description': 'Auto-created category',
+          'is_active': 1,
+          'sort_order': 999,
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        });
+      }
+      
+      // Create the menu item with validated category
+      final menuItemData = {
+        'id': menuItem.id,
+        'name': menuItem.name.isNotEmpty ? menuItem.name : 'Unknown Item',
+        'description': menuItem.description ?? 'Auto-created menu item',
+        'price': menuItem.price,
+        'category_id': categoryId, // Use validated category ID
+        'image_url': menuItem.imageUrl,
+        'is_available': menuItem.isAvailable ? 1 : 0,
+        'preparation_time': menuItem.preparationTime ?? 15,
+        'is_vegetarian': menuItem.isVegetarian ? 1 : 0,
+        'is_vegan': menuItem.isVegan ? 1 : 0,
+        'is_gluten_free': menuItem.isGlutenFree ? 1 : 0,
+        'is_spicy': menuItem.isSpicy ? 1 : 0,
+        'spice_level': menuItem.spiceLevel ?? 0,
+        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      
+      await _databaseService.insert('menu_items', menuItemData);
+      debugPrint('✅ Created missing menu item: ${menuItem.id}');
+    } catch (e) {
+      debugPrint('❌ Failed to create missing menu item ${menuItem.id}: $e');
+      throw OrderServiceException('Failed to create menu item', operation: 'create_menu_item', originalError: e);
+    }
+  }
+
+  /// Creates a missing menu item in the database.
+  /// 
+  /// This method ensures that the menu item and its category exist
+  /// before creating the menu item to prevent foreign key constraints.
+  /// [menuItem] is the menu item to create.
+  Future<void> _createMissingMenuItem(MenuItem menuItem) async {
+    try {
+      debugPrint('🔧 Creating missing menu item: ${menuItem.name} (${menuItem.id})');
+      
+      // Ensure default category exists first
+      await _ensureDefaultCategoryExists();
+      
+      // Use the default category if the menuItem's category is empty or null
+      String categoryId = menuItem.categoryId;
+      if (categoryId.isEmpty) {
+        categoryId = 'default-category';
+      }
+      
+      // Check if category exists, create if it doesn't
+      final categoryExists = await _databaseService.query(
+        'categories',
+        where: 'id = ?',
+        whereArgs: [categoryId],
+      );
+      
+      if (categoryExists.isEmpty && categoryId != 'default-category') {
+        debugPrint('🔧 Creating missing category: $categoryId');
+        await _databaseService.insert('categories', {
+          'id': categoryId,
+          'name': categoryId.replaceAll('-', ' ').replaceAll('_', ' ').toUpperCase(),
+          'description': 'Auto-created category',
+          'is_active': 1,
+          'sort_order': 999,
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        });
+      }
+      
+      // Create the menu item with validated category
+      final menuItemData = {
+        'id': menuItem.id,
+        'name': menuItem.name.isNotEmpty ? menuItem.name : 'Unknown Item',
+        'description': menuItem.description ?? 'Auto-created menu item',
+        'price': menuItem.price,
+        'category_id': categoryId, // Use validated category ID
+        'image_url': menuItem.imageUrl,
+        'is_available': menuItem.isAvailable ? 1 : 0,
+        'preparation_time': menuItem.preparationTime ?? 15,
+        'is_vegetarian': menuItem.isVegetarian ? 1 : 0,
+        'is_vegan': menuItem.isVegan ? 1 : 0,
+        'is_gluten_free': menuItem.isGlutenFree ? 1 : 0,
+        'is_spicy': menuItem.isSpicy ? 1 : 0,
+        'spice_level': menuItem.spiceLevel ?? 0,
+        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      
+      await _databaseService.insert('menu_items', menuItemData);
+      debugPrint('✅ Created missing menu item: ${menuItem.id}');
+    } catch (e) {
+      debugPrint('❌ Failed to create missing menu item ${menuItem.id}: $e');
+      throw OrderServiceException('Failed to create menu item', operation: 'create_menu_item', originalError: e);
+    }
+  }
+
+  /// Creates a missing menu item in the database.
+  /// 
+  /// This method ensures that the menu item and its category exist
+  /// before creating the menu item to prevent foreign key constraints.
+  /// [menuItem] is the menu item to create.
+  Future<void> _createMissingMenuItem(MenuItem menuItem) async {
+    try {
+      debugPrint('🔧 Creating missing menu item: ${menuItem.name} (${menuItem.id})');
+      
+      // Ensure default category exists first
+      await _ensureDefaultCategoryExists();
+      
+      // Use the default category if the menuItem's category is empty or null
+      String categoryId = menuItem.categoryId;
+      if (categoryId.isEmpty) {
+        categoryId = 'default-category';
+      }
+      
+      // Check if category exists, create if it doesn't
+      final categoryExists = await _databaseService.query(
+        'categories',
+        where: 'id = ?',
+        whereArgs: [categoryId],
+      );
+      
+      if (categoryExists.isEmpty && categoryId != 'default-category') {
+        debugPrint('🔧 Creating missing category: $categoryId');
+        await _databaseService.insert('categories', {
+          'id': categoryId,
+          'name': categoryId.replaceAll('-', ' ').replaceAll('_', ' ').toUpperCase(),
+          'description': 'Auto-created category',
+          'is_active': 1,
+          'sort_order': 999,
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        });
+      }
+      
+      // Create the menu item with validated category
+      final menuItemData = {
+        'id': menuItem.id,
+        'name': menuItem.name.isNotEmpty ? menuItem.name : 'Unknown Item',
+        'description': menuItem.description ?? 'Auto-created menu item',
+        'price': menuItem.price,
+        'category_id': categoryId, // Use validated category ID
+        'image_url': menuItem.imageUrl,
+        'is_available': menuItem.isAvailable ? 1 : 0,
+        'preparation_time': menuItem.preparationTime ?? 15,
+        'is_vegetarian': menuItem.isVegetarian ? 1 : 0,
+        'is_vegan': menuItem.isVegan ? 1 : 0,
+        'is_gluten_free': menuItem.isGlutenFree ? 1 : 0,
+        'is_spicy': menuItem.isSpicy ? 1 : 0,
+        'spice_level': menuItem.spiceLevel ?? 0,
+        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      
+      await _databaseService.insert('menu_items', menuItemData);
+      debugPrint('✅ Created missing menu item: ${menuItem.id}');
+    } catch (e) {
+      debugPrint('❌ Failed to create missing menu item ${menuItem.id}: $e');
+      throw OrderServiceException('Failed to create menu item', operation: 'create_menu_item', originalError: e);
+    }
+  }
+
+  /// Creates a missing menu item in the database.
+  /// 
+  /// This method ensures that the menu item and its category exist
+  /// before creating the menu item to prevent foreign key constraints.
+  /// [menuItem] is the menu item to create.
+  Future<void> _createMissingMenuItem(MenuItem menuItem) async {
+    try {
+      debugPrint('🔧 Creating missing menu item: ${menuItem.name} (${menuItem.id})');
+      
+      // Ensure default category exists first
+      await _ensureDefaultCategoryExists();
+      
+      // Use the default category if the menuItem's category is empty or null
+      String categoryId = menuItem.categoryId;
+      if (categoryId.isEmpty) {
+        categoryId = 'default-category';
+      }
+      
+      // Check if category exists, create if it doesn't
+      final categoryExists = await _databaseService.query(
+        'categories',
+        where: 'id = ?',
+        whereArgs: [categoryId],
+      );
+      
+      if (categoryExists.isEmpty && categoryId != 'default-category') {
+        debugPrint('🔧 Creating missing category: $categoryId');
+        await _databaseService.insert('categories', {
+          'id': categoryId,
+          'name': categoryId.replaceAll('-', ' ').replaceAll('_', ' ').toUpperCase(),
+          'description': 'Auto-created category',
+          'is_active': 1,
+          'sort_order': 999,
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        });
+      }
+      
+      // Create the menu item with validated category
+      final menuItemData = {
+        'id': menuItem.id,
+        'name': menuItem.name.isNotEmpty ? menuItem.name : 'Unknown Item',
+        'description': menuItem.description ?? 'Auto-created menu item',
+        'price': menuItem.price,
+        'category_id': categoryId, // Use validated category ID
+        'image_url': menuItem.imageUrl,
+        'is_available': menuItem.isAvailable ? 1 : 0,
+        'preparation_time': menuItem.preparationTime ?? 15,
+        'is_vegetarian': menuItem.isVegetarian ? 1 : 0,
+        'is_vegan': menuItem.isVegan ? 1 : 0,
+        'is_gluten_free': menuItem.isGlutenFree ? 1 : 0,
+        'is_spicy': menuItem.isSpicy ? 1 : 0,
+        'spice_level': menuItem.spiceLevel ?? 0,
+        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      
+      await _databaseService.insert('menu_items', menuItemData);
+      debugPrint('✅ Created missing menu item: ${menuItem.id}');
+    } catch (e) {
+      debugPrint('❌ Failed to create missing menu item ${menuItem.id}: $e');
+      throw OrderServiceException('Failed to create menu item', operation: 'create_menu_item', originalError: e);
+    }
+  }
+
+  /// Creates a missing menu item in the database.
+  /// 
+  /// This method ensures that the menu item and its category exist
+  /// before creating the menu item to prevent foreign key constraints.
+  /// [menuItem] is the menu item to create.
+  Future<void> _createMissingMenuItem(MenuItem menuItem) async {
+    try {
+      debugPrint('🔧 Creating missing menu item: ${menuItem.name} (${menuItem.id})');
+      
+      // Ensure default category exists first
+      await _ensureDefaultCategoryExists();
+      
+      // Use the default category if the menuItem's category is empty or null
+      String categoryId = menuItem.categoryId;
+      if (categoryId.isEmpty) {
+        categoryId = 'default-category';
+      }
+      
+      // Check if category exists, create if it doesn't
+      final categoryExists = await _databaseService.query(
+        'categories',
+        where: 'id = ?',
+        whereArgs: [categoryId],
+      );
+      
+      if (categoryExists.isEmpty && categoryId != 'default-category') {
+        debugPrint('🔧 Creating missing category: $categoryId');
+        await _databaseService.insert('categories', {
+          'id': categoryId,
+          'name': categoryId.replaceAll('-', ' ').replaceAll('_', ' ').toUpperCase(),
+          'description': 'Auto-created category',
+          'is_active': 1,
+          'sort_order': 999,
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        });
+      }
+      
+      // Create the menu item with validated category
+      final menuItemData = {
+        'id': menuItem.id,
+        'name': menuItem.name.isNotEmpty ? menuItem.name : 'Unknown Item',
+        'description': menuItem.description ?? 'Auto-created menu item',
+        'price': menuItem.price,
+        'category_id': categoryId, // Use validated category ID
+        'image_url': menuItem.imageUrl,
+        'is_available': menuItem.isAvailable ? 1 : 0,
+        'preparation_time': menuItem.preparationTime ?? 15,
+        'is_vegetarian': menuItem.isVegetarian ? 1 : 0,
+        'is_vegan': menuItem.isVegan ? 1 : 0,
+        'is_gluten_free': menuItem.isGlutenFree ? 1 : 0,
+        'is_spicy': menuItem.isSpicy ? 1 : 0,
+        'spice_level': menuItem.spiceLevel ?? 0,
+        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      
+      await _databaseService.insert('menu_items', menuItemData);
+      debugPrint('✅ Created missing menu item: ${menuItem.id}');
+    } catch (e) {
+      debugPrint('❌ Failed to create missing menu item ${menuItem.id}: $e');
+      throw OrderServiceException('Failed to create menu item', operation: 'create_menu_item', originalError: e);
+    }
+  }
+
+  /// Creates a missing menu item in the database.
+  /// 
+  /// This method ensures that the menu item and its category exist
+  /// before creating the menu item to prevent foreign key constraints.
+  /// [menuItem] is the menu item to create.
+  Future<void> _createMissingMenuItem(MenuItem menuItem) async {
+    try {
+      debugPrint('🔧 Creating missing menu item: ${menuItem.name} (${menuItem.id})');
+      
+      // Ensure default category exists first
+      await _ensureDefaultCategoryExists();
+      
+      // Use the default category if the menuItem's category is empty or null
+      String categoryId = menuItem.categoryId;
+      if (categoryId.isEmpty) {
+        categoryId = 'default-category';
+      }
+      
+      // Check if category exists, create if it doesn't
+      final categoryExists = await _databaseService.query(
+        'categories',
+        where: 'id = ?',
+        whereArgs: [categoryId],
+      );
+      
+      if (categoryExists.isEmpty && categoryId != 'default-category') {
+        debugPrint('🔧 Creating missing category: $categoryId');
+        await _databaseService.insert('categories', {
+          'id': categoryId,
+          'name': categoryId.replaceAll('-', ' ').replaceAll('_', ' ').toUpperCase(),
+          'description': 'Auto-created category',
+          'is_active': 1,
+          'sort_order': 999,
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        });
+      }
+      
+      // Create the menu item with validated category
+      final menuItemData = {
+        'id': menuItem.id,
+        'name': menuItem.name.isNotEmpty ? menuItem.name : 'Unknown Item',
+        'description': menuItem.description ?? 'Auto-created menu item',
+        'price': menuItem.price,
+        'category_id': categoryId, // Use validated category ID
+        'image_url': menuItem.imageUrl,
+        'is_available': menuItem.isAvailable ? 1 : 0,
+        'preparation_time': menuItem.preparationTime ?? 15,
+        'is_vegetarian': menuItem.isVegetarian ? 1 : 0,
+        'is_vegan': menuItem.isVegan ? 1 : 0,
+        'is_gluten_free': menuItem.isGlutenFree ? 1 : 0,
+        'is_spicy': menuItem.isSpicy ? 1 : 0,
+        'spice_level': menuItem.spiceLevel ?? 0,
+        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      
+      await _databaseService.insert('menu_items', menuItemData);
+      debugPrint('✅ Created missing menu item: ${menuItem.id}');
+    } catch (e) {
+      debugPrint('❌ Failed to create missing menu item ${menuItem.id}: $e');
+      throw OrderServiceException('Failed to create menu item', operation: 'create_menu_item', originalError: e);
+    }
+  }
+
+  /// Creates a missing menu item in the database.
+  /// 
+  /// This method ensures that the menu item and its category exist
+  /// before creating the menu item to prevent foreign key constraints.
+  /// [menuItem] is the menu item to create.
+  Future<void> _createMissingMenuItem(MenuItem menuItem) async {
+    try {
+      debugPrint('🔧 Creating missing menu item: ${menuItem.name} (${menuItem.id})');
+      
+      // Ensure default category exists first
+      await _ensureDefaultCategoryExists();
+      
+      // Use the default category if the menuItem's category is empty or null
+      String categoryId = menuItem.categoryId;
+      if (categoryId.isEmpty) {
+        categoryId = 'default-category';
+      }
+      
+      // Check if category exists, create if it doesn't
+      final categoryExists = await _databaseService.query(
+        'categories',
+        where: 'id = ?',
+        whereArgs: [categoryId],
+      );
+      
+      if (categoryExists.isEmpty && categoryId != 'default-category') {
+        debugPrint('🔧 Creating missing category: $categoryId');
+        await _databaseService.insert('categories', {
+          'id': categoryId,
+          'name': categoryId.replaceAll('-', ' ').replaceAll('_', ' ').toUpperCase(),
+          'description': 'Auto-created category',
+          'is_active': 1,
+          'sort_order': 999,
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        });
+      }
+      
+      // Create the menu item with validated category
+      final menuItemData = {
+        'id': menuItem.id,
+        'name': menuItem.name.isNotEmpty ? menuItem.name : 'Unknown Item',
+        'description': menuItem.description ?? 'Auto-created menu item',
+        'price': menuItem.price,
+        'category_id': categoryId, // Use validated category ID
+        'image_url': menuItem.imageUrl,
+        'is_available': menuItem.isAvailable ? 1 : 0,
+        'preparation_time': menuItem.preparationTime ?? 15,
+        'is_vegetarian': menuItem.isVegetarian ? 1 : 0,
+        'is_vegan': menuItem.isVegan ? 1 : 0,
+        'is_gluten_free': menuItem.isGlutenFree ? 1 : 0,
+        'is_spicy': menuItem.isSpicy ? 1 : 0,
+        'spice_level': menuItem.spiceLevel ?? 0,
+        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      
+      await _databaseService.insert('menu_items', menuItemData);
+      debugPrint('✅ Created missing menu item: ${menuItem.id}');
+    } catch (e) {
+      debugPrint('❌ Failed to create missing menu item ${menuItem.id}: $e');
+      throw OrderServiceException('Failed to create menu item', operation: 'create_menu_item', originalError: e);
+    }
+  }
+
+  /// Creates a missing menu item in the database.
+  /// 
+  /// This method ensures that the menu item and its category exist
+  /// before creating the menu item to prevent foreign key constraints.
+  /// [menuItem] is the menu item to create.
+  Future<void> _createMissingMenuItem(MenuItem menuItem) async {
+    try {
+      debugPrint('🔧 Creating missing menu item: ${menuItem.name} (${menuItem.id})');
+      
+      // Ensure default category exists first
+      await _ensureDefaultCategoryExists();
+      
+      // Use the default category if the menuItem's category is empty or null
+      String categoryId = menuItem.categoryId;
+      if (categoryId.isEmpty) {
+        categoryId = 'default-category';
+      }
+      
+      // Check if category exists, create if it doesn't
+      final categoryExists = await _databaseService.query(
+        'categories',
+        where: 'id = ?',
+        whereArgs: [categoryId],
+      );
+      
+      if (categoryExists.isEmpty && categoryId != 'default-category') {
+        debugPrint('🔧 Creating missing category: $categoryId');
+        await _databaseService.insert('categories', {
+          'id': categoryId,
+          'name': categoryId.replaceAll('-', ' ').replaceAll('_', ' ').toUpperCase(),
+          'description': 'Auto-created category',
+          'is_active': 1,
+          'sort_order': 999,
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        });
+      }
+      
+      // Create the menu item with validated category
+      final menuItemData = {
+        'id': menuItem.id,
+        'name': menuItem.name.isNotEmpty ? menuItem.name : 'Unknown Item',
+        'description': menuItem.description ?? 'Auto-created menu item',
+        'price': menuItem.price,
+        'category_id': categoryId, // Use validated category ID
+        'image_url': menuItem.imageUrl,
+        'is_available': menuItem.isAvailable ? 1 : 0,
+        'preparation_time': menuItem.preparationTime ?? 15,
+        'is_vegetarian': menuItem.isVegetarian ? 1 : 0,
+        'is_vegan': menuItem.isVegan ? 1 : 0,
+        'is_gluten_free': menuItem.isGlutenFree ? 1 : 0,
+        'is_spicy': menuItem.isSpicy ? 1 : 0,
+        'spice_level': menuItem.spiceLevel ?? 0,
+        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      
+      await _databaseService.insert('menu_items', menuItemData);
+      debugPrint('✅ Created missing menu item: ${menuItem.id}');
+    } catch (e) {
+      debugPrint('❌ Failed to create missing menu item ${menuItem.id}: $e');
+      throw OrderServiceException('Failed to create menu item', operation: 'create_menu_item', originalError: e);
+    }
+  }
+
+  /// Creates a missing menu item in the database.
+  /// 
+  /// This method ensures that the menu item and its category exist
+  /// before creating the menu item to prevent foreign key constraints.
+  /// [menuItem] is the menu item to create.
+  Future<void> _createMissingMenuItem(MenuItem menuItem) async {
+    try {
+      debugPrint('🔧 Creating missing menu item: ${menuItem.name} (${menuItem.id})');
+      
+      // Ensure default category exists first
+      await _ensureDefaultCategoryExists();
+      
+      // Use the default category if the menuItem's category is empty or null
+      String categoryId = menuItem.categoryId;
+      if (categoryId.isEmpty) {
+        categoryId = 'default-category';
+      }
+      
+      // Check if category exists, create if it doesn't
+      final categoryExists = await _databaseService.query(
+        'categories',
+        where: 'id = ?',
+        whereArgs: [categoryId],
+      );
+      
+      if (categoryExists.isEmpty && categoryId != 'default-category') {
+        debugPrint('🔧 Creating missing category: $categoryId');
+        await _databaseService.insert('categories', {
+          'id': categoryId,
+          'name': categoryId.replaceAll('-', ' ').replaceAll('_', ' ').toUpperCase(),
+          'description': 'Auto-created category',
+          'is_active': 1,
+          'sort_order': 999,
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        });
+      }
+      
+      // Create the menu item with validated category
+      final menuItemData = {
+        'id': menuItem.id,
+        'name': menuItem.name.isNotEmpty ? menuItem.name : 'Unknown Item',
+        'description': menuItem.description ?? 'Auto-created menu item',
+        'price': menuItem.price,
+        'category_id': categoryId, // Use validated category ID
+        'image_url': menuItem.imageUrl,
+        'is_available': menuItem.isAvailable ? 1 : 0,
+        'preparation_time': menuItem.preparationTime ?? 15,
+        'is_vegetarian': menuItem.isVegetarian ? 1 : 0,
+        'is_vegan': menuItem.isVegan ? 1 : 0,
+        'is_gluten_free': menuItem.isGlutenFree ? 1 : 0,
+        'is_spicy': menuItem.isSpicy ? 1 : 0,
+        'spice_level': menuItem.spiceLevel ?? 0,
+        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      
+      await _databaseService.insert('menu_items', menuItemData);
+      debugPrint('✅ Created missing menu item: ${menuItem.id}');
+    } catch (e) {
+      debugPrint('❌ Failed to create missing menu item ${menuItem.id}: $e');
+      throw OrderServiceException('Failed to create menu item', operation: 'create_menu_item', originalError: e);
+    }
+  }
+
+  /// Creates a missing menu item in the database.
+  /// 
+  /// This method ensures that the menu item and its category exist
+  /// before creating the menu item to prevent foreign key constraints.
+  /// [menuItem] is the menu item to create.
+  Future<void> _createMissingMenuItem(MenuItem menuItem) async {
+    try {
+      debugPrint('🔧 Creating missing menu item: ${menuItem.name} (${menuItem.id})');
+      
+      // Ensure default category exists first
+      await _ensureDefaultCategoryExists();
+      
+      // Use the default category if the menuItem's category is empty or null
+      String categoryId = menuItem.categoryId;
+      if (categoryId.isEmpty) {
+        categoryId = 'default-category';
+      }
+      
+      // Check if category exists, create if it doesn't
+      final categoryExists = await _databaseService.query(
+        'categories',
+        where: 'id = ?',
+        whereArgs: [categoryId],
+      );
+      
+      if (categoryExists.isEmpty && categoryId != 'default-category') {
+        debugPrint('🔧 Creating missing category: $categoryId');
+        await _databaseService.insert('categories', {
+          'id': categoryId,
+          'name': categoryId.replaceAll('-', ' ').replaceAll('_', ' ').toUpperCase(),
+          'description': 'Auto-created category',
+          'is_active': 1,
+          'sort_order': 999,
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        });
+      }
+      
+      // Create the menu item with validated category
+      final menuItemData = {
+        'id': menuItem.id,
+        'name': menuItem.name.isNotEmpty ? menuItem.name : 'Unknown Item',
+        'description': menuItem.description ?? 'Auto-created menu item',
+        'price': menuItem.price,
+        'category_id': categoryId, // Use validated category ID
+        'image_url': menuItem.imageUrl,
+        'is_available': menuItem.isAvailable ? 1 : 0,
+        'preparation_time': menuItem.preparationTime ?? 15,
+        'is_vegetarian': menuItem.isVegetarian ? 1 : 0,
+        'is_vegan': menuItem.isVegan ? 1 : 0,
+        'is_gluten_free': menuItem.isGlutenFree ? 1 : 0,
+        'is_spicy': menuItem.isSpicy ? 1 : 0,
+        'spice_level': menuItem.spiceLevel ?? 0,
+        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      
+      await _databaseService.insert('menu_items', menuItemData);
+      debugPrint('✅ Created missing menu item: ${menuItem.id}');
+    } catch (e) {
+      debugPrint('❌ Failed to create missing menu item ${menuItem.id}: $e');
+      throw OrderServiceException('Failed to create menu item', operation: 'create_menu_item', originalError: e);
+    }
+  }
+
+  /// Creates a missing menu item in the database.
+  /// 
+  /// This method ensures that the menu item and its category exist
+  /// before creating the menu item to prevent foreign key constraints.
+  /// [menuItem] is the menu item to create.
+  Future<void> _createMissingMenuItem(MenuItem menuItem) async {
+    try {
+      debugPrint('🔧 Creating missing menu item: ${menuItem.name} (${menuItem.id})');
+      
+      // Ensure default category exists first
+      await _ensureDefaultCategoryExists();
+      
+      // Use the default category if the menuItem's category is empty or null
+      String categoryId = menuItem.categoryId;
+      if (categoryId.isEmpty) {
+        categoryId = 'default-category';
+      }
+      
+      // Check if category exists, create if it doesn't
+      final categoryExists = await _databaseService.query(
+        'categories',
+        where: 'id = ?',
+        whereArgs: [categoryId],
+      );
+      
+      if (categoryExists.isEmpty && categoryId != 'default-category') {
+        debugPrint('🔧 Creating missing category: $categoryId');
+        await _databaseService.insert('categories', {
+          'id': categoryId,
+          'name': categoryId.replaceAll('-', ' ').replaceAll('_', ' ').toUpperCase(),
+          'description': 'Auto-created category',
+          'is_active': 1,
+          'sort_order': 999,
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        });
+      }
+      
+      // Create the menu item with validated category
+      final menuItemData = {
+        'id': menuItem.id,
+        'name': menuItem.name.isNotEmpty ? menuItem.name : 'Unknown Item',
+        'description': menuItem.description ?? 'Auto-created menu item',
+        'price': menuItem.price,
+        'category_id': categoryId, // Use validated category ID
+        'image_url': menuItem.imageUrl,
+        'is_available': menuItem.isAvailable ? 1 : 0,
+        'preparation_time': menuItem.preparationTime ?? 15,
+        'is_vegetarian': menuItem.isVegetarian ? 1 : 0,
+        'is_vegan': menuItem.isVegan ? 1 : 0,
+        'is_gluten_free': menuItem.isGlutenFree ? 1 : 0,
+        'is_spicy': menuItem.isSpicy ? 1 : 0,
+        'spice_level': menuItem.spiceLevel ?? 0,
+        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      
+      await _databaseService.insert('menu_items', menuItemData);
+      debugPrint('✅ Created missing menu item: ${menuItem.id}');
+    } catch (e) {
+      debugPrint('❌ Failed to create missing menu item ${menuItem.id}: $e');
+      throw OrderServiceException('Failed to create menu item', operation: 'create_menu_item', originalError: e);
+    }
+  }
+
+  /// Creates a missing menu item in the database.
+  /// 
+  /// This method ensures that the menu item and its category exist
+  /// before creating the menu item to prevent foreign key constraints.
+  /// [menuItem] is the menu item to create.
+  Future<void> _createMissingMenuItem(MenuItem menuItem) async {
+    try {
+      debugPrint('🔧 Creating missing menu item: ${menuItem.name} (${menuItem.id})');
+      
+      // Ensure default category exists first
+      await _ensureDefaultCategoryExists();
+      
+      // Use the default category if the menuItem's category is empty or null
+      String categoryId = menuItem.categoryId;
+      if (categoryId.isEmpty) {
+        categoryId = 'default-category';
+      }
+      
+      // Check if category exists, create if it doesn't
+      final categoryExists = await _databaseService.query(
+        'categories',
+        where: 'id = ?',
+        whereArgs: [categoryId],
+      );
+      
+      if (categoryExists.isEmpty && categoryId != 'default-category') {
+        debugPrint('🔧 Creating missing category: $categoryId');
+        await _databaseService.insert('categories', {
+          'id': categoryId,
+          'name': categoryId.replaceAll('-', ' ').replaceAll('_', ' ').toUpperCase(),
+          'description': 'Auto-created category',
+          'is_active': 1,
+          'sort_order': 999,
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        });
+      }
+      
+      // Create the menu item with validated category
+      final menuItemData = {
+        'id': menuItem.id,
+        'name': menuItem.name.isNotEmpty ? menuItem.name : 'Unknown Item',
+        'description': menuItem.description ?? 'Auto-created menu item',
+        'price': menuItem.price,
+        'category_id': categoryId, // Use validated category ID
+        'image_url': menuItem.imageUrl,
+        'is_available': menuItem.isAvailable ? 1 : 0,
+        'preparation_time': menuItem.preparationTime ?? 15,
+        'is_vegetarian': menuItem.isVegetarian ? 1 : 0,
+        'is_vegan': menuItem.isVegan ? 1 : 0,
+        'is_gluten_free': menuItem.isGlutenFree ? 1 : 0,
+        'is_spicy': menuItem.isSpicy ? 1 : 0,
+        'spice_level': menuItem.spiceLevel ?? 0,
+        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      
+      await _databaseService.insert('menu_items', menuItemData);
+      debugPrint('✅ Created missing menu item: ${menuItem.id}');
+    } catch (e) {
+      debugPrint('❌ Failed to create missing menu item ${menuItem.id}: $e');
+      throw OrderServiceException('Failed to create menu item', operation: 'create_menu_item', originalError: e);
+    }
+  }
+
+  /// Creates a missing menu item in the database.
+  /// 
+  /// This method ensures that the menu item and its category exist
+  /// before creating the menu item to prevent foreign key constraints.
+  /// [menuItem] is the menu item to create.
+  Future<void> _createMissingMenuItem(MenuItem menuItem) async {
+    try {
+      debugPrint('🔧 Creating missing menu item: ${menuItem.name} (${menuItem.id})');
+      
+      // Ensure default category exists first
+      await _ensureDefaultCategoryExists();
+      
+      // Use the default category if the menuItem's category is empty or null
+      String categoryId = menuItem.categoryId;
+      if (categoryId.isEmpty) {
+        categoryId = 'default-category';
+      }
+      
+      // Check if category exists, create if it doesn't
+      final categoryExists = await _databaseService.query(
+        'categories',
+        where: 'id = ?',
+        whereArgs: [categoryId],
+      );
+      
+      if (categoryExists.isEmpty && categoryId != 'default-category') {
+        debugPrint('🔧 Creating missing category: $categoryId');
+        await _databaseService.insert('categories', {
+          'id': categoryId,
+          'name': categoryId.replaceAll('-', ' ').replaceAll('_', ' ').toUpperCase(),
+          'description': 'Auto-created category',
+          'is_active': 1,
+          'sort_order': 999,
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        });
+      }
+      
+      // Create the menu item with validated category
+      final menuItemData = {
+        'id': menuItem.id,
+        'name': menuItem.name.isNotEmpty ? menuItem.name : 'Unknown Item',
+        'description': menuItem.description ?? 'Auto-created menu item',
+        'price': menuItem.price,
+        'category_id': categoryId, // Use validated category ID
+        'image_url': menuItem.imageUrl,
+        'is_available': menuItem.isAvailable ? 1 : 0,
+        'preparation_time': menuItem.preparationTime ?? 15,
+        'is_vegetarian': menuItem.isVegetarian ? 1 : 0,
+        'is_vegan': menuItem.isVegan ? 1 : 0,
+        'is_gluten_free': menuItem.isGlutenFree ? 1 : 0,
+        'is_spicy': menuItem.isSpicy ? 1 : 0,
+        'spice_level': menuItem.spiceLevel ?? 0,
+        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      
+      await _databaseService.insert('menu_items', menuItemData);
+      debugPrint('✅ Created missing menu item: ${menuItem.id}');
+    } catch (e) {
+      debugPrint('❌ Failed to create missing menu item ${menuItem.id}: $e');
+      throw OrderServiceException('Failed to create menu item', operation: 'create_menu_item', originalError: e);
+    }
+  }
+
+  /// Creates a missing menu item in the database.
+  /// 
+  /// This method ensures that the menu item and its category exist
+  /// before creating the menu item to prevent foreign key constraints.
+  /// [menuItem] is the menu item to create.
+  Future<void> _createMissingMenuItem(MenuItem menuItem) async {
+    try {
+      debugPrint('🔧 Creating missing menu item: ${menuItem.name} (${menuItem.id})');
+      
+      // Ensure default category exists first
+      await _ensureDefaultCategoryExists();
+      
+      // Use the default category if the menuItem's category is empty or null
+      String categoryId = menuItem.categoryId;
+      if (categoryId.isEmpty) {
+        categoryId = 'default-category';
+      }
+      
+      // Check if category exists, create if it doesn't
+      final categoryExists = await _databaseService.query(
+        'categories',
+        where: 'id = ?',
+        whereArgs: [categoryId],
+      );
+      
+      if (categoryExists.isEmpty && categoryId != 'default-category') {
+        debugPrint('🔧 Creating missing category: $categoryId');
+        await _databaseService.insert('categories', {
+          'id': categoryId,
+          'name': categoryId.replaceAll('-', ' ').replaceAll('_', ' ').toUpperCase(),
+          'description': 'Auto-created category',
+          'is_active': 1,
+          'sort_order': 999,
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        });
+      }
+      
+      // Create the menu item with validated category
+      final menuItemData = {
+        'id': menuItem.id,
+        'name': menuItem.name.isNotEmpty ? menuItem.name : 'Unknown Item',
+        'description': menuItem.description ?? 'Auto-created menu item',
+        'price': menuItem.price,
+        'category_id': categoryId, // Use validated category ID
+        'image_url': menuItem.imageUrl,
+        'is_available': menuItem.isAvailable ? 1 : 0,
+        'preparation_time': menuItem.preparationTime ?? 15,
+        'is_vegetarian': menuItem.isVegetarian ? 1 : 0,
+        'is_vegan': menuItem.isVegan ? 1 : 0,
+        'is_gluten_free': menuItem.isGlutenFree ? 1 : 0,
+        'is_spicy': menuItem.isSpicy ? 1 : 0,
+        'spice_level': menuItem.spiceLevel ?? 0,
+        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      
+      await _databaseService.insert('menu_items', menuItemData);
+      debugPrint('✅ Created missing menu item: ${menuItem.id}');
+    } catch (e) {
+      debugPrint('❌ Failed to create missing menu item ${menuItem.id}: $e');
+      throw OrderServiceException('Failed to create menu item', operation: 'create_menu_item', originalError: e);
+    }
+  }
+
+  /// Creates a missing menu item in the database.
+  /// 
+  /// This method ensures that the menu item and its category exist
+  /// before creating the menu item to prevent foreign key constraints.
+  /// [menuItem] is the menu item to create.
+  Future<void> _createMissingMenuItem(MenuItem menuItem) async {
+    try {
+      debugPrint('🔧 Creating missing menu item: ${menuItem.name} (${menuItem.id})');
+      
+      // Ensure default category exists first
+      await _ensureDefaultCategoryExists();
+      
+      // Use the default category if the menuItem's category is empty or null
+      String categoryId = menuItem.categoryId;
+      if (categoryId.isEmpty) {
+        categoryId = 'default-category';
+      }
+      
+      // Check if category exists, create if it doesn't
+      final categoryExists = await _databaseService.query(
+        'categories',
+        where: 'id = ?',
+        whereArgs: [categoryId],
+      );
+      
+      if (categoryExists.isEmpty && categoryId != 'default-category') {
+        debugPrint('🔧 Creating missing category: $categoryId');
+        await _databaseService.insert('categories', {
+          'id': categoryId,
+          'name': categoryId.replaceAll('-', ' ').replaceAll('_', ' ').toUpperCase(),
+          'description': 'Auto-created category',
+          'is_active': 1,
+          'sort_order': 999,
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        });
+      }
+      
+      // Create the menu item with validated category
+      final menuItemData = {
+        'id': menuItem.id,
+        'name': menuItem.name.isNotEmpty ? menuItem.name : 'Unknown Item',
+        'description': menuItem.description ?? 'Auto-created menu item',
+        'price': menuItem.price,
+        'category_id': categoryId, // Use validated category ID
+        'image_url': menuItem.imageUrl,
+        'is_available': menuItem.isAvailable ? 1 : 0,
+        'preparation_time': menuItem.preparationTime ?? 15,
+        'is_vegetarian': menuItem.isVegetarian ? 1 : 0,
+        'is_vegan': menuItem.isVegan ? 1 : 0,
+        'is_gluten_free': menuItem.isGlutenFree ? 1 : 0,
+        'is_spicy': menuItem.isSpicy ? 1 : 0,
+        'spice_level': menuItem.spiceLevel ?? 0,
+        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      
+      await _databaseService.insert('menu_items', menuItemData);
+      debugPrint('✅ Created missing menu item: ${menuItem.id}');
+    } catch (e) {
+      debugPrint('❌ Failed to create missing menu item ${menuItem.id}: $e');
+      throw OrderServiceException('Failed to create menu item', operation: 'create_menu_item', originalError: e);
+    }
+  }
+
+  /// Creates a missing menu item in the database.
+  /// 
+  /// This method ensures that the menu item and its category exist
+  /// before creating the menu item to prevent foreign key constraints.
+  /// [menuItem] is the menu item to create.
+  Future<void> _createMissingMenuItem(MenuItem menuItem) async {
+    try {
+      debugPrint('🔧 Creating missing menu item: ${menuItem.name} (${menuItem.id})');
+      
+      // Ensure default category exists first
+      await _ensureDefaultCategoryExists();
+      
+      // Use the default category if the menuItem's category is empty or null
+      String categoryId = menuItem.categoryId;
+      if (categoryId.isEmpty) {
+        categoryId = 'default-category';
+      }
+      
+      // Check if category exists, create if it doesn't
+      final categoryExists = await _databaseService.query(
+        'categories',
+        where: 'id = ?',
+        whereArgs: [categoryId],
+      );
+      
+      if (categoryExists.isEmpty && categoryId != 'default-category') {
+        debugPrint('🔧 Creating missing category: $categoryId');
+        await _databaseService.insert('categories', {
+          'id': categoryId,
+          'name': categoryId.replaceAll('-', ' ').replaceAll('_', ' ').toUpperCase(),
+          'description': 'Auto-created category',
+          'is_active': 1,
+          'sort_order': 999,
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        });
+      }
+      
+      // Create the menu item with validated category
+      final menuItemData = {
+        'id': menuItem.id,
+        'name': menuItem.name.isNotEmpty ? menuItem.name : 'Unknown Item',
+        'description': menuItem.description ?? 'Auto-created menu item',
+        'price': menuItem.price,
+        'category_id': categoryId, // Use validated category ID
+        'image_url': menuItem.imageUrl,
+        'is_available': menuItem.isAvailable ? 1 : 0,
+        'preparation_time': menuItem.preparationTime ?? 15,
+        'is_vegetarian': menuItem.isVegetarian ? 1 : 0,
+        'is_vegan': menuItem.isVegan ? 1 : 0,
+        'is_gluten_free': menuItem.isGlutenFree ? 1 : 0,
+        'is_spicy': menuItem.isSpicy ? 1 : 0,
+        'spice_level': menuItem.spiceLevel ?? 0,
+        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      
+      await _databaseService.insert('menu_items', menuItemData);
+      debugPrint('✅ Created missing menu item: ${menuItem.id}');
+    } catch (e) {
+      debugPrint('❌ Failed to create missing menu item ${menuItem.id}: $e');
+      throw OrderServiceException('Failed to create menu item', operation: 'create_menu_item', originalError: e);
+    }
+  }
+
+  /// Creates a missing menu item in the database.
+  /// 
+  /// This method ensures that the menu item and its category exist
+  /// before creating the menu item to prevent foreign key constraints.
+  /// [menuItem] is the menu item to create.
+  Future<void> _createMissingMenuItem(MenuItem menuItem) async {
+    try {
+      debugPrint('🔧 Creating missing menu item: ${menuItem.name} (${menuItem.id})');
+      
+      // Ensure default category exists first
+      await _ensureDefaultCategoryExists();
+      
+      // Use the default category if the menuItem's category is empty or null
+      String categoryId = menuItem.categoryId;
+      if (categoryId.isEmpty) {
+        categoryId = 'default-category';
+      }
+      
+      // Check if category exists, create if it doesn't
+      final categoryExists = await _databaseService.query(
+        'categories',
+        where: 'id = ?',
+        whereArgs: [categoryId],
+      );
+      
+      if (categoryExists.isEmpty && categoryId != 'default-category') {
+        debugPrint('🔧 Creating missing category: $categoryId');
+        await _databaseService.insert('categories', {
+          'id': categoryId,
+          'name': categoryId.replaceAll('-', ' ').replaceAll('_', ' ').toUpperCase(),
+          'description': 'Auto-created category',
+          'is_active': 1,
+          'sort_order': 999,
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        });
+      }
+      
+      // Create the menu item with validated category
+      final menuItemData = {
+        'id': menuItem.id,
+        'name': menuItem.name.isNotEmpty ? menuItem.name : 'Unknown Item',
+        'description': menuItem.description ?? 'Auto-created menu item',
+        'price': menuItem.price,
+        'category_id': categoryId, // Use validated category ID
+        'image_url': menuItem.imageUrl,
+        'is_available': menuItem.isAvailable ? 1 : 0,
+        'preparation_time': menuItem.preparationTime ?? 15,
+        'is_vegetarian': menuItem.isVegetarian ? 1 : 0,
+        'is_vegan': menuItem.isVegan ? 1 : 0,
+        'is_gluten_free': menuItem.isGlutenFree ? 1 : 0,
+        'is_spicy': menuItem.isSpicy ? 1 : 0,
+        'spice_level': menuItem.spiceLevel ?? 0,
+        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      
+      await _databaseService.insert('menu_items', menuItemData);
+      debugPrint('✅ Created missing menu item: ${menuItem.id}');
+    } catch (e) {
+      debugPrint('❌ Failed to create missing menu item ${menuItem.id}: $e');
+      throw OrderServiceException('Failed to create menu item', operation: 'create_menu_item', originalError: e);
+    }
+  }
+
+  /// Creates a missing menu item in the database.
+  /// 
+  /// This method ensures that the menu item and its category exist
+  /// before creating the menu item to prevent foreign key constraints.
+  /// [menuItem] is the menu item to create.
+  Future<void> _createMissingMenuItem(MenuItem menuItem) async {
+    try {
+      debugPrint('🔧 Creating missing menu item: ${menuItem.name} (${menuItem.id})');
+      
+      // Ensure default category exists first
+      await _ensureDefaultCategoryExists();
+      
+      // Use the default category if the menuItem's category is empty or null
+      String categoryId = menuItem.categoryId;
+      if (categoryId.isEmpty) {
+        categoryId = 'default-category';
+      }
+      
+      // Check if category exists, create if it doesn't
+      final categoryExists = await _databaseService.query(
+        'categories',
+        where: 'id = ?',
+        whereArgs: [categoryId],
+      );
+      
+      if (categoryExists.isEmpty && categoryId != 'default-category') {
+        debugPrint('🔧 Creating missing category: $categoryId');
+        await _databaseService.insert('categories', {
+          'id': categoryId,
+          'name': categoryId.replaceAll('-', ' ').replaceAll('_', ' ').toUpperCase(),
+          'description': 'Auto-created category',
+          'is_active': 1,
+          'sort_order': 999,
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        });
+      }
+      
+      // Create the menu item with validated category
+      final menuItemData = {
+        'id': menuItem.id,
+        'name': menuItem.name.isNotEmpty ? menuItem.name : 'Unknown Item',
+        'description': menuItem.description ?? 'Auto-created menu item',
+        'price': menuItem.price,
+        'category_id': categoryId, // Use validated category ID
+        'image_url': menuItem.imageUrl,
+        'is_available': menuItem.isAvailable ? 1 : 0,
+        'preparation_time': menuItem.preparationTime ?? 15,
+        'is_vegetarian': menuItem.isVegetarian ? 1 : 0,
+        'is_vegan': menuItem.isVegan ? 1 : 0,
+        'is_gluten_free': menuItem.isGlutenFree ? 1 : 0,
+        'is_spicy': menuItem.isSpicy ? 1 : 0,
+        'spice_level': menuItem.spiceLevel ?? 0,
+        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      
+      await _databaseService.insert('menu_items', menuItemData);
+      debugPrint('✅ Created missing menu item: ${menuItem.id}');
+    } catch (e) {
+      debugPrint('❌ Failed to create missing menu item ${menuItem.id}: $e');
+      throw OrderServiceException('Failed to create menu item', operation: 'create_menu_item', originalError: e);
+    }
+  }
+
+  /// Creates a missing menu item in the database.
+  /// 
+  /// This method ensures that the menu item and its category exist
+  /// before creating the menu item to prevent foreign key constraints.
+  /// [menuItem] is the menu item to create.
+  Future<void> _createMissingMenuItem(MenuItem menuItem) async {
+    try {
+      debugPrint('🔧 Creating missing menu item: ${menuItem.name} (${menuItem.id})');
+      
+      // Ensure default category exists first
+      await _ensureDefaultCategoryExists();
+      
+      // Use the default category if the menuItem's category is empty or null
+      String categoryId = menuItem.categoryId;
+      if (categoryId.isEmpty) {
+        categoryId = 'default-category';
+      }
+      
+      // Check if category exists, create if it doesn't
+      final categoryExists = await _databaseService.query(
+        'categories',
+        where: 'id = ?',
+        whereArgs: [categoryId],
+      );
+      
+      if (categoryExists.isEmpty && categoryId != 'default-category') {
+        debugPrint('🔧 Creating missing category: $categoryId');
+        await _databaseService.insert('categories', {
+          'id': categoryId,
+          'name': categoryId.replaceAll('-', ' ').replaceAll('_', ' ').toUpperCase(),
+          'description': 'Auto-created category',
+          'is_active': 1,
+          'sort_order': 999,
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        });
+      }
+      
+      // Create the

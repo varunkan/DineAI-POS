@@ -1,0 +1,124 @@
+// lib/firebase_options.dart
+// This file is a template - replace with your actual Firebase configuration
+
+import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb, TargetPlatform;
+
+/// Default [FirebaseOptions] for use with your Firebase apps.
+///
+/// Example: Replace these values with your actual Firebase project configuration
+class DefaultFirebaseOptions {
+  static FirebaseOptions get currentPlatform {
+    if (kIsWeb) {
+      return web;
+    }
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.android:
+        return android;
+      case TargetPlatform.iOS:
+        return ios;
+      case TargetPlatform.macOS:
+        return macos;
+      case TargetPlatform.windows:
+        return windows;
+      case TargetPlatform.linux:
+        throw UnsupportedError(
+          'DefaultFirebaseOptions have not been configured for linux - '
+          'you can reconfigure this by running the FlutterFire CLI again.',
+        );
+      default:
+        throw UnsupportedError(
+          'DefaultFirebaseOptions are not supported for this platform.',
+        );
+    }
+  }
+
+  static const FirebaseOptions web = FirebaseOptions(
+    apiKey: 'YOUR_WEB_API_KEY',
+    appId: 'YOUR_WEB_APP_ID',
+    messagingSenderId: 'YOUR_MESSAGING_SENDER_ID',
+    projectId: 'your-firebase-project-id',
+    authDomain: 'your-firebase-project-id.firebaseapp.com',
+    storageBucket: 'your-firebase-project-id.appspot.com',
+    measurementId: 'YOUR_MEASUREMENT_ID',
+  );
+
+  static const FirebaseOptions android = FirebaseOptions(
+    apiKey: 'YOUR_ANDROID_API_KEY',
+    appId: 'YOUR_ANDROID_APP_ID',
+    messagingSenderId: 'YOUR_MESSAGING_SENDER_ID',
+    projectId: 'your-firebase-project-id',
+    storageBucket: 'your-firebase-project-id.appspot.com',
+  );
+
+  static const FirebaseOptions ios = FirebaseOptions(
+    apiKey: 'YOUR_IOS_API_KEY',
+    appId: 'YOUR_IOS_APP_ID',
+    messagingSenderId: 'YOUR_MESSAGING_SENDER_ID',
+    projectId: 'your-firebase-project-id',
+    storageBucket: 'your-firebase-project-id.appspot.com',
+    iosBundleId: 'com.example.aiPosSystem',
+  );
+
+  static const FirebaseOptions macos = FirebaseOptions(
+    apiKey: 'YOUR_MACOS_API_KEY',
+    appId: 'YOUR_MACOS_APP_ID',
+    messagingSenderId: 'YOUR_MESSAGING_SENDER_ID',
+    projectId: 'your-firebase-project-id',
+    storageBucket: 'your-firebase-project-id.appspot.com',
+    iosBundleId: 'com.example.aiPosSystem',
+  );
+
+  static const FirebaseOptions windows = FirebaseOptions(
+    apiKey: 'YOUR_WINDOWS_API_KEY',
+    appId: 'YOUR_WINDOWS_APP_ID',
+    messagingSenderId: 'YOUR_MESSAGING_SENDER_ID',
+    projectId: 'your-firebase-project-id',
+    authDomain: 'your-firebase-project-id.firebaseapp.com',
+    storageBucket: 'your-firebase-project-id.appspot.com',
+    measurementId: 'YOUR_MEASUREMENT_ID',
+  );
+}
+
+/*
+SETUP INSTRUCTIONS:
+
+1. Go to https://console.firebase.google.com/
+2. Create a new project or select existing one
+3. Add your Flutter app to the project
+4. Download configuration files:
+   - For Android: google-services.json → android/app/
+   - For iOS: GoogleService-Info.plist → ios/Runner/
+   - For Web: Copy config from Firebase console
+
+5. Run this command to generate the actual firebase_options.dart:
+   flutter pub global activate flutterfire_cli
+   flutterfire configure
+
+6. Enable Firestore Database in Firebase Console:
+   - Go to Firestore Database
+   - Create database in production mode
+   - Set up security rules as needed
+
+7. Optional: Enable Authentication if you want user accounts
+
+8. Replace this template file with the generated firebase_options.dart
+
+SECURITY RULES EXAMPLE (Firestore):
+```
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Allow read/write access to orders for authenticated users
+    match /orders/{document} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Or for testing (not recommended for production):
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}
+```
+*/ 

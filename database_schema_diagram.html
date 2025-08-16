@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI POS System Database Schema</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 2.5em;
+            font-weight: 300;
+        }
+        .header p {
+            margin: 10px 0 0 0;
+            opacity: 0.9;
+            font-size: 1.1em;
+        }
+        .schema-container {
+            padding: 30px;
+        }
+        .schema-section {
+            margin-bottom: 40px;
+        }
+        .schema-section h2 {
+            color: #2c3e50;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+        .table-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 25px;
+            margin-bottom: 30px;
+        }
+        .table-card {
+            background: #f8f9fa;
+            border: 2px solid #e9ecef;
+            border-radius: 12px;
+            padding: 20px;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+        .table-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+            border-color: #3498db;
+        }
+        .table-card.core {
+            border-color: #e74c3c;
+            background: linear-gradient(135deg, #fff5f5 0%, #fed7d7 100%);
+        }
+        .table-card.business {
+            border-color: #f39c12;
+            background: linear-gradient(135deg, #fffbf0 0%, #fef5e7 100%);
+        }
+        .table-card.operational {
+            border-color: #27ae60;
+            background: linear-gradient(135deg, #f0fff4 0%, #dcfce7 100%);
+        }
+        .table-card.support {
+            border-color: #9b59b6;
+            background: linear-gradient(135deg, #faf5ff 0%, #f3e8ff 100%);
+        }
+        .table-name {
+            font-size: 1.3em;
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 15px;
+            padding: 10px;
+            background: white;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .table-schema {
+            font-family: 'Courier New', monospace;
+            font-size: 0.85em;
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #3498db;
+            overflow-x: auto;
+        }
+        .field {
+            margin: 5px 0;
+            padding: 3px 0;
+        }
+        .field.primary {
+            color: #e74c3c;
+            font-weight: bold;
+        }
+        .field.foreign {
+            color: #f39c12;
+            font-weight: bold;
+        }
+        .field.required {
+            color: #27ae60;
+        }
+        .field.optional {
+            color: #7f8c8d;
+        }
+        .relationships {
+            margin-top: 20px;
+            padding: 15px;
+            background: #ecf0f1;
+            border-radius: 8px;
+        }
+        .relationships h4 {
+            margin: 0 0 10px 0;
+            color: #2c3e50;
+        }
+        .relationship {
+            margin: 5px 0;
+            padding: 5px;
+            background: white;
+            border-radius: 5px;
+            border-left: 3px solid #3498db;
+        }
+        .legend {
+            background: #ecf0f1;
+            padding: 20px;
+            border-radius: 12px;
+            margin-top: 30px;
+        }
+        .legend h3 {
+            margin: 0 0 15px 0;
+            color: #2c3e50;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin: 10px 0;
+        }
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 4px;
+            margin-right: 15px;
+        }
+        .legend-text {
+            font-size: 0.95em;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+        }
+        .stat-number {
+            font-size: 2em;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .stat-label {
+            opacity: 0.9;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🗄️ AI POS System Database Schema</h1>
+            <p>Complete Database Structure & Relationships</p>
+        </div>
+        
+        <div class="schema-container">
+            <!-- Database Statistics -->
+            <div class="stats">
+                <div class="stat-card">
+                    <div class="stat-number">22</div>
+                    <div class="stat-label">Total Tables</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number">4</div>
+                    <div class="stat-label">Core Tables</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number">8</div>
+                    <div class="stat-label">Business Tables</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number">6</div>
+                    <div class="stat-label">Operational Tables</div>
+                </div>
+            </div>
+
+            <!-- Core System Tables -->
+            <div class="schema-section">
+                <h2>🔧 Core System Tables</h2>
+                <div class="table-grid">
+                    <div class="table-card core">
+                        <div class="table-name">users</div>
+                        <div class="table-schema">
+                            <div class="field primary">id TEXT PRIMARY KEY</div>
+                            <div class="field required">name TEXT NOT NULL</div>
+                            <div class="field required">role TEXT NOT NULL</div>
+                            <div class="field required">pin TEXT NOT NULL</div>
+                            <div class="field required">is_active INTEGER NOT NULL DEFAULT 1</div>
+                            <div class="field required">admin_panel_access INTEGER NOT NULL DEFAULT 0</div>
+                            <div class="field required">created_at TEXT NOT NULL</div>
+                            <div class="field optional">last_login TEXT</div>
+                        </div>
+                        <div class="relationships">
+                            <h4>🔗 Referenced By:</h4>
+                            <div class="relationship">reservations.created_by → users.id</div>
+                            <div class="relationship">orders.user_id → users.id</div>
+                            <div class="relationship">tables.user_id → users.id</div>
+                        </div>
+                    </div>
+
+                    <div class="table-card core">
+                        <div class="table-name">restaurants</div>
+                        <div class="table-schema">
+                            <div class="field primary">id TEXT PRIMARY KEY</div>
+                            <div class="field required">name TEXT NOT NULL</div>
+                            <div class="field optional">business_type TEXT</div>
+                            <div class="field optional">address TEXT</div>
+                            <div class="field optional">phone TEXT</div>
+                            <div class="field required">email TEXT UNIQUE NOT NULL</div>
+                            <div class="field optional">admin_user_id TEXT</div>
+                            <div class="field optional">admin_password TEXT</div>
+                            <div class="field optional">created_at TEXT</div>
+                            <div class="field optional">updated_at TEXT</div>
+                            <div class="field optional">is_active INTEGER DEFAULT 1</div>
+                            <div class="field optional">database_name TEXT</div>
+                            <div class="field optional">settings TEXT</div>
+                        </div>
+                    </div>
+
+                    <div class="table-card core">
+                        <div class="table-name">app_metadata</div>
+                        <div class="table-schema">
+                            <div class="field primary">id TEXT PRIMARY KEY</div>
+                            <div class="field required">key TEXT NOT NULL</div>
+                            <div class="field required">value TEXT NOT NULL</div>
+                            <div class="field optional">description TEXT</div>
+                            <div class="field required">created_at TEXT NOT NULL</div>
+                            <div class="field required">updated_at TEXT NOT NULL</div>
+                        </div>
+                    </div>
+
+                    <div class="table-card core">
+                        <div class="table-name">android_metadata</div>
+                        <div class="table-schema">
+                            <div class="field optional">locale TEXT</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Business Logic Tables -->
+            <div class="schema-section">
+                <h2>🏪 Business Logic Tables</h2>
+                <div class="table-grid">
+                    <div class="table-card business">
+                        <div class="table-name">categories</div>
+                        <div class="table-schema">
+                            <div class="field primary">id TEXT PRIMARY KEY</div>
+                            <div class="field required">name TEXT NOT NULL</div>
+                            <div class="field optional">description TEXT</div>
+                            <div class="field optional">image_url TEXT</div>
+                            <div class="field required">is_active INTEGER NOT NULL DEFAULT 1</div>
+                            <div class="field required">sort_order INTEGER NOT NULL DEFAULT 0</div>
+                            <div class="field required">created_at TEXT NOT NULL</div>
+                            <div class="field required">updated_at TEXT NOT NULL</div>
+                        </div>
+                        <div class="relationships">
+                            <h4>🔗 Referenced By:</h4>
+                            <div class="relationship">menu_items.category_id → categories.id</div>
+                        </div>
+                    </div>
+
+                    <div class="table-card business">
+                        <div class="table-name">menu_items</div>
+                        <div class="table-schema">
+                            <div class="field primary">id TEXT PRIMARY KEY</div>
+                            <div class="field required">name TEXT NOT NULL</div>
+                            <div class="field required">description TEXT NOT NULL</div>
+                            <div class="field required">price REAL NOT NULL</div>
+                            <div class="field foreign">category_id TEXT NOT NULL</div>
+                            <div class="field optional">image_url TEXT</div>
+                            <div class="field required">is_available INTEGER NOT NULL DEFAULT 1</div>
+                            <div class="field optional">tags TEXT</div>
+                            <div class="field optional">custom_properties TEXT</div>
+                            <div class="field optional">variants TEXT</div>
+                            <div class="field optional">modifiers TEXT</div>
+                            <div class="field optional">nutritional_info TEXT</div>
+                            <div class="field optional">allergens TEXT</div>
+                            <div class="field required">preparation_time INTEGER NOT NULL DEFAULT 0</div>
+                            <div class="field required">is_vegetarian INTEGER NOT NULL DEFAULT 0</div>
+                            <div class="field required">is_vegan INTEGER NOT NULL DEFAULT 0</div>
+                            <div class="field required">is_gluten_free INTEGER NOT NULL DEFAULT 0</div>
+                            <div class="field required">is_spicy INTEGER NOT NULL DEFAULT 0</div>
+                            <div class="field required">spice_level INTEGER NOT NULL DEFAULT 0</div>
+                            <div class="field required">stock_quantity INTEGER NOT NULL DEFAULT 0</div>
+                            <div class="field required">low_stock_threshold INTEGER NOT NULL DEFAULT 5</div>
+                            <div class="field optional">popularity_score REAL DEFAULT 0.0</div>
+                            <div class="field optional">last_ordered TEXT</div>
+                            <div class="field required">created_at TEXT NOT NULL</div>
+                            <div class="field required">updated_at TEXT NOT NULL</div>
+                        </div>
+                        <div class="relationships">
+                            <h4>🔗 Referenced By:</h4>
+                            <div class="relationship">order_items.menu_item_id → menu_items.id</div>
+                        </div>
+                    </div>
+
+                    <div class="table-card business">
+                        <div class="table-name">orders</div>
+                        <div class="table-schema">
+                            <div class="field primary">id TEXT PRIMARY KEY</div>
+                            <div class="field required">order_number TEXT NOT NULL UNIQUE</div>
+                            <div class="field required">status TEXT NOT NULL</div>
+                            <div class="field required">type TEXT NOT NULL</div>
+                            <div class="field optional">table_id TEXT</div>
+                            <div class="field foreign">user_id TEXT</div>
+                            <div class="field optional">customer_name TEXT</div>
+                            <div class="field optional">customer_phone TEXT</div>
+                            <div class="field optional">customer_email TEXT</div>
+                            <div class="field optional">customer_address TEXT</div>
+                            <div class="field optional">special_instructions TEXT</div>
+                            <div class="field required">subtotal REAL NOT NULL</div>
+                            <div class="field required">tax_amount REAL NOT NULL</div>
+                            <div class="field required">tip_amount REAL NOT NULL</div>
+                            <div class="field required">hst_amount REAL NOT NULL DEFAULT 0.0</div>
+                            <div class="field required">discount_amount REAL NOT NULL DEFAULT 0.0</div>
+                            <div class="field required">gratuity_amount REAL NOT NULL DEFAULT 0.0</div>
+                            <div class="field required">total_amount REAL NOT NULL</div>
+                            <div class="field optional">payment_method TEXT</div>
+                            <div class="field optional">payment_status TEXT</div>
+                            <div class="field optional">payment_transaction_id TEXT</div>
+                            <div class="field required">order_time TEXT NOT NULL</div>
+                            <div class="field optional">estimated_ready_time TEXT</div>
+                            <div class="field optional">actual_ready_time TEXT</div>
+                            <div class="field optional">served_time TEXT</div>
+                            <div class="field optional">completed_time TEXT</div>
+                            <div class="field required">is_urgent INTEGER NOT NULL DEFAULT 0</div>
+                            <div class="field required">priority INTEGER NOT NULL DEFAULT 0</div>
+                            <div class="field optional">assigned_to TEXT</div>
+                            <div class="field optional">custom_fields TEXT</div>
+                            <div class="field optional">metadata TEXT</div>
+                            <div class="field optional">notes TEXT</div>
+                            <div class="field optional">preferences TEXT</div>
+                            <div class="field optional">history TEXT</div>
+                            <div class="field optional">items TEXT</div>
+                            <div class="field optional">completed_at TEXT</div>
+                            <div class="field required">created_at TEXT NOT NULL</div>
+                            <div class="field required">updated_at TEXT NOT NULL</div>
+                        </div>
+                        <div class="relationships">
+                            <h4>🔗 Referenced By:</h4>
+                            <div class="relationship">order_items.order_id → orders.id</div>
+                            <div class="relationship">transactions.order_id → orders.id</div>
+                            <div class="relationship">order_logs.order_id → orders.id</div>
+                        </div>
+                    </div>
+
+                    <div class="table-card business">
+                        <div class="table-name">order_items</div>
+                        <div class="table-schema">
+                            <div class="field primary">id TEXT PRIMARY KEY</div>
+                            <div class="field foreign">order_id TEXT NOT NULL</div>
+                            <div class="field foreign">menu_item_id TEXT NOT NULL</div>
+                            <div class="field required">quantity INTEGER NOT NULL</div>
+                            <div class="field required">unit_price REAL NOT NULL</div>
+                            <div class="field required">total_price REAL NOT NULL</div>
+                            <div class="field optional">selected_variant TEXT</div>
+                            <div class="field optional">selected_modifiers TEXT</div>
+                            <div class="field optional">special_instructions TEXT</div>
+                            <div class="field optional">notes TEXT</div>
+                            <div class="field optional">custom_properties TEXT</div>
+                            <div class="field required">is_available INTEGER NOT NULL DEFAULT 1</div>
+                            <div class="field required">sent_to_kitchen INTEGER NOT NULL DEFAULT 0</div>
+                            <div class="field optional">kitchen_status TEXT DEFAULT 'pending'</div>
+                            <div class="field required">created_at TEXT NOT NULL</div>
+                            <div class="field required">updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP</div>
+                        </div>
+                        <div class="relationships">
+                            <h4>🔗 Foreign Keys:</h4>
+                            <div class="relationship">order_id → orders.id (CASCADE)</div>
+                            <div class="relationship">menu_item_id → menu_items.id</div>
+                        </div>
+                    </div>
+
+                    <div class="table-card business">
+                        <div class="table-name">customers</div>
+                        <div class="table-schema">
+                            <div class="field primary">id TEXT PRIMARY KEY</div>
+                            <div class="field required">name TEXT NOT NULL</div>
+                            <div class="field optional">email TEXT</div>
+                            <div class="field optional">phone TEXT</div>
+                            <div class="field optional">address TEXT</div>
+                            <div class="field optional">preferences TEXT</div>
+                            <div class="field required">created_at TEXT NOT NULL</div>
+                            <div class="field required">updated_at TEXT NOT NULL</div>
+                        </div>
+                    </div>
+
+                    <div class="table-card business">
+                        <div class="table-name">tables</div>
+                        <div class="table-schema">
+                            <div class="field primary">id TEXT PRIMARY KEY</div>
+                            <div class="field required">number INTEGER NOT NULL</div>
+                            <div class="field required">capacity INTEGER NOT NULL</div>
+                            <div class="field required">status TEXT NOT NULL</div>
+                            <div class="field foreign">user_id TEXT</div>
+                            <div class="field optional">customer_name TEXT</div>
+                            <div class="field optional">customer_phone TEXT</div>
+                            <div class="field optional">customer_email TEXT</div>
+                            <div class="field optional">metadata TEXT</div>
+                            <div class="field required">created_at TEXT NOT NULL</div>
+                            <div class="field required">updated_at TEXT NOT NULL</div>
+                        </div>
+                        <div class="relationships">
+                            <h4>🔗 Referenced By:</h4>
+                            <div class="relationship">orders.table_id → tables.id</div>
+                            <div class="relationship">reservations.table_id → tables.id</div>
+                        </div>
+                    </div>
+
+                    <div class="table-card business">
+                        <div class="table-name">reservations</div>
+                        <div class="table-schema">
+                            <div class="field primary">id TEXT PRIMARY KEY</div>
+                            <div class="field required">customer_name TEXT NOT NULL</div>
+                            <div class="field required">customer_phone TEXT NOT NULL</div>
+                            <div class="field optional">customer_email TEXT</div>
+                            <div class="field required">party_size INTEGER NOT NULL</div>
+                            <div class="field required">reservation_date TEXT NOT NULL</div>
+                            <div class="field required">reservation_time TEXT NOT NULL</div>
+                            <div class="field required">status TEXT NOT NULL DEFAULT 'confirmed'</div>
+                            <div class="field foreign">table_id TEXT</div>
+                            <div class="field foreign">created_by TEXT</div>
+                            <div class="field optional">special_requests TEXT</div>
+                            <div class="field required">created_at TEXT NOT NULL</div>
+                            <div class="field required">updated_at TEXT NOT NULL</div>
+                        </div>
+                        <div class="relationships">
+                            <h4>🔗 Foreign Keys:</h4>
+                            <div class="relationship">table_id → tables.id (SET NULL)</div>
+                            <div class="relationship">created_by → users.id (SET NULL)</div>
+                        </div>
+                    </div>
+
+                    <div class="table-card business">
+                        <div class="table-name">transactions</div>
+                        <div class="table-schema">
+                            <div class="field primary">id TEXT PRIMARY KEY</div>
+                            <div class="field foreign">order_id TEXT NOT NULL</div>
+                            <div class="field required">amount REAL NOT NULL</div>
+                            <div class="field required">payment_method TEXT NOT NULL</div>
+                            <div class="field required">status TEXT NOT NULL</div>
+                            <div class="field optional">transaction_id TEXT</div>
+                            <div class="field optional">notes TEXT</div>
+                            <div class="field required">created_at TEXT NOT NULL</div>
+                        </div>
+                        <div class="relationships">
+                            <h4>🔗 Foreign Keys:</h4>
+                            <div class="relationship">order_id → orders.id</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Operational Tables -->
+            <div class="schema-section">
+                <h2>⚙️ Operational Tables</h2>
+                <div class="table-grid">
+                    <div class="table-card operational">
+                        <div class="table-name">inventory</div>
+                        <div class="table-schema">
+                            <div class="field primary">id TEXT PRIMARY KEY</div>
+                            <div class="field required">name TEXT NOT NULL</div>
+                            <div class="field required">quantity INTEGER NOT NULL</div>
+                            <div class="field required">unit TEXT NOT NULL</div>
+                            <div class="field required">low_stock_threshold INTEGER NOT NULL DEFAULT 10</div>
+                            <div class="field optional">supplier TEXT</div>
+                            <div class="field optional">cost_per_unit REAL</div>
+                            <div class="field required">created_at TEXT NOT NULL</div>
+                            <div class="field required">updated_at TEXT NOT NULL</div>
+                        </div>
+                    </div>
+
+                    <div class="table-card operational">
+                        <div class="table-name">order_logs</div>
+                        <div class="table-schema">
+                            <div class="field primary">id TEXT PRIMARY KEY</div>
+                            <div class="field foreign">order_id TEXT NOT NULL</div>
+                            <div class="field required">action TEXT NOT NULL</div>
+                            <div class="field required">status TEXT NOT NULL</div>
+                            <div class="field optional">notes TEXT</div>
+                            <div class="field required">timestamp TEXT NOT NULL</div>
+                            <div class="field required">created_at TEXT NOT NULL</div>
+                        </div>
+                        <div class="relationships">
+                            <h4>🔗 Foreign Keys:</h4>
+                            <div class="relationship">order_id → orders.id (CASCADE)</div>
+                        </div>
+                    </div>
+
+                    <div class="table-card operational">
+                        <div class="table-name">activity_logs</div>
+                        <div class="table-schema">
+                            <div class="field primary">id TEXT PRIMARY KEY</div>
+                            <div class="field required">user_id TEXT NOT NULL</div>
+                            <div class="field required">action TEXT NOT NULL</div>
+                            <div class="field optional">details TEXT</div>
+                            <div class="field required">timestamp TEXT NOT NULL</div>
+                            <div class="field required">created_at TEXT NOT NULL</div>
+                        </div>
+                    </div>
+
+                    <div class="table-card operational">
+                        <div class="table-name">printer_configurations</div>
+                        <div class="table-schema">
+                            <div class="field primary">id TEXT PRIMARY KEY</div>
+                            <div class="field required">name TEXT NOT NULL</div>
+                            <div class="field required">description TEXT NOT NULL DEFAULT 'Printer configuration'</div>
+                            <div class="field required">type TEXT NOT NULL DEFAULT 'wifi'</div>
+                            <div class="field optional">model TEXT</div>
+                            <div class="field optional">ip_address TEXT</div>
+                            <div class="field optional">port INTEGER DEFAULT 9100</div>
+                            <div class="field optional">mac_address TEXT</div>
+                            <div class="field optional">bluetooth_address TEXT</div>
+                            <div class="field required">station_id TEXT DEFAULT 'main_kitchen'</div>
+                            <div class="field required">is_active INTEGER DEFAULT 1</div>
+                            <div class="field required">is_default INTEGER DEFAULT 0</div>
+                            <div class="field required">connection_status TEXT DEFAULT 'unknown'</div>
+                            <div class="field optional">last_connected TEXT</div>
+                            <div class="field optional">last_test_print TEXT</div>
+                            <div class="field required">custom_settings TEXT DEFAULT '{}'</div>
+                            <div class="field required">remote_config TEXT DEFAULT '{}'</div>
+                            <div class="field required">created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP</div>
+                            <div class="field required">updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP</div>
+                        </div>
+                        <div class="relationships">
+                            <h4>🔗 Referenced By:</h4>
+                            <div class="relationship">printer_assignments.printer_id → printer_configurations.id</div>
+                        </div>
+                    </div>
+
+                    <div class="table-card operational">
+                        <div class="table-name">printer_assignments</div>
+                        <div class="table-schema">
+                            <div class="field primary">id TEXT PRIMARY KEY</div>
+                            <div class="field foreign">printer_id TEXT NOT NULL</div>
+                            <div class="field required">assignment_type TEXT NOT NULL</div>
+                            <div class="field required">target_id TEXT NOT NULL</div>
+                            <div class="field required">is_active INTEGER NOT NULL DEFAULT 1</div>
+                            <div class="field required">created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP</div>
+                            <div class="field required">updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP</div>
+                        </div>
+                        <div class="relationships">
+                            <h4>🔗 Foreign Keys:</h4>
+                            <div class="relationship">printer_id → printer_configurations.id (CASCADE)</div>
+                        </div>
+                    </div>
+
+                    <div class="table-card operational">
+                        <div class="table-name">app_metadata</div>
+                        <div class="table-schema">
+                            <div class="field primary">id TEXT PRIMARY KEY</div>
+                            <div class="field required">key TEXT NOT NULL</div>
+                            <div class="field required">value TEXT NOT NULL</div>
+                            <div class="field optional">description TEXT</div>
+                            <div class="field required">created_at TEXT NOT NULL</div>
+                            <div class="field required">updated_at TEXT NOT NULL</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Legend -->
+            <div class="legend">
+                <h3>📋 Schema Legend</h3>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #e74c3c;"></div>
+                    <div class="legend-text"><strong>Core Tables:</strong> Essential system tables for user management and configuration</div>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #f39c12;"></div>
+                    <div class="legend-text"><strong>Business Tables:</strong> Main business logic tables for orders, menu, and customers</div>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #27ae60;"></div>
+                    <div class="legend-text"><strong>Operational Tables:</strong> Supporting tables for inventory, logging, and printing</div>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #9b59b6;"></div>
+                    <div class="legend-text"><strong>Support Tables:</strong> Additional utility and metadata tables</div>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #e74c3c;"></div>
+                    <div class="legend-text"><strong>Primary Key:</strong> Unique identifier for each table</div>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #f39c12;"></div>
+                    <div class="legend-text"><strong>Foreign Key:</strong> References to other tables</div>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #27ae60;"></div>
+                    <div class="legend-text"><strong>Required Field:</strong> Must have a value</div>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #7f8c8d;"></div>
+                    <div class="legend-text"><strong>Optional Field:</strong> Can be null</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html> 

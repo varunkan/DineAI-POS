@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "289888933189",
+    "project_id": "dineai-pos-system",
+    "storage_bucket": "dineai-pos-system.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:289888933189:android:f45716d9ccd2c9876f9a2c",
+        "android_client_info": {
+          "package_name": "com.restaurantpos.ai_pos_system"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA6yC-KfB8f_P5gZW55YooeFAvP9BT9IwY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

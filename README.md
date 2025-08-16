@@ -1,6 +1,6 @@
-# 🏪 Multi-Tenant AI POS System
+# 🏪 Multi-Tenant AI POS System v1.1.0
 
-A world-class, cross-platform Point of Sale system built with Flutter for modern restaurants. Features intelligent order management, multi-device synchronization, thermal printing, and a beautiful responsive interface.
+A world-class, cross-platform Point of Sale system built with Flutter for modern restaurants. Features intelligent order management, multi-device synchronization, thermal printing, and a beautiful responsive interface. **Now with enhanced Admin User Management and Multi-Tenant Restaurant Support.**
 
 ## ✨ Key Features
 
@@ -30,6 +30,9 @@ A world-class, cross-platform Point of Sale system built with Flutter for modern
 - **Admin Panel** - Comprehensive restaurant management
 - **Activity Logging** - Complete audit trail of all operations
 - **Session Management** - Secure authentication and authorization
+- **Admin User Creation** - Automatic admin user creation during restaurant registration
+- **Role-Based Access Control** - Granular permissions for different user roles
+- **Multi-Tenant Authentication** - Secure isolation between different restaurants
 
 ### 📊 **Analytics & Reporting**
 - **Sales Analytics** - Real-time sales tracking and reporting

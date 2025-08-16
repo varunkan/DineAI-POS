@@ -1,130 +1,54 @@
-# Miscellaneous
-*.class
-*.log
-*.pyc
-*.swp
-.DS_Store
-.atom/
-.build/
-.buildlog/
-.history
-.svn/
-.swiftpm/
-migrate_working_dir/
-
-# IntelliJ related
-*.iml
-*.ipr
-*.iws
-.idea/
-
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
-#.vscode/
-
-# Flutter/Dart/Pub related
-**/doc/api/
-**/ios/Flutter/.last_build_id
+# Flutter/Dart specific
 .dart_tool/
 .flutter-plugins
 .flutter-plugins-dependencies
 .packages
 .pub-cache/
 .pub/
-/build/
+build/
+*.lock
+*.iml
 
-# Symbolication related
-app.*.symbols
+# Android specific
+android/.gradle
+android/captures/
+android/gradlew
+android/gradlew.bat
+android/local.properties
+android/GeneratedPluginRegistrant.java
+android/key.properties
+*.jks
 
-# Obfuscation related
-app.*.map.json
+# iOS specific
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/App.framework
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+ios/Flutter/Generated.xcconfig
+ios/Flutter/ephemeral/
+ios/Flutter/flutter_assets/
+ios/ServiceDefinitions.json
+ios/Runner/GeneratedPluginRegistrant.*
 
-# Android Studio will place build artifacts here
-/android/app/debug
-/android/app/profile
-/android/app/release
+# Web specific
+web/firebase-messaging-sw.js
 
-# iOS related
-**/ios/**/*.mode1v3
-**/ios/**/*.mode2v3
-**/ios/**/*.moved-aside
-**/ios/**/*.pbxuser
-**/ios/**/*.perspectivev3
-**/ios/**/*sync/
-**/ios/**/.sconsign.dblite
-**/ios/**/.tags*
-**/ios/**/.vagrant/
-**/ios/**/DerivedData/
-**/ios/**/Icon?
-**/ios/**/Pods/
-**/ios/**/.symlinks/
-**/ios/**/profile
-**/ios/**/xcuserdata
-**/ios/.generated/
-**/ios/Flutter/App.framework
-**/ios/Flutter/Flutter.framework
-**/ios/Flutter/Flutter.podspec
-**/ios/Flutter/Generated.xcconfig
-**/ios/Flutter/app.flx
-**/ios/Flutter/app.zip
-**/ios/Flutter/flutter_assets/
-**/ios/Flutter/flutter_export_environment.sh
-**/ios/ServiceDefinitions.json
-**/ios/Runner/GeneratedPluginRegistrant.*
+# Node.js specific
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
 
-# macOS
-**/macos/Flutter/GeneratedPluginRegistrant.swift
-**/macos/Flutter/ephemeral
-
-# Coverage
-coverage/
-
-# Exceptions to above rules.
-!**/ios/**/default.mode1v3
-!**/ios/**/default.mode2v3
-!**/ios/**/default.pbxuser
-!**/ios/**/default.perspectivev3
-!/packages/flutter_tools/test/data/dart_dependencies_test/**/.packages
-
-# FVM
-.fvm/
-
-# Environment files
-.env
-.env.local
-.env.development
-.env.production
-
-# Firebase
-google-services.json
-GoogleService-Info.plist
-firebase_options.dart
-
-# Database files (if you want to exclude them)
-*.db
-*.sqlite
-*.sqlite3
-
-# APK files (too large for GitHub)
-*.apk
-releases/*.apk
-
-# Logs
-logs/
-*.log
-
-# Temporary files
-*.tmp
-*.temp
-
-# IDE files
+# IDE specific
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
 
-# OS generated files
+# OS specific
 .DS_Store
 .DS_Store?
 ._*
@@ -132,3 +56,46 @@ logs/
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Logs
+*.log
+logs/
+flutter_logs.txt
+
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Firebase
+firebase_config_template.dart
+firebase_config_template.dart.disabled
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Build outputs
+*.apk
+*.aab
+*.ipa
+*.dmg
+*.exe
+
+# Test coverage
+coverage/
+*.lcov
+
+# Generated files
+*.g.dart
+*.freezed.dart
+*.mocks.dart

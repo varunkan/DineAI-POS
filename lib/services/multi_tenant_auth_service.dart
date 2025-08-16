@@ -1683,8 +1683,8 @@ class MultiTenantAuthService extends ChangeNotifier {
       // ENHANCEMENT: Ensure data persistence is configured
       await _ensureFirebaseDataPersistence(restaurant);
       
-      // Perform full sync from cloud
-      await _performFullSyncFromCloud(restaurant);
+      // ENHANCEMENT: Trigger smart time-based sync for cross-device consistency
+      await _triggerSmartSyncForCrossDeviceLogin(restaurant);
       
       // Now complete login
       return await _authenticateUser(restaurant, userId, password);
@@ -1692,6 +1692,51 @@ class MultiTenantAuthService extends ChangeNotifier {
       _addProgressMessage('❌ Cloud login failed: $e');
       throw e;
     }
+  }
+  
+  /// Trigger smart time-based sync for cross-device login
+  /// This ensures data consistency when logging in from different devices
+  Future<void> _triggerSmartSyncForCrossDeviceLogin(Restaurant restaurant) async {
+    try {
+      _addProgressMessage('🔄 Checking for cross-device data consistency...');
+      
+      // Initialize the unified sync service
+      final unifiedSyncService = UnifiedSyncService();
+      await unifiedSyncService.initialize();
+      
+      // Connect to restaurant for sync
+      await unifiedSyncService.connectToRestaurant(restaurant, RestaurantSession(
+        restaurantId: restaurant.id,
+        userId: 'temp_user', // Will be updated after authentication
+        startTime: DateTime.now(),
+        deviceId: _getDeviceId(),
+      ));
+      
+      // Check if sync is needed
+      final needsSync = await unifiedSyncService.needsSync();
+      
+      if (needsSync) {
+        _addProgressMessage('🔄 Cross-device sync needed - performing smart time-based sync...');
+        
+        // Perform the smart time-based sync
+        await unifiedSyncService.performSmartTimeBasedSync();
+        
+        _addProgressMessage('✅ Cross-device data consistency ensured');
+      } else {
+        _addProgressMessage('✅ Cross-device data is already consistent');
+      }
+      
+    } catch (e) {
+      _addProgressMessage('⚠️ Cross-device sync check failed: $e');
+      // Don't throw error - sync failure shouldn't prevent login
+      debugPrint('⚠️ Cross-device sync failed: $e');
+    }
+  }
+  
+  /// Get unique device identifier
+  String _getDeviceId() {
+    // Generate a unique device ID for this session
+    return 'device_${DateTime.now().millisecondsSinceEpoch}_${restaurant?.id ?? 'unknown'}';
   }
   
   /// Perform timestamp-based sync (lightweight sync for fresh data)
@@ -3532,7 +3577,7 @@ class MultiTenantAuthService extends ChangeNotifier {
               skippedCount++;
             }
           } catch (e) {
-            debugPrint('⚠️ Error parsing timestamps for order $orderId: $e');
+            _addProgressMessage('⚠️ Error parsing timestamps for order $orderId: $e');
             // If timestamp parsing fails, skip this order
             skippedCount++;
           }

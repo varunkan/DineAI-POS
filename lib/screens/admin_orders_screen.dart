@@ -835,7 +835,7 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
       elevation: 2,
       child: ListTile(
         leading: CircleAvatar(
-          backgroundColor: _getStatusColor(order.status).withOpacity(0.1),
+          backgroundColor: _getStatusColor(order.status).withValues(alpha: 0.1),
           child: Text(
             order.orderNumber.split('-').last,
             style: TextStyle(

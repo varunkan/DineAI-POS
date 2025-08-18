@@ -233,10 +233,21 @@ class FirebaseCloudPrintingService extends ChangeNotifier {
   }
   
   /// Get items grouped by printer assignments
+  /// CRITICAL FIX: Only include items that haven't been sent to kitchen yet
   Future<Map<String, List<pos_order.OrderItem>>> _getItemsByPrinter(pos_order.Order order) async {
     final itemsByPrinter = <String, List<pos_order.OrderItem>>{};
     
-    for (final item in order.items) {
+    // CRITICAL FIX: Filter out items that have already been sent to kitchen
+    final newItems = order.items.where((item) => !item.sentToKitchen).toList();
+    
+    if (newItems.isEmpty) {
+      debugPrint('$_logTag ⚠️ No new items to print - all items already sent to kitchen');
+      return {};
+    }
+    
+    debugPrint('$_logTag 🔍 Found ${newItems.length} new items to print (${order.items.length} total items)');
+    
+    for (final item in newItems) {
       // Get printer assignments for this item
       final printerIds = _getPrinterAssignmentsForItem(item);
       

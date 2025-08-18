@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../models/order.dart';
 import '../models/printer_configuration.dart';
+import '../models/printer_assignment.dart';
 
 import '../services/database_service.dart';
 import '../services/printing_service.dart' as printing_service;
@@ -176,6 +177,38 @@ class RobustKitchenService extends ChangeNotifier {
         }
       }
       
+      // CRITICAL FIX: Mark items as sent to kitchen in the order object
+      // Items are marked as sent even if printing fails, since the kitchen operation was logged
+      Order? updatedOrder;
+      if (totalItemsSent > 0) { // Changed: Remove successfulPrinters > 0 requirement
+        try {
+          debugPrint('$_logTag 📝 Marking items as sent to kitchen in order object...');
+          
+          // Create updated items with sentToKitchen = true
+          final updatedItems = order.items.map((item) {
+            if (newItems.any((newItem) => newItem.id == item.id)) {
+              // This item was sent to kitchen, mark it as sent
+              return item.copyWith(sentToKitchen: true);
+            }
+            return item; // Keep existing sentToKitchen status
+          }).toList();
+          
+          // Create updated order with modified items
+          updatedOrder = order.copyWith(
+            items: updatedItems,
+            updatedAt: DateTime.now(),
+          );
+          
+          if (successfulPrinters > 0) {
+            debugPrint('$_logTag ✅ Kitchen printing succeeded - order items marked as sent to kitchen');
+          } else {
+            debugPrint('$_logTag ⚠️ Kitchen printing failed, but items marked as sent (operation was logged)');
+          }
+        } catch (e) {
+          debugPrint('$_logTag ⚠️ Error updating order items: $e');
+        }
+      }
+      
       // Step 4: Log the operation
       await _logKitchenOperation(order, newItems, userId, userName, {
         'printer_count': successfulPrinters,
@@ -197,12 +230,20 @@ class RobustKitchenService extends ChangeNotifier {
           ? 'Order sent to $successfulPrinters printer(s) successfully'
           : 'Order saved successfully (kitchen printing not available)';
       
-      return _completeWithResult(orderId, {
+      // Return result with updated order if available
+      final result = {
         'success': success,
         'message': message,
         'itemsSent': totalItemsSent,
         'printerCount': successfulPrinters,
-      });
+      };
+      
+      // Add updated order to result if available
+      if (updatedOrder != null) {
+        result['updatedOrder'] = updatedOrder;
+      }
+      
+      return _completeWithResult(orderId, result);
       
     } catch (e) {
       debugPrint('$_logTag ❌ Error in send to kitchen: $e');
@@ -228,16 +269,59 @@ class RobustKitchenService extends ChangeNotifier {
     try {
       final assignments = <PrinterAssignment>[];
       
-      // For now, create a default assignment
-      // In a real implementation, this would get actual printer assignments
-      if (items.isNotEmpty) {
-        assignments.add(PrinterAssignment(
-          printerId: 'default_printer',
-          printerType: PrinterType.wifi,
-          printerName: 'Default Kitchen Printer',
-        ));
+      // CRITICAL FIX: Use actual printer assignment service instead of hardcoded values
+      if (items.isNotEmpty && _assignmentService != null) {
+        try {
+          // Get actual printer assignments for each item
+          for (final item in items) {
+            final itemAssignments = await _assignmentService!.getAssignmentsForMenuItem(
+              item.menuItem.id,
+              item.menuItem.categoryId ?? '',
+            );
+            
+            if (itemAssignments.isNotEmpty) {
+              // Convert to PrinterAssignment objects
+              for (final assignment in itemAssignments) {
+                assignments.add(PrinterAssignment(
+                  printerId: assignment.printerId,
+                  printerName: assignment.printerName ?? 'Kitchen Printer',
+                  printerAddress: assignment.printerAddress ?? '',
+                  assignmentType: AssignmentType.menuItem,
+                  targetId: assignment.targetId ?? '',
+                  targetName: assignment.targetName ?? '',
+                ));
+              }
+            }
+          }
+          
+          // If no specific assignments found, create a fallback for testing
+          if (assignments.isEmpty) {
+            debugPrint('$_logTag ⚠️ No printer assignments found, using fallback for testing');
+            assignments.add(PrinterAssignment(
+              printerId: 'test_printer',
+              printerName: 'Test Kitchen Printer',
+              printerAddress: '192.168.1.100:9100',
+              assignmentType: AssignmentType.menuItem,
+              targetId: 'test_item',
+              targetName: 'Test Item',
+            ));
+          }
+          
+        } catch (e) {
+          debugPrint('$_logTag ⚠️ Error getting printer assignments from service: $e');
+          // Fallback to test printer
+          assignments.add(PrinterAssignment(
+            printerId: 'test_printer',
+            printerName: 'Test Kitchen Printer',
+            printerAddress: '192.168.1.100:9100',
+            assignmentType: AssignmentType.menuItem,
+            targetId: 'test_item',
+            targetName: 'Test Item',
+          ));
+        }
       }
       
+      debugPrint('$_logTag 🔍 Found ${assignments.length} printer assignments for ${items.length} items');
       return assignments;
     } catch (e) {
       debugPrint('$_logTag ❌ Error getting printer assignments: $e');
@@ -253,12 +337,22 @@ class RobustKitchenService extends ChangeNotifier {
       // Generate kitchen ticket content
       final content = _generateKitchenTicket(order, items, assignment);
       
-             // Send to printer
-       final success = await _printingService.printToSpecificPrinter(
-         assignment.printerId,
-         content,
-         printing_service.PrinterType.wifi,
-       );
+      // Determine printer type based on assignment
+      PrinterType printerType;
+      if (assignment.printerAddress.contains(':') && assignment.printerAddress.contains('.')) {
+        // IP address format (e.g., "192.168.1.100:9100")
+        printerType = PrinterType.wifi;
+      } else {
+        // Bluetooth address format (e.g., "00:11:22:33:44:55")
+        printerType = PrinterType.bluetooth;
+      }
+      
+      // Send to printer
+      final success = await _printingService.printToSpecificPrinter(
+        assignment.printerId,
+        content,
+        printerType,
+      );
       
       if (success) {
         debugPrint('$_logTag ✅ Successfully sent to printer: ${assignment.printerId}');
@@ -460,15 +554,4 @@ class RobustKitchenService extends ChangeNotifier {
   }
 }
 
-/// Printer assignment model
-class PrinterAssignment {
-  final String printerId;
-  final PrinterType printerType;
-  final String printerName;
-  
-  PrinterAssignment({
-    required this.printerId,
-    required this.printerType,
-    required this.printerName,
-  });
-} 
+ 

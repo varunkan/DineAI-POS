@@ -12,10 +12,10 @@ import '../models/printer_configuration.dart';
 import 'printer_configuration_service.dart';
 import 'database_service.dart';
 
-/// Enum for printer connection types
-enum PrinterType {
-  wifi,
-}
+// Using PrinterType from printer_configuration.dart model
+// enum PrinterType {
+//   wifi,
+// }
 
 /// Model for discovered printer devices
 class PrinterDevice {
@@ -319,6 +319,13 @@ class PrintingService with ChangeNotifier {
       switch (type) {
         case PrinterType.wifi:
           return await _scanWiFiPrinters();
+        case PrinterType.ethernet:
+        case PrinterType.bluetooth:
+        case PrinterType.usb:
+        case PrinterType.remote:
+        case PrinterType.vpn:
+          debugPrint('❌ Printer type ${type} not yet implemented');
+          return [];
       }
     } finally {
       _isCurrentlyScanning = false;
@@ -1114,8 +1121,12 @@ class PrintingService with ChangeNotifier {
       switch (_connectedPrinter!.type) {
         case PrinterType.wifi:
           return _wifiSocket != null;
-        // case PrinterType.bluetooth:  // Temporarily disabled
-        //   return false;
+        case PrinterType.ethernet:
+        case PrinterType.bluetooth:
+        case PrinterType.usb:
+        case PrinterType.remote:
+        case PrinterType.vpn:
+          return false;
       }
     } catch (e) {
       debugPrint('Error validating printer connection: $e');
@@ -1288,10 +1299,14 @@ class PrintingService with ChangeNotifier {
             throw Exception('WiFi printer connection not established - please reconnect to printer');
           }
           break;
-        // case PrinterType.bluetooth:  // Temporarily disabled
-        //   debugPrint('❌ Bluetooth printing temporarily disabled');
-        //   throw Exception('Bluetooth printing is temporarily disabled');
-        //   break;
+        case PrinterType.ethernet:
+        case PrinterType.bluetooth:
+        case PrinterType.usb:
+        case PrinterType.remote:
+        case PrinterType.vpn:
+          debugPrint('❌ Printer type ${_connectedPrinter!.type} not yet implemented');
+          throw Exception('Printer type ${_connectedPrinter!.type} not yet implemented');
+          break;
       }
       
       debugPrint('✅ Content sent to printer successfully');
@@ -1917,8 +1932,13 @@ class PrintingService with ChangeNotifier {
       switch (printer.type) {
         case PrinterType.wifi:
           return await _connectToWiFiPrinterLegacy(printer);
-        // case PrinterType.bluetooth:  // Temporarily disabled
-        //   return await _connectToBluetoothPrinterLegacy(printer);
+        case PrinterType.ethernet:
+        case PrinterType.bluetooth:
+        case PrinterType.usb:
+        case PrinterType.remote:
+        case PrinterType.vpn:
+          debugPrint('❌ Printer type ${printer.type} not yet implemented');
+          return false;
       }
     } catch (e) {
       debugPrint('Error connecting to printer: $e');
@@ -3428,6 +3448,84 @@ ${customMessage ?? 'Test print successful!\nPrinter is ready for use.'}
       debugPrint('❌ Failed to reinitialize printing service: $e');
       return false;
     }
+  }
+
+  /// Immediate auto-reconnect for login scenarios
+  Future<void> immediateAutoReconnect() async {
+    try {
+      debugPrint('🚀 Starting immediate auto-reconnect for login...');
+      
+      // Get saved printer configurations
+      final String? activePrintersJson = _prefs.getString(_activePrintersKey);
+      if (activePrintersJson == null) {
+        debugPrint('ℹ️ No previously connected printers found');
+        return;
+      }
+      
+      final List<dynamic> printersList = jsonDecode(activePrintersJson);
+      debugPrint('📋 Found ${printersList.length} previously connected printers for immediate reconnection');
+      
+      // For each saved printer configuration, attempt to reconnect immediately
+      for (final printerData in printersList) {
+        try {
+          // Validate printer data structure
+          if (printerData is! Map<String, dynamic>) {
+            debugPrint('⚠️ Invalid printer data structure, skipping');
+            continue;
+          }
+          
+          final printerId = printerData['id'] as String?;
+          final printerName = printerData['name'] as String? ?? 'Printer $printerId';
+          final printerType = printerData['type'] as String? ?? 'PrinterType.wifi';
+          final ipAddress = printerData['ipAddress'] as String?;
+          final port = printerData['port'] as int?;
+          final isActive = printerData['isActive'] as bool? ?? true;
+          
+          if (printerId == null || !isActive) {
+            debugPrint('⏭️ Skipping invalid or inactive printer: $printerName');
+            continue;
+          }
+          
+          // Create configuration based on saved data
+          PrinterConfiguration config;
+          
+          if (printerType.contains('wifi') && ipAddress != null && ipAddress.isNotEmpty) {
+            config = PrinterConfiguration(
+              id: printerId,
+              name: printerName,
+              type: PrinterType.wifi,
+              ipAddress: ipAddress,
+              port: port ?? 9100,
+              isActive: true,
+            );
+          } else {
+            debugPrint('⚠️ Invalid printer configuration for $printerName, skipping');
+            continue;
+          }
+          
+          debugPrint('🔗 Attempting immediate reconnection to $printerName ($printerType)...');
+          final success = await _connectToPrinterAsync(config);
+          
+          if (success) {
+            debugPrint('✅ Successfully reconnected to $printerName');
+          } else {
+            debugPrint('❌ Failed to reconnect to $printerName');
+          }
+        } catch (e) {
+          debugPrint('❌ Error reconnecting to printer: $e');
+        }
+      }
+      
+      debugPrint('🚀 Immediate auto-reconnect process completed');
+    } catch (e) {
+      debugPrint('❌ Error during immediate auto-reconnect: $e');
+    }
+  }
+
+  /// Discover Bluetooth printers
+  Future<List<PrinterDevice>> discoverBluetoothPrinters() async {
+    debugPrint('🔍 Bluetooth discovery temporarily disabled');
+    return [];
   }
 
 }

@@ -510,6 +510,19 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       _printingService = PrintingService(prefs, networkInfo);
       debugPrint('✅ PrintingService initialized');
       
+      // ENABLE: Trigger immediate auto-reconnect to previously connected printers
+      widget.progressService.addMessage('🔗 Reconnecting to previously connected printers...');
+      try {
+        // Wait a bit for the printing service to fully initialize
+        await Future.delayed(const Duration(seconds: 2));
+        debugPrint('🚀 Triggering immediate auto-reconnect to previously connected printers...');
+        // Call immediate auto-reconnect for faster reconnection after login
+        await _printingService!.immediateAutoReconnect();
+        debugPrint('✅ Immediate auto-reconnect process completed');
+      } catch (e) {
+        debugPrint('⚠️ Immediate auto-reconnect failed: $e');
+      }
+      
       // Trigger UI rebuild with basic services ready
       if (mounted) {
         setState(() {});

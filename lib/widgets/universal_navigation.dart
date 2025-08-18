@@ -18,6 +18,7 @@ import '../screens/reservations_screen.dart';
 import '../screens/unified_printer_dashboard.dart';
 
 import '../screens/restaurant_auth_screen.dart';
+import '../screens/bluetooth_printer_management_screen.dart';
 
 /// Universal navigation widget that provides consistent navigation across all screens
 class UniversalNavigation extends StatelessWidget implements PreferredSizeWidget {
@@ -118,7 +119,7 @@ class UniversalNavigation extends StatelessWidget implements PreferredSizeWidget
         color: Theme.of(context).colorScheme.inversePrimary,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
+            color: Colors.black.withValues(alpha: 0.1),
             blurRadius: 4,
             offset: const Offset(0, 2),
           ),
@@ -380,6 +381,14 @@ class UniversalNavigation extends StatelessWidget implements PreferredSizeWidget
             dense: true,
           ),
         ),
+        const PopupMenuItem(
+          value: 'bluetooth_printers',
+          child: ListTile(
+            leading: Icon(Icons.bluetooth),
+            title: Text('Bluetooth Printers'),
+            dense: true,
+          ),
+        ),
         
         // System Functions
         const PopupMenuItem(
@@ -435,6 +444,9 @@ class UniversalNavigation extends StatelessWidget implements PreferredSizeWidget
         break;
       case 'printer_assignments':
         _navigateToPrinterAssignments(context);
+        break;
+      case 'bluetooth_printers':
+        _navigateToBluetoothPrinters(context);
         break;
       case 'switch_server':
         // Navigate to landing screen instead of server selection
@@ -569,6 +581,15 @@ class UniversalNavigation extends StatelessWidget implements PreferredSizeWidget
     ),
   );
 }
+
+  void _navigateToBluetoothPrinters(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const BluetoothPrinterManagementScreen(),
+      ),
+    );
+  }
 
   void _navigateToPrinterIPConfig(BuildContext context) {
     Navigator.push(

@@ -498,7 +498,7 @@ class EnhancedPrinterManager extends ChangeNotifier {
       return await _printingService.printToSpecificPrinter(
         config.fullAddress,
         content,
-        printing_service.PrinterType.wifi, // Default to WiFi for now
+        config.type, // Use the actual printer type from configuration
       );
     } catch (e) {
       debugPrint('$_logTag ❌ Error sending to printer: $e');

@@ -38,11 +38,12 @@ dependencies:
   shared_preferences: ^2.2.3
   uuid: ^4.4.0
   esc_pos_utils_plus: ^2.0.2+6
-  # flutter_pos_printer_platform_image_3_sdt: ^1.2.15  # Temporarily disabled - pulls in Bluetooth dependency
+  flutter_pos_printer_platform_image_3_sdt: ^1.2.15  # ENABLED: Bluetooth printer support
   intl: ^0.19.0
   network_info_plus: ^6.1.4
   fl_chart: ^0.68.0
-  # flutter_bluetooth_serial: ^0.4.0  # Temporarily disabled due to namespace issue
+  flutter_bluetooth_serial_plus: ^0.5.1  # ENABLED: Bluetooth serial communication (fixed namespace)
+  permission_handler: ^12.0.1  # ENABLED: Bluetooth permissions for Android 12+
   web_socket_channel: ^2.4.0
   
   # Cross-platform database dependencies
@@ -72,6 +73,7 @@ dependencies:
   # Security and encryption
   crypto: ^3.0.3
   encrypt: ^5.0.3
+  bcrypt: ^1.1.3
   
   # Collection utilities (required by multiple services)
   collection: ^1.18.0

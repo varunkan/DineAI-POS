@@ -1,11 +1,10 @@
-import 'dart:convert';
 import 'dart:math';
-import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
+import 'package:bcrypt/bcrypt.dart';
 
 /// Secure configuration for authentication and credentials
 class SecurityConfig {
-  static const String _saltKey = 'POS_SALT_2024';
+  // Salt key removed as bcrypt handles salting automatically
   
   /// Generate a secure random PIN
   static String generateSecurePin() {
@@ -13,16 +12,20 @@ class SecurityConfig {
     return (1000 + random.nextInt(9000)).toString(); // 4-digit PIN
   }
   
-  /// Hash a PIN with salt for secure storage
+  /// Hash a PIN with bcrypt for secure storage
   static String hashPin(String pin) {
-    final bytes = utf8.encode(pin + _saltKey);
-    final digest = sha256.convert(bytes);
-    return digest.toString();
+    // Use bcrypt with default salt rounds for secure hashing
+    return BCrypt.hashpw(pin, BCrypt.gensalt());
   }
   
-  /// Verify a PIN against a hash
+  /// Verify a PIN against a hash using bcrypt
   static bool verifyPin(String pin, String hash) {
-    return hashPin(pin) == hash;
+    try {
+      return BCrypt.checkpw(pin, hash);
+    } catch (e) {
+      debugPrint('❌ Error verifying PIN: $e');
+      return false;
+    }
   }
   
   /// Get the default admin PIN (configurable via environment)
@@ -36,7 +39,7 @@ class SecurityConfig {
     // Development fallback - should be changed in production
     if (kDebugMode) {
       debugPrint('⚠️ Using development admin PIN - change in production!');
-      return '1234'; // Development default
+      return '7165'; // Development default - CHANGE THIS IN PRODUCTION
     }
     
     // Production requires environment variable

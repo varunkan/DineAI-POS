@@ -6,7 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 /// Utility class to test admin user creation and access functionality
 class AdminUserTest {
-  static const String _testAdminId = 'test_admin_${DateTime.now().millisecondsSinceEpoch}';
+  static String get _testAdminId => 'test_admin_${DateTime.now().millisecondsSinceEpoch}';
   
   /// Test admin user creation and permissions
   static Future<Map<String, dynamic>> testAdminUserCreation() async {

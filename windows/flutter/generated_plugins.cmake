@@ -9,6 +9,9 @@ list(APPEND FLUTTER_PLUGIN_LIST
   firebase_auth
   firebase_core
   firebase_storage
+  flutter_pos_printer_platform_image_3_sdt
+  permission_handler_windows
+  universal_ble
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST

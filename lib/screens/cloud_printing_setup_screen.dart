@@ -4,6 +4,7 @@ import '../services/cloud_restaurant_printing_service.dart';
 import '../services/printing_service.dart';
 import '../services/enhanced_printer_assignment_service.dart';
 import '../widgets/universal_navigation.dart';
+import '../widgets/universal_app_bar.dart';
 
 /// 🌐 Cloud Printing Setup Screen
 /// Allows users to configure internet-based printing to restaurant printers

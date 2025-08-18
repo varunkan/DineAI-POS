@@ -110,7 +110,7 @@ class _UserActivityMonitoringScreenState extends State<UserActivityMonitoringScr
         color: Theme.of(context).cardColor,
         border: Border(
           bottom: BorderSide(
-            color: Colors.grey.withOpacity(0.2),
+            color: Colors.grey.withValues(alpha: 0.2),
           ),
         ),
       ),
@@ -273,7 +273,7 @@ class _UserActivityMonitoringScreenState extends State<UserActivityMonitoringScr
       decoration: BoxDecoration(
         color: Theme.of(context).cardColor,
         border: Border(
-          bottom: BorderSide(color: Colors.grey.withOpacity(0.2)),
+          bottom: BorderSide(color: Colors.grey.withValues(alpha: 0.2)),
         ),
       ),
       child: TabBar(
@@ -544,7 +544,7 @@ class _UserActivityMonitoringScreenState extends State<UserActivityMonitoringScr
       margin: const EdgeInsets.symmetric(horizontal: 4),
       padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(

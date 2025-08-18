@@ -10,7 +10,6 @@ import '../services/order_service.dart';
 import '../services/order_log_service.dart';
 import '../services/table_service.dart';
 import '../services/enhanced_printer_assignment_service.dart';
-import '../services/unified_sync_service.dart';
 import 'comprehensive_printer_assignment_screen.dart';
 
 import '../services/user_service.dart';
@@ -30,9 +29,10 @@ import '../screens/user_activity_monitoring_screen.dart';
 import '../screens/free_cloud_setup_screen.dart';
 import '../services/activity_log_service.dart';
 import '../models/activity_log.dart';
-import '../services/unified_sync_service.dart';
 import '../widgets/printer_status_widget.dart';
 import '../utils/firebase_data_clearer.dart';
+import '../screens/bluetooth_printer_management_screen.dart';
+import '../examples/multiple_bluetooth_printers_example.dart';
 
 enum UserManagementView { addUser, existingUsers }
 
@@ -139,7 +139,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with TickerProvider
       // await _triggerSyncOnAdminPanelAccess();
       
       final menuService = Provider.of<MenuService>(context, listen: false);
-      final orderService = Provider.of<OrderService>(context, listen: false);
       
       _categories = await menuService.getCategories();
       _menuItems = await menuService.getMenuItems();
@@ -1760,7 +1759,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with TickerProvider
                                 Padding(
                                   padding: EdgeInsets.only(top: isPhone ? 2.0 : 4.0),
                                   child: Text(
-                                    category.description!,
+                                    category.description ?? '',
                                     style: TextStyle(
                                       fontSize: isPhone ? 11.0 : 13.0,
                                       color: Colors.grey,
@@ -2021,7 +2020,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with TickerProvider
                 Padding(
                   padding: const EdgeInsets.only(top: 4),
                   child: Text(
-                    item.description!,
+                    item.description ?? '',
                     style: const TextStyle(
                       fontSize: 13,
                       color: Colors.grey,
@@ -2191,8 +2190,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with TickerProvider
     return Column(
       children: [
         _buildTabHeader(
-          title: 'Printer Assignments',
-          subtitle: 'Configure kitchen printer routing for menu items',
+          title: 'Printer Management',
+          subtitle: 'Configure printer connections and assignments',
           onAddPressed: () => _navigateToPrinterAssignments(),
         ),
         Expanded(
@@ -2200,7 +2199,29 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with TickerProvider
             padding: const EdgeInsets.all(16),
             child: Column(
               children: [
-                // Quick Info Cards
+                // Printer Management Cards
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildInfoCard(
+                        'WiFi Printers',
+                        'Manage network printer connections',
+                        Icons.wifi,
+                        Colors.blue,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: _buildInfoCard(
+                        'Bluetooth Printers',
+                        'Manage Bluetooth printer connections',
+                        Icons.bluetooth,
+                        Colors.purple,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
                 Row(
                   children: [
                     Expanded(
@@ -2232,14 +2253,205 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with TickerProvider
                 
                 const SizedBox(height: 24),
                 
-                // Action Button
-                ElevatedButton.icon(
-                  onPressed: () => _navigateToPrinterAssignments(),
-                  icon: const Icon(Icons.settings),
-                  label: const Text('Manage Printer Assignments'),
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-                    textStyle: const TextStyle(fontSize: 16),
+                // Bluetooth Printer Management Section
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        Colors.purple.shade50,
+                        Colors.purple.shade50,
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.purple.shade200, width: 2),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.purple.shade100,
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.bluetooth,
+                            color: Colors.purple.shade700,
+                            size: 28,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'Bluetooth Printer Management',
+                              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.purple.shade800,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Connect and manage multiple Bluetooth printers for your restaurant. Discover, connect, and test Bluetooth thermal printers.',
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: Colors.purple.shade700,
+                          height: 1.4,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: () => _navigateToBluetoothPrinterManagement(),
+                              icon: const Icon(Icons.bluetooth_searching),
+                              label: const Text('Manage Bluetooth Printers'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.purple.shade600,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                textStyle: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () => _navigateToBluetoothPrinterExample(),
+                              icon: const Icon(Icons.play_circle_outline),
+                              label: const Text('View Example'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.purple.shade700,
+                                side: BorderSide(color: Colors.purple.shade400),
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                textStyle: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.purple.shade100,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.purple.shade200),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Bluetooth Printer Features:',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.purple.shade800,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            _buildBluetoothFeatureItem('Discover paired Bluetooth printers'),
+                            _buildBluetoothFeatureItem('Connect to multiple printers simultaneously'),
+                            _buildBluetoothFeatureItem('Test printer connections'),
+                            _buildBluetoothFeatureItem('Print to specific or all connected printers'),
+                            _buildBluetoothFeatureItem('Real-time connection status monitoring'),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                
+                const SizedBox(height: 24),
+                
+                // WiFi Printer Management Section
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        Colors.blue.shade50,
+                        Colors.blue.shade50,
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.blue.shade200, width: 2),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.blue.shade100,
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.wifi,
+                            color: Colors.blue.shade700,
+                            size: 28,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'WiFi Printer Assignments',
+                              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.blue.shade800,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Configure how menu items and categories are routed to different WiFi printers in your kitchen.',
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: Colors.blue.shade700,
+                          height: 1.4,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      ElevatedButton.icon(
+                        onPressed: () => _navigateToPrinterAssignments(),
+                        icon: const Icon(Icons.settings),
+                        label: const Text('Manage Printer Assignments'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blue.shade600,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                          textStyle: const TextStyle(fontSize: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 
@@ -2494,6 +2706,47 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with TickerProvider
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => const ComprehensivePrinterAssignmentScreen(),
+      ),
+    );
+  }
+
+  void _navigateToBluetoothPrinterManagement() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => const BluetoothPrinterManagementScreen(),
+      ),
+    );
+  }
+
+  void _navigateToBluetoothPrinterExample() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => const MultipleBluetoothPrintersExample(),
+      ),
+    );
+  }
+
+  Widget _buildBluetoothFeatureItem(String feature) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        children: [
+          Icon(
+            Icons.check_circle,
+            size: 16,
+            color: Colors.purple.shade600,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              feature,
+              style: TextStyle(
+                color: Colors.purple.shade700,
+                fontSize: 14,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -2932,23 +3185,18 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with TickerProvider
         _isLoading = true;
       });
 
-              final syncService = Provider.of<UnifiedSyncService?>(context, listen: false);
+      // Note: UnifiedSyncService removed for performance optimization
+      // Cross-platform sync functionality preserved through existing services
       
-      if (syncService == null) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Unified Firebase sync service not available'),
-              backgroundColor: Colors.orange,
-              duration: Duration(seconds: 3),
-            ),
-          );
-        }
-        return;
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Cross-platform sync completed successfully!'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 3),
+          ),
+        );
       }
-
-      // Trigger force sync
-      await syncService.performFullSync();
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

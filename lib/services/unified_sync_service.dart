@@ -53,6 +53,14 @@ class UnifiedSyncService extends ChangeNotifier {
   // Pending changes for offline sync
   final List<Map<String, dynamic>> _pendingChanges = [];
   
+  // REAL-TIME FIREBASE LISTENERS for immediate cross-device sync
+  StreamSubscription<fs.QuerySnapshot>? _ordersListener;
+  StreamSubscription<fs.QuerySnapshot>? _menuItemsListener;
+  StreamSubscription<fs.QuerySnapshot>? _usersListener;
+  StreamSubscription<fs.QuerySnapshot>? _inventoryListener;
+  StreamSubscription<fs.QuerySnapshot>? _tablesListener;
+  StreamSubscription<fs.QuerySnapshot>? _categoriesListener;
+  
   // Callbacks for UI updates
   Function()? _onOrdersUpdated;
   Function()? _onMenuItemsUpdated;
@@ -75,6 +83,14 @@ class UnifiedSyncService extends ChangeNotifier {
   bool get isSyncing => _isSyncing;
   DateTime? get lastSyncTime => _lastSyncTime;
   bool get isOnline => _isOnline;
+  
+  /// Check if real-time sync is active
+  bool get isRealTimeSyncActive => _ordersListener != null || 
+                                  _menuItemsListener != null || 
+                                  _usersListener != null || 
+                                  _inventoryListener != null || 
+                                  _tablesListener != null || 
+                                  _categoriesListener != null;
   
   // Active devices getter for compatibility with old service
   List<String> get activeDevices => ['Current Device']; // Placeholder implementation
@@ -128,6 +144,9 @@ class UnifiedSyncService extends ChangeNotifier {
       _isConnected = true;
       _lastSyncTime = DateTime.now();
       
+      // START REAL-TIME LISTENERS for immediate cross-device sync
+      await _startRealTimeListeners();
+      
       debugPrint('✅ Connected to restaurant for sync');
       notifyListeners();
     } catch (e) {
@@ -151,6 +170,365 @@ class UnifiedSyncService extends ChangeNotifier {
     } catch (e) {
       debugPrint('❌ Firebase connection test failed: $e');
       rethrow;
+    }
+  }
+  
+  /// Start real-time Firebase listeners for immediate cross-device sync
+  Future<void> _startRealTimeListeners() async {
+    try {
+      final tenantId = FirebaseConfig.getCurrentTenantId();
+      if (tenantId == null) {
+        debugPrint('⚠️ No tenant ID available for real-time listeners');
+        return;
+      }
+      
+      debugPrint('🔴 Starting real-time Firebase listeners for immediate cross-device sync...');
+      
+      // Stop existing listeners first
+      await _stopRealTimeListeners();
+      
+      // Start real-time listeners for all data types
+      _startOrdersListener(tenantId);
+      _startMenuItemsListener(tenantId);
+      _startUsersListener(tenantId);
+      _startInventoryListener(tenantId);
+      _startTablesListener(tenantId);
+      _startCategoriesListener(tenantId);
+      
+      debugPrint('✅ Real-time Firebase listeners started - immediate cross-device sync active');
+      
+    } catch (e) {
+      debugPrint('❌ Failed to start real-time listeners: $e');
+      // Don't fail the connection - continue without real-time sync
+    }
+  }
+  
+  /// Stop all real-time listeners
+  Future<void> _stopRealTimeListeners() async {
+    try {
+      _ordersListener?.cancel();
+      _menuItemsListener?.cancel();
+      _usersListener?.cancel();
+      _inventoryListener?.cancel();
+      _tablesListener?.cancel();
+      _categoriesListener?.cancel();
+      
+      _ordersListener = null;
+      _menuItemsListener = null;
+      _usersListener = null;
+      _inventoryListener = null;
+      _tablesListener = null;
+      _categoriesListener = null;
+      
+      debugPrint('🛑 Real-time Firebase listeners stopped');
+    } catch (e) {
+      debugPrint('⚠️ Error stopping real-time listeners: $e');
+    }
+  }
+  
+  /// Start real-time listener for orders
+  void _startOrdersListener(String tenantId) {
+    try {
+      _ordersListener = _firestore
+          .collection('tenants')
+          .doc(tenantId)
+          .collection('orders')
+          .snapshots()
+          .listen(
+        (snapshot) async {
+          try {
+            debugPrint('🔴 Real-time orders update detected: ${snapshot.docChanges.length} changes');
+            
+            for (final change in snapshot.docChanges) {
+              final orderData = change.doc.data();
+              if (orderData == null) continue;
+              
+              orderData['id'] = change.doc.id;
+              
+              switch (change.type) {
+                case fs.DocumentChangeType.added:
+                  debugPrint('➕ New order from Firebase: ${orderData['orderNumber']}');
+                  await _downloadOrderFromFirebase(orderData);
+                  break;
+                case fs.DocumentChangeType.modified:
+                  debugPrint('🔄 Order updated from Firebase: ${orderData['orderNumber']}');
+                  await _downloadOrderFromFirebase(orderData);
+                  break;
+                case fs.DocumentChangeType.removed:
+                  debugPrint('🗑️ Order deleted from Firebase: ${orderData['orderNumber']}');
+                  await _handleOrderDeletionFromFirebase(orderData['id']);
+                  break;
+              }
+            }
+            
+            // Notify UI of orders update
+            _onOrdersUpdated?.call();
+            
+          } catch (e) {
+            debugPrint('❌ Error processing real-time orders update: $e');
+          }
+        },
+        onError: (error) {
+          debugPrint('❌ Real-time orders listener error: $error');
+        },
+      );
+    } catch (e) {
+      debugPrint('❌ Failed to start orders listener: $e');
+    }
+  }
+  
+  /// Start real-time listener for menu items
+  void _startMenuItemsListener(String tenantId) {
+    try {
+      _menuItemsListener = _firestore
+          .collection('tenants')
+          .doc(tenantId)
+          .collection('menu_items')
+          .snapshots()
+          .listen(
+        (snapshot) async {
+          try {
+            debugPrint('🔴 Real-time menu items update detected: ${snapshot.docChanges.length} changes');
+            
+            for (final change in snapshot.docChanges) {
+              final itemData = change.doc.data();
+              if (itemData == null) continue;
+              
+              itemData['id'] = change.doc.id;
+              
+              switch (change.type) {
+                case fs.DocumentChangeType.added:
+                  debugPrint('➕ New menu item from Firebase: ${itemData['name']}');
+                  await _downloadMenuItemFromFirebase(itemData);
+                  break;
+                case fs.DocumentChangeType.modified:
+                  debugPrint('🔄 Menu item updated from Firebase: ${itemData['name']}');
+                  await _downloadMenuItemFromFirebase(itemData);
+                  break;
+                case fs.DocumentChangeType.removed:
+                  debugPrint('🗑️ Menu item deleted from Firebase: ${itemData['name']}');
+                  await _handleMenuItemDeletionFromFirebase(itemData['id']);
+                  break;
+              }
+            }
+            
+            // Notify UI of menu items update
+            _onMenuItemsUpdated?.call();
+            
+          } catch (e) {
+            debugPrint('❌ Error processing real-time menu items update: $e');
+          }
+        },
+        onError: (error) {
+          debugPrint('❌ Real-time menu items listener error: $error');
+        },
+      );
+    } catch (e) {
+      debugPrint('❌ Failed to start menu items listener: $e');
+    }
+  }
+  
+  /// Start real-time listener for users
+  void _startUsersListener(String tenantId) {
+    try {
+      _usersListener = _firestore
+          .collection('tenants')
+          .doc(tenantId)
+          .collection('users')
+          .snapshots()
+          .listen(
+        (snapshot) async {
+          try {
+            debugPrint('🔴 Real-time users update detected: ${snapshot.docChanges.length} changes');
+            
+            for (final change in snapshot.docChanges) {
+              final userData = change.doc.data();
+              if (userData == null) continue;
+              
+              userData['id'] = change.doc.id;
+              
+              switch (change.type) {
+                case fs.DocumentChangeType.added:
+                  debugPrint('➕ New user from Firebase: ${userData['name']}');
+                  await _downloadUserFromFirebase(userData);
+                  break;
+                case fs.DocumentChangeType.modified:
+                  debugPrint('🔄 User updated from Firebase: ${userData['name']}');
+                  await _downloadUserFromFirebase(userData);
+                  break;
+                case fs.DocumentChangeType.removed:
+                  debugPrint('🗑️ User deleted from Firebase: ${userData['name']}');
+                  await _handleUserDeletionFromFirebase(userData['id']);
+                  break;
+              }
+            }
+            
+            // Notify UI of users update
+            _onUsersUpdated?.call();
+            
+          } catch (e) {
+            debugPrint('❌ Error processing real-time users update: $e');
+          }
+        },
+        onError: (error) {
+          debugPrint('❌ Real-time users listener error: $error');
+        },
+      );
+    } catch (e) {
+      debugPrint('❌ Failed to start users listener: $e');
+    }
+  }
+  
+  /// Start real-time listener for inventory
+  void _startInventoryListener(String tenantId) {
+    try {
+      _inventoryListener = _firestore
+          .collection('tenants')
+          .doc(tenantId)
+          .collection('inventory')
+          .snapshots()
+          .listen(
+        (snapshot) async {
+          try {
+            debugPrint('🔴 Real-time inventory update detected: ${snapshot.docChanges.length} changes');
+            
+            for (final change in snapshot.docChanges) {
+              final itemData = change.doc.data();
+              if (itemData == null) continue;
+              
+              itemData['id'] = change.doc.id;
+              
+              switch (change.type) {
+                case fs.DocumentChangeType.added:
+                  debugPrint('➕ New inventory item from Firebase: ${itemData['name']}');
+                  await _downloadInventoryItemFromFirebase(itemData);
+                  break;
+                case fs.DocumentChangeType.modified:
+                  debugPrint('🔄 Inventory item updated from Firebase: ${itemData['name']}');
+                  await _downloadInventoryItemFromFirebase(itemData);
+                  break;
+                case fs.DocumentChangeType.removed:
+                  debugPrint('🗑️ Inventory item deleted from Firebase: ${itemData['name']}');
+                  await _handleInventoryItemDeletionFromFirebase(itemData['id']);
+                  break;
+              }
+            }
+            
+            // Notify UI of inventory update
+            _onInventoryUpdated?.call();
+            
+          } catch (e) {
+            debugPrint('❌ Error processing real-time inventory update: $e');
+          }
+        },
+        onError: (error) {
+          debugPrint('❌ Real-time inventory listener error: $error');
+        },
+      );
+    } catch (e) {
+      debugPrint('❌ Failed to start inventory listener: $e');
+    }
+  }
+  
+  /// Start real-time listener for tables
+  void _startTablesListener(String tenantId) {
+    try {
+      _tablesListener = _firestore
+          .collection('tenants')
+          .doc(tenantId)
+          .collection('tables')
+          .snapshots()
+          .listen(
+        (snapshot) async {
+          try {
+            debugPrint('🔴 Real-time tables update detected: ${snapshot.docChanges.length} changes');
+            
+            for (final change in snapshot.docChanges) {
+              final tableData = change.doc.data();
+              if (tableData == null) continue;
+              
+              tableData['id'] = change.doc.id;
+              
+              switch (change.type) {
+                case fs.DocumentChangeType.added:
+                  debugPrint('➕ New table from Firebase: ${tableData['number']}');
+                  await _downloadTableFromFirebase(tableData);
+                  break;
+                case fs.DocumentChangeType.modified:
+                  debugPrint('🔄 Table updated from Firebase: ${tableData['number']}');
+                  await _downloadTableFromFirebase(tableData);
+                  break;
+                case fs.DocumentChangeType.removed:
+                  debugPrint('🗑️ Table deleted from Firebase: ${tableData['number']}');
+                  await _handleTableDeletionFromFirebase(tableData['id']);
+                  break;
+              }
+            }
+            
+            // Notify UI of tables update
+            _onTablesUpdated?.call();
+            
+          } catch (e) {
+            debugPrint('❌ Error processing real-time tables update: $e');
+          }
+        },
+        onError: (error) {
+          debugPrint('❌ Real-time tables listener error: $error');
+        },
+      );
+    } catch (e) {
+      debugPrint('❌ Failed to start tables listener: $e');
+    }
+  }
+  
+  /// Start real-time listener for categories
+  void _startCategoriesListener(String tenantId) {
+    try {
+      _categoriesListener = _firestore
+          .collection('tenants')
+          .doc(tenantId)
+          .collection('categories')
+          .snapshots()
+          .listen(
+        (snapshot) async {
+          try {
+            debugPrint('🔴 Real-time categories update detected: ${snapshot.docChanges.length} changes');
+            
+            for (final change in snapshot.docChanges) {
+              final categoryData = change.doc.data();
+              if (categoryData == null) continue;
+              
+              categoryData['id'] = change.doc.id;
+              
+              switch (change.type) {
+                case fs.DocumentChangeType.added:
+                  debugPrint('➕ New category from Firebase: ${categoryData['name']}');
+                  await _downloadCategoryFromFirebase(categoryData);
+                  break;
+                case fs.DocumentChangeType.modified:
+                  debugPrint('🔄 Category updated from Firebase: ${categoryData['name']}');
+                  await _downloadCategoryFromFirebase(categoryData);
+                  break;
+                case fs.DocumentChangeType.removed:
+                  debugPrint('🗑️ Category deleted from Firebase: ${categoryData['name']}');
+                  await _handleCategoryDeletionFromFirebase(categoryData['id']);
+                  break;
+              }
+            }
+            
+            // Notify UI of categories update
+            _onMenuItemsUpdated?.call(); // Categories affect menu items
+            
+          } catch (e) {
+            debugPrint('❌ Error processing real-time categories update: $e');
+          }
+        },
+        onError: (error) {
+          debugPrint('❌ Real-time categories listener error: $error');
+        },
+      );
+    } catch (e) {
+      debugPrint('❌ Failed to start categories listener: $e');
     }
   }
   
@@ -270,7 +648,7 @@ class UnifiedSyncService extends ChangeNotifier {
       bool hasLocalData = false;
       
       if (_orderService != null) {
-        final localOrders = await _orderService!.getAllOrders();
+        final localOrders = _orderService!.allOrders;
         if (localOrders.isNotEmpty) hasLocalData = true;
       }
       
@@ -307,9 +685,18 @@ class UnifiedSyncService extends ChangeNotifier {
       'isConnected': _isConnected,
       'isOnline': _isOnline,
       'isSyncing': _isSyncing,
+      'isRealTimeSyncActive': isRealTimeSyncActive,
       'lastSyncTime': _lastSyncTime?.toIso8601String(),
       'needsSync': needsSync(),
       'currentRestaurant': _currentRestaurant?.name,
+      'realTimeListeners': {
+        'orders': _ordersListener != null,
+        'menuItems': _menuItemsListener != null,
+        'users': _usersListener != null,
+        'inventory': _inventoryListener != null,
+        'tables': _tablesListener != null,
+        'categories': _categoriesListener != null,
+      },
     };
   }
   
@@ -479,6 +866,9 @@ class UnifiedSyncService extends ChangeNotifier {
   Future<void> disconnect() async {
     try {
       debugPrint('🔄 Disconnecting from restaurant...');
+      
+      // Stop real-time listeners first
+      await _stopRealTimeListeners();
       
       _currentRestaurant = null;
       _currentSession = null;
@@ -948,7 +1338,7 @@ class UnifiedSyncService extends ChangeNotifier {
       if (_orderService == null) return;
       
       // Get local orders with timestamps
-      final localOrders = await _orderService!.getAllOrders();
+      final localOrders = _orderService!.allOrders;
       final localOrdersMap = <String, pos_order.Order>{};
       for (final order in localOrders) {
         localOrdersMap[order.id] = order;
@@ -985,7 +1375,7 @@ class UnifiedSyncService extends ChangeNotifier {
         if (localOrder != null && firebaseOrder != null) {
           // Both exist - compare timestamps
           try {
-            final localUpdatedAt = localOrder.lastModified ?? localOrder.orderTime;
+            final localUpdatedAt = localOrder.updatedAt;
             final firebaseUpdatedAt = DateTime.parse(firebaseOrder['lastModified'] ?? firebaseOrder['orderTime'] ?? '1970-01-01T00:00:00.000Z');
             
             if (localUpdatedAt.isAfter(firebaseUpdatedAt)) {
@@ -1071,8 +1461,8 @@ class UnifiedSyncService extends ChangeNotifier {
         if (localItem != null && firebaseItem != null) {
           // Both exist - compare timestamps
           try {
-            final localUpdatedAt = localItem.lastModified ?? localItem.createdAt;
-            final firebaseUpdatedAt = DateTime.parse(firebaseItem['lastModified'] ?? firebaseItem['createdAt'] ?? '1970-01-01T00:00:00.000Z');
+            final localUpdatedAt = localItem.updatedAt;
+            final firebaseUpdatedAt = DateTime.parse(firebaseItem['updatedAt'] ?? firebaseItem['createdAt'] ?? '1970-01-01T00:00:00.000Z');
             
             if (localUpdatedAt.isAfter(firebaseUpdatedAt)) {
               // Local is newer - upload to Firebase
@@ -1206,7 +1596,7 @@ class UnifiedSyncService extends ChangeNotifier {
       if (_inventoryService == null) return;
       
       // Get local inventory items with timestamps
-      final localInventoryItems = await _inventoryService!.getInventoryItems();
+      final localInventoryItems = _inventoryService!.getAllItems();
       final localInventoryItemsMap = <String, InventoryItem>{};
       for (final item in localInventoryItems) {
         localInventoryItemsMap[item.id] = item;
@@ -1243,8 +1633,8 @@ class UnifiedSyncService extends ChangeNotifier {
         if (localItem != null && firebaseItem != null) {
           // Both exist - compare timestamps
           try {
-            final localUpdatedAt = localItem.lastModified ?? localItem.createdAt;
-            final firebaseUpdatedAt = DateTime.parse(firebaseItem['lastModified'] ?? firebaseItem['createdAt'] ?? '1970-01-01T00:00:00.000Z');
+            final localUpdatedAt = localItem.updatedAt;
+            final firebaseUpdatedAt = DateTime.parse(firebaseItem['updatedAt'] ?? firebaseItem['createdAt'] ?? '1970-01-01T00:00:00.000Z');
             
             if (localUpdatedAt.isAfter(firebaseUpdatedAt)) {
               // Local is newer - upload to Firebase
@@ -1329,7 +1719,7 @@ class UnifiedSyncService extends ChangeNotifier {
         if (localTable != null && firebaseTable != null) {
           // Both exist - compare timestamps
           try {
-            final localUpdatedAt = localTable.lastModified ?? localTable.createdAt;
+            final localUpdatedAt = localTable.occupiedAt ?? localTable.reservedAt ?? DateTime.now();
             final firebaseUpdatedAt = DateTime.parse(firebaseTable['lastModified'] ?? firebaseTable['createdAt'] ?? '1970-01-01T00:00:00.000Z');
             
             if (localUpdatedAt.isAfter(firebaseUpdatedAt)) {
@@ -1415,7 +1805,7 @@ class UnifiedSyncService extends ChangeNotifier {
         if (localCategory != null && firebaseCategory != null) {
           // Both exist - compare timestamps
           try {
-            final localUpdatedAt = localCategory.lastModified ?? localCategory.createdAt;
+            final localUpdatedAt = localCategory.updatedAt;
             final firebaseUpdatedAt = DateTime.parse(firebaseCategory['lastModified'] ?? firebaseCategory['createdAt'] ?? '1970-01-01T00:00:00.000Z');
             
             if (localUpdatedAt.isAfter(firebaseUpdatedAt)) {
@@ -1630,9 +2020,110 @@ class UnifiedSyncService extends ChangeNotifier {
     }
   }
   
+  /// Handle order deletion from Firebase
+  Future<void> _handleOrderDeletionFromFirebase(String orderId) async {
+    if (_orderService != null) {
+      await _orderService!.deleteOrder(orderId);
+      debugPrint('🗑️ Order deleted locally: $orderId');
+    }
+    _onOrdersUpdated?.call();
+  }
+  
+  /// Handle menu item deletion from Firebase
+  Future<void> _handleMenuItemDeletionFromFirebase(String itemId) async {
+    if (_menuService != null) {
+      await _menuService!.deleteMenuItem(itemId);
+      debugPrint('🗑️ Menu item deleted locally: $itemId');
+    }
+    _onMenuItemsUpdated?.call();
+  }
+  
+  /// Handle user deletion from Firebase
+  Future<void> _handleUserDeletionFromFirebase(String userId) async {
+    if (_userService != null) {
+      await _userService!.deleteUser(userId);
+      debugPrint('🗑️ User deleted locally: $userId');
+    }
+    _onUsersUpdated?.call();
+  }
+  
+  /// Handle inventory item deletion from Firebase
+  Future<void> _handleInventoryItemDeletionFromFirebase(String itemId) async {
+    if (_inventoryService != null) {
+      await _inventoryService!.deleteItem(itemId);
+      debugPrint('🗑️ Inventory item deleted locally: $itemId');
+    }
+    _onInventoryUpdated?.call();
+  }
+  
+  /// Handle table deletion from Firebase
+  Future<void> _handleTableDeletionFromFirebase(String tableId) async {
+    if (_tableService != null) {
+      await _tableService!.deleteTable(tableId);
+      debugPrint('🗑️ Table deleted locally: $tableId');
+    }
+    _onTablesUpdated?.call();
+  }
+  
+  /// Handle category deletion from Firebase
+  Future<void> _handleCategoryDeletionFromFirebase(String categoryId) async {
+    if (_menuService != null) {
+      await _menuService!.deleteCategory(categoryId);
+      debugPrint('🗑️ Category deleted locally: $categoryId');
+    }
+    _onMenuItemsUpdated?.call();
+  }
+  
+  /// Dispose of the service and clean up all listeners
   @override
   void dispose() {
-    _connectivitySubscription?.cancel();
+    try {
+      debugPrint('🛑 Disposing Unified Sync Service...');
+      
+      // Stop all real-time listeners
+      _stopRealTimeListeners();
+      
+      // Stop connectivity monitoring
+      _connectivitySubscription?.cancel();
+      
+      // Clear all callbacks
+      _onOrdersUpdated = null;
+      _onMenuItemsUpdated = null;
+      _onUsersUpdated = null;
+      _onInventoryUpdated = null;
+      _onTablesUpdated = null;
+      _onSyncProgress = null;
+      _onSyncError = null;
+      
+      debugPrint('✅ Unified Sync Service disposed');
+    } catch (e) {
+      debugPrint('❌ Error disposing Unified Sync Service: $e');
+    }
+    
     super.dispose();
+  }
+  
+  /// Restart real-time listeners (useful for troubleshooting)
+  Future<void> restartRealTimeListeners() async {
+    try {
+      debugPrint('🔄 Restarting real-time Firebase listeners...');
+      
+      if (!_isConnected || !_isOnline) {
+        debugPrint('⚠️ Cannot restart listeners - not connected or offline');
+        return;
+      }
+      
+      final tenantId = FirebaseConfig.getCurrentTenantId();
+      if (tenantId == null) {
+        debugPrint('⚠️ No tenant ID available for restarting listeners');
+        return;
+      }
+      
+      await _startRealTimeListeners();
+      debugPrint('✅ Real-time listeners restarted successfully');
+      
+    } catch (e) {
+      debugPrint('❌ Failed to restart real-time listeners: $e');
+    }
   }
 } 

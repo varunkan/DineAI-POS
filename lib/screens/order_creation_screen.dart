@@ -1343,12 +1343,36 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
       
       setState(() => _isLoading = false);
       
-      // CRITICAL FIX: Order is ALWAYS saved successfully regardless of printer status
-      // Only show success message - never show printer errors to user
+      // CRITICAL FIX: Handle updated order with sentToKitchen flags
       if (mounted) {
         final success = result['success'] as bool;
         final itemsSent = result['itemsSent'] as int;
         final printerCount = result['printerCount'] as int;
+        
+        // Check if kitchen service returned an updated order
+        if (result.containsKey('updatedOrder') && result['updatedOrder'] != null) {
+          try {
+            debugPrint('🔄 Kitchen service returned updated order with sentToKitchen flags');
+            
+            // Get the updated order from the result
+            final updatedOrder = result['updatedOrder'] as Order;
+            
+            // Save the updated order to database
+            final orderService = Provider.of<OrderService>(context, listen: false);
+            if (orderService != null) {
+              debugPrint('💾 Saving updated order with sentToKitchen flags to database...');
+              final saved = await orderService.updateOrder(updatedOrder);
+              if (saved) {
+                debugPrint('✅ Successfully saved updated order to database');
+                _currentOrder = updatedOrder; // Update local state
+              } else {
+                debugPrint('⚠️ Failed to save updated order to database');
+              }
+            }
+          } catch (e) {
+            debugPrint('⚠️ Error handling updated order: $e');
+          }
+        }
         
         // Always show success message for order creation/saving
         // Printer status is handled silently in the background
@@ -1489,14 +1513,30 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
       
       final orderService = Provider.of<OrderService>(context, listen: false);
       if (orderService != null && _currentOrder != null) {
-        // Get the latest order from database using the allOrders getter
+        debugPrint('🔄 Refreshing order from database: ${_currentOrder!.orderNumber}');
+        
+        // CRITICAL FIX: Actually refresh from database, not just in-memory cache
+        // Force reload orders from database to get updated sentToKitchen status
+        await orderService.loadOrders();
+        
+        // Now get the fresh order from the reloaded data
         final orders = orderService.allOrders;
         final updatedOrder = orders.firstWhere(
           (order) => order.id == _currentOrder!.id,
           orElse: () => _currentOrder!,
         );
+        
+        // Check if sentToKitchen status has changed
+        final oldSentCount = _currentOrder!.items.where((item) => item.sentToKitchen).length;
+        final newSentCount = updatedOrder.items.where((item) => item.sentToKitchen).length;
+        
+        if (oldSentCount != newSentCount) {
+          debugPrint('✅ Order refreshed: sentToKitchen count changed from $oldSentCount to $newSentCount');
+        }
+        
         _currentOrder = updatedOrder;
         setState(() {}); // Refresh UI
+        debugPrint('🔄 Order refreshed from database successfully');
       }
     } catch (e) {
       debugPrint('⚠️ Failed to refresh order from database: $e');

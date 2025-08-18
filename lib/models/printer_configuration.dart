@@ -4,7 +4,7 @@ import 'package:uuid/uuid.dart';
 enum PrinterType {
   wifi,
   ethernet,
-  // bluetooth, // Temporarily disabled - dependencies removed
+  bluetooth, // ENABLED: Bluetooth printer support
   usb,
   remote, // New: For remote/internet access
   vpn,    // New: For VPN-based access
@@ -306,8 +306,10 @@ class PrinterConfiguration {
       return '$ipAddress:$port'; // Use internal IP through VPN
     } else if (type == PrinterType.wifi || type == PrinterType.ethernet) {
       return '$ipAddress:$port';
+    } else if (type == PrinterType.bluetooth && bluetoothAddress.isNotEmpty) {
+      return bluetoothAddress; // Return Bluetooth address for Bluetooth printers
     }
-    return ipAddress;
+    return ipAddress.isNotEmpty ? ipAddress : (bluetoothAddress.isNotEmpty ? bluetoothAddress : 'No address');
   }
 
   /// Check if printer is network-based (enhanced for remote types)

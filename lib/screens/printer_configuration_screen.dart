@@ -3,6 +3,9 @@ import '../models/printer_configuration.dart';
 
 /// Simple Printer Configuration Screen
 /// Temporarily simplified to fix compilation errors while preserving core functionality
+
+/// Simple Printer Configuration Screen
+/// Temporarily simplified to fix compilation errors while preserving core functionality
 class PrinterConfigurationScreen extends StatefulWidget {
   final PrinterConfiguration? printerConfiguration;
 
@@ -176,7 +179,7 @@ class _PrinterConfigurationScreenState extends State<PrinterConfigurationScreen>
               items: PrinterModel.values.map((model) {
                 return DropdownMenuItem(
                   value: model,
-                  child: Text(model.name),
+                  child: Text(model.displayName),
                 );
               }).toList(),
               onChanged: (value) {

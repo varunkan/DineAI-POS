@@ -100,7 +100,7 @@ class _OrderAuditScreenState extends State<OrderAuditScreen> with TickerProvider
         color: Theme.of(context).cardColor,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
+            color: Colors.black.withValues(alpha: 0.1),
             blurRadius: 4,
             offset: const Offset(0, 2),
           ),
@@ -190,7 +190,7 @@ class _OrderAuditScreenState extends State<OrderAuditScreen> with TickerProvider
         color: Theme.of(context).cardColor,
         border: Border(
           bottom: BorderSide(
-            color: Colors.grey.withOpacity(0.2),
+            color: Colors.grey.withValues(alpha: 0.2),
           ),
         ),
       ),
@@ -359,7 +359,7 @@ class _OrderAuditScreenState extends State<OrderAuditScreen> with TickerProvider
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: _getActionColor(log.action).withOpacity(0.1),
+                      color: _getActionColor(log.action).withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
@@ -416,7 +416,7 @@ class _OrderAuditScreenState extends State<OrderAuditScreen> with TickerProvider
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: log.financialImpact! >= 0 ? Colors.green.withOpacity(0.1) : Colors.red.withOpacity(0.1),
+                    color: log.financialImpact! >= 0 ? Colors.green.withValues(alpha: 0.1) : Colors.red.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Row(

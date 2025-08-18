@@ -29,6 +29,7 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> {
   String? _selectedServerId;
   List<Order> _filteredOrders = [];
   bool _isManualRefresh = false;
+  bool _isSyncing = false;
 
   @override
   void initState() {
@@ -1367,6 +1368,18 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> {
             },
             icon: const Icon(Icons.refresh),
             tooltip: 'Refresh Orders',
+          ),
+          // Sync from Firebase button
+          IconButton(
+            onPressed: _triggerSyncFromFirebase,
+            icon: const Icon(Icons.sync, color: Colors.white),
+            tooltip: 'Sync Orders from Firebase',
+          ),
+          // Simple sync button for debugging
+          IconButton(
+            onPressed: _simpleSyncTrigger,
+            icon: const Icon(Icons.download, color: Colors.white),
+            tooltip: 'Simple Sync (Debug)',
           ),
             const SizedBox(width: 8),
           ],
@@ -2805,6 +2818,167 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> {
     });
     
     debugPrint('🔄 Manual refresh completed');
+  }
+
+  /// Trigger comprehensive sync from Firebase
+  Future<void> _triggerSyncFromFirebase() async {
+    if (_isSyncing) return;
+    
+    setState(() {
+      _isSyncing = true;
+    });
+    
+    try {
+      debugPrint('🚀 Starting comprehensive sync operations...');
+      
+      // Get the order service
+      final orderService = Provider.of<OrderService?>(context, listen: false);
+      if (orderService == null) {
+        throw Exception('Order service not available');
+      }
+      
+      // STEP 1: Comprehensive Timestamp-Based Sync
+      debugPrint('🔄 STEP 1: Performing Comprehensive Timestamp-Based Sync...');
+      await _performComprehensiveTimestampSync(orderService);
+      
+      // STEP 2: Smart Time-Based Sync
+      debugPrint('🔄 STEP 2: Performing Smart Time-Based Sync...');
+      await _performSmartTimeBasedSync();
+      
+      // STEP 3: Force Manual Sync as Backup
+      debugPrint('🔄 STEP 3: Performing Force Manual Sync...');
+      await orderService.manualSync();
+      
+      // Reload orders after all sync operations
+      _loadOrders();
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Comprehensive sync completed! All orders synchronized from Firebase.'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 4),
+          ),
+        );
+      }
+      
+      debugPrint('✅ All comprehensive sync operations completed successfully!');
+      
+    } catch (e) {
+      debugPrint('❌ Comprehensive sync failed: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Sync failed: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 5),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSyncing = false;
+        });
+      }
+    }
+  }
+  
+  /// Perform comprehensive timestamp-based sync
+  Future<void> _performComprehensiveTimestampSync(OrderService orderService) async {
+    try {
+      debugPrint('🔄 Starting comprehensive timestamp-based sync...');
+      
+      // Get current order count
+      final initialOrderCount = orderService.allOrders.length;
+      debugPrint('📊 Initial local orders: $initialOrderCount');
+      
+      // Trigger the comprehensive sync method
+      await orderService.syncOrdersWithFirebase();
+      
+      final finalOrderCount = orderService.allOrders.length;
+      debugPrint('📊 Final local orders: $finalOrderCount');
+      debugPrint('📥 Orders added: ${finalOrderCount - initialOrderCount}');
+      
+    } catch (e) {
+      debugPrint('❌ Comprehensive timestamp-based sync failed: $e');
+      // Don't throw - continue with other sync methods
+    }
+  }
+  
+  /// Perform smart time-based sync
+  Future<void> _performSmartTimeBasedSync() async {
+    try {
+      debugPrint('🔄 Starting smart time-based sync...');
+      
+      // Try to get the unified sync service
+      try {
+        final unifiedSyncService = Provider.of<UnifiedSyncService>(context, listen: false);
+        if (unifiedSyncService != null) {
+          // Check if sync is needed
+          final needsSync = await unifiedSyncService.needsSync();
+          
+          if (needsSync) {
+            debugPrint('🔄 Smart sync needed - performing time-based sync...');
+            await unifiedSyncService.performSmartTimeBasedSync();
+            debugPrint('✅ Smart time-based sync completed');
+          } else {
+            debugPrint('✅ Smart sync not needed - data is already consistent');
+          }
+        }
+      } catch (e) {
+        debugPrint('⚠️ Unified sync service not available: $e');
+        // Continue without unified sync service
+      }
+      
+    } catch (e) {
+      debugPrint('❌ Smart time-based sync failed: $e');
+      // Don't throw - continue with other sync methods
+    }
+  }
+
+  /// Simple sync trigger for debugging
+  Future<void> _simpleSyncTrigger() async {
+    try {
+      debugPrint('🔄 Simple sync trigger called...');
+      
+      // Get the order service
+      final orderService = Provider.of<OrderService?>(context, listen: false);
+      if (orderService == null) {
+        debugPrint('❌ Order service not available');
+        return;
+      }
+      
+      // Simple force sync
+      await orderService.forceSyncFromFirebase();
+      
+      // Reload orders
+      _loadOrders();
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Simple sync completed!'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+      
+      debugPrint('✅ Simple sync completed');
+      
+    } catch (e) {
+      debugPrint('❌ Simple sync failed: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Simple sync failed: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 5),
+          ),
+        );
+      }
+    }
   }
 
 }

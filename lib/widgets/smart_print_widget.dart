@@ -111,8 +111,8 @@ class _SmartPrintWidgetState extends State<SmartPrintWidget>
             borderRadius: BorderRadius.circular(12),
             gradient: LinearGradient(
               colors: [
-                Colors.blue.withOpacity(0.1),
-                Colors.purple.withOpacity(0.1),
+                            Colors.blue.withValues(alpha: 0.1),
+            Colors.purple.withValues(alpha: 0.1),
               ],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
@@ -165,7 +165,7 @@ class _SmartPrintWidgetState extends State<SmartPrintWidget>
                       borderRadius: BorderRadius.circular(10),
                       boxShadow: _isPrinting ? [
                         BoxShadow(
-                          color: Colors.blue.withOpacity(0.3),
+                          color: Colors.blue.withValues(alpha: 0.3),
                           blurRadius: 10,
                           spreadRadius: 2,
                         ),
@@ -325,10 +325,10 @@ class _SmartPrintWidgetState extends State<SmartPrintWidget>
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
           color: hasResult
-              ? (wasSuccessful ? Colors.green.withOpacity(0.2) : Colors.red.withOpacity(0.2))
+              ? (wasSuccessful ? Colors.green.withValues(alpha: 0.2) : Colors.red.withValues(alpha: 0.2))
               : isSelected
-                  ? Colors.blue.withOpacity(0.2)
-                  : Colors.grey.withOpacity(0.1),
+                  ? Colors.blue.withValues(alpha: 0.2)
+                  : Colors.grey.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
             color: hasResult
@@ -336,8 +336,8 @@ class _SmartPrintWidgetState extends State<SmartPrintWidget>
                 : isSelected
                     ? Colors.blue
                     : isConnected
-                        ? Colors.green.withOpacity(0.5)
-                        : Colors.grey.withOpacity(0.5),
+                        ? Colors.green.withValues(alpha: 0.5)
+                        : Colors.grey.withValues(alpha: 0.5),
           ),
         ),
         child: Row(

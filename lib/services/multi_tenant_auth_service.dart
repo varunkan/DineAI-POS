@@ -1550,6 +1550,25 @@ class MultiTenantAuthService extends ChangeNotifier {
           _addProgressMessage('🔄 Database connected, starting comprehensive sync...');
           await _performTimestampBasedSync(restaurant);
           _addProgressMessage('✅ Comprehensive sync completed successfully');
+          
+          // ADDITIONAL: Also trigger unified sync service for cross-device consistency
+          try {
+            _addProgressMessage('🔄 Triggering unified sync service...');
+            final unifiedSyncService = UnifiedSyncService();
+            await unifiedSyncService.initialize();
+            await unifiedSyncService.connectToRestaurant(restaurant, RestaurantSession(
+              restaurantId: restaurant.email,
+              userId: userId,
+              userName: 'Admin',
+              userRole: app_user.UserRole.admin,
+              loginTime: DateTime.now(),
+            ));
+            await unifiedSyncService.autoSyncOnDeviceLogin();
+            _addProgressMessage('✅ Unified sync service completed');
+          } catch (unifiedSyncError) {
+            _addProgressMessage('⚠️ Unified sync completed with warnings: $unifiedSyncError');
+            debugPrint('⚠️ Unified sync warning: $unifiedSyncError');
+          }
         } catch (syncError) {
           _addProgressMessage('⚠️ Sync completed with warnings: $syncError');
           debugPrint('⚠️ Sync warning (non-critical): $syncError');
@@ -1587,6 +1606,28 @@ class MultiTenantAuthService extends ChangeNotifier {
               _addProgressMessage('🔄 Syncing user data...');
               await _performTimestampBasedSync(restaurant);
               _addProgressMessage('✅ User data sync completed');
+              
+              // ADDITIONAL: Also trigger unified sync service for cross-device consistency
+              try {
+                _addProgressMessage('🔄 Triggering unified sync service for user...');
+                final unifiedSyncService = UnifiedSyncService();
+                await unifiedSyncService.initialize();
+                await unifiedSyncService.connectToRestaurant(restaurant, RestaurantSession(
+                  restaurantId: restaurant.email,
+                  userId: userId,
+                  userName: user['user_name'] as String,
+                  userRole: app_user.UserRole.values.firstWhere(
+                    (role) => role.toString() == user['role'],
+                    orElse: () => app_user.UserRole.server,
+                  ),
+                  loginTime: DateTime.now(),
+                ));
+                await unifiedSyncService.autoSyncOnDeviceLogin();
+                _addProgressMessage('✅ Unified sync service completed for user');
+              } catch (unifiedSyncError) {
+                _addProgressMessage('⚠️ Unified sync completed with warnings: $unifiedSyncError');
+                debugPrint('⚠️ Unified sync warning: $unifiedSyncError');
+              }
             } catch (syncError) {
               _addProgressMessage('⚠️ User sync completed with warnings: $syncError');
               debugPrint('⚠️ User sync warning (non-critical): $syncError');
@@ -1708,8 +1749,9 @@ class MultiTenantAuthService extends ChangeNotifier {
       await unifiedSyncService.connectToRestaurant(restaurant, RestaurantSession(
         restaurantId: restaurant.id,
         userId: 'temp_user', // Will be updated after authentication
-        startTime: DateTime.now(),
-        deviceId: _getDeviceId(),
+        userName: 'temp_user', // Temporary user name for sync
+        userRole: app_user.UserRole.admin, // Default role for sync operations
+        loginTime: DateTime.now(),
       ));
       
       // Check if sync is needed
@@ -1736,7 +1778,7 @@ class MultiTenantAuthService extends ChangeNotifier {
   /// Get unique device identifier
   String _getDeviceId() {
     // Generate a unique device ID for this session
-    return 'device_${DateTime.now().millisecondsSinceEpoch}_${restaurant?.id ?? 'unknown'}';
+    return 'device_${DateTime.now().millisecondsSinceEpoch}_${DateTime.now().millisecondsSinceEpoch}';
   }
   
   /// Perform timestamp-based sync (lightweight sync for fresh data)

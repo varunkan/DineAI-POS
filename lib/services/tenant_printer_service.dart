@@ -95,12 +95,19 @@ class TenantPrinterService extends ChangeNotifier {
       // Create tenant-specific tables
       await _createTenantPrinterTables();
       
-      // Load tenant-specific printers and assignments
+      // CRITICAL: Load tenant-specific printers and assignments from Firebase first
+      await _loadPrintersFromFirebase();
+      await _loadAssignmentsFromFirebase();
+      
+      // Load from local database as fallback
       await _loadTenantPrinters();
       await _loadTenantAssignments();
       
       // Load public IP mappings
       await _loadPrinterPublicIPs();
+      
+      // CRITICAL: Start real-time Firebase sync for cross-device updates
+      _startFirebaseSync();
       
       // Start status monitoring
       _startStatusMonitoring();
@@ -450,7 +457,7 @@ class TenantPrinterService extends ChangeNotifier {
     }
   }
   
-  /// Add discovered printer to tenant with public IP identification
+  /// ENHANCED: Add discovered printer to tenant with Firebase sync
   Future<bool> addDiscoveredPrinter(DiscoveredPrinter printer) async {
     try {
       debugPrint('$_logTag ➕ Adding discovered printer: ${printer.name} to tenant: $_currentTenantId');
@@ -458,8 +465,9 @@ class TenantPrinterService extends ChangeNotifier {
       // Identify public IP for the printer
       final publicIP = await _identifyPublicIP(printer.ipAddress);
       
-      // Create printer configuration
+      // Create printer configuration with tenant-specific ID
       final config = models.PrinterConfiguration(
+        id: '${_currentTenantId}_${_currentRestaurantId}_${printer.ipAddress.replaceAll('.', '_')}_${printer.port}',
         name: printer.name,
         description: 'Auto-discovered WiFi printer for tenant: $_currentTenantId',
         type: models.PrinterType.wifi,
@@ -481,12 +489,15 @@ class TenantPrinterService extends ChangeNotifier {
         debugPrint('$_logTag 🌐 Identified public IP for printer: $publicIP');
       }
       
+      // CRITICAL: Sync to Firebase for cross-device availability
+      await _syncPrinterToFirebase(config);
+      
       // Add to local list
       _tenantPrinters.add(config);
       
       notifyListeners();
       
-      debugPrint('$_logTag ✅ Successfully added printer: ${config.name} to tenant: $_currentTenantId');
+      debugPrint('$_logTag ✅ Successfully added printer: ${config.name} to tenant: $_currentTenantId and synced to Firebase');
       return true;
       
     } catch (e) {
@@ -656,7 +667,7 @@ class TenantPrinterService extends ChangeNotifier {
     }
   }
   
-  /// Save tenant assignment to database
+  /// ENHANCED: Save tenant assignment to database with Firebase sync
   Future<void> _saveTenantAssignment(PrinterAssignment assignment) async {
     try {
       final db = await _databaseService.database;
@@ -678,7 +689,10 @@ class TenantPrinterService extends ChangeNotifier {
         'updated_at': DateTime.now().toIso8601String(),
       });
       
-      debugPrint('$_logTag 💾 Saved tenant assignment: ${assignment.targetName} -> ${assignment.printerName}');
+      // CRITICAL: Sync to Firebase for cross-device availability
+      await _syncPrinterAssignmentToFirebase(assignment);
+      
+      debugPrint('$_logTag 💾 Saved tenant assignment: ${assignment.targetName} -> ${assignment.printerName} and synced to Firebase');
       
     } catch (e) {
       debugPrint('$_logTag ❌ Error saving tenant assignment: $e');
@@ -841,6 +855,459 @@ class TenantPrinterService extends ChangeNotifier {
       }
     }
     notifyListeners();
+  }
+  
+  /// CRITICAL: Sync printer configuration to Firebase for cross-device availability
+  Future<void> _syncPrinterToFirebase(models.PrinterConfiguration printer) async {
+    try {
+      if (_firestore == null) {
+        debugPrint('$_logTag ⚠️ Firebase not available for printer sync');
+        return;
+      }
+      
+      final tenantDoc = _firestore!.collection('tenants').doc(_currentTenantId);
+      final printerDoc = tenantDoc.collection('printer_configurations').doc(printer.id);
+      
+      // Convert printer configuration to Firebase-compatible format
+      final printerData = {
+        'id': printer.id,
+        'tenant_id': _currentTenantId,
+        'restaurant_id': _currentRestaurantId,
+        'name': printer.name,
+        'description': printer.description,
+        'type': printer.type.toString().split('.').last,
+        'model': printer.model.toString().split('.').last,
+        'ip_address': printer.ipAddress,
+        'port': printer.port,
+        'mac_address': printer.macAddress,
+        'is_active': printer.isActive,
+        'connection_status': printer.connectionStatus.toString().split('.').last,
+        'last_connected': printer.lastConnected?.toIso8601String(),
+        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      
+      await printerDoc.set(printerData, SetOptions(merge: true));
+      debugPrint('$_logTag ☁️ Successfully synced printer ${printer.name} to Firebase');
+      
+    } catch (e) {
+      debugPrint('$_logTag ❌ Error syncing printer to Firebase: $e');
+    }
+  }
+  
+  /// CRITICAL: Sync printer assignment to Firebase for cross-device availability
+  Future<void> _syncPrinterAssignmentToFirebase(PrinterAssignment assignment) async {
+    try {
+      if (_firestore == null) {
+        debugPrint('$_logTag ⚠️ Firebase not available for assignment sync');
+        return;
+      }
+      
+      final tenantDoc = _firestore!.collection('tenants').doc(_currentTenantId);
+      final assignmentDoc = tenantDoc.collection('printer_assignments').doc(assignment.id);
+      
+      // Convert assignment to Firebase-compatible format
+      final assignmentData = {
+        'id': assignment.id,
+        'tenant_id': _currentTenantId,
+        'restaurant_id': _currentRestaurantId,
+        'printer_id': assignment.printerId,
+        'printer_name': assignment.printerName,
+        'printer_address': assignment.printerAddress,
+        'assignment_type': assignment.assignmentType.toString().split('.').last,
+        'target_id': assignment.targetId,
+        'target_name': assignment.targetName,
+        'priority': assignment.priority,
+        'is_active': assignment.isActive,
+        'created_at': assignment.createdAt.toIso8601String(),
+        'updated_at': assignment.updatedAt.toIso8601String(),
+      };
+      
+      await assignmentDoc.set(assignmentData, SetOptions(merge: true));
+      debugPrint('$_logTag ☁️ Successfully synced printer assignment to Firebase');
+      
+    } catch (e) {
+      debugPrint('$_logTag ❌ Error syncing printer assignment to Firebase: $e');
+    }
+  }
+  
+  /// CRITICAL: Load printers from Firebase on tenant initialization
+  Future<void> _loadPrintersFromFirebase() async {
+    try {
+      if (_firestore == null) {
+        debugPrint('$_logTag ⚠️ Firebase not available for loading printers');
+        return;
+      }
+      
+      debugPrint('$_logTag 🔄 Loading printers from Firebase for tenant: $_currentTenantId');
+      
+      final tenantDoc = _firestore!.collection('tenants').doc(_currentTenantId);
+      final printerSnapshot = await tenantDoc.collection('printer_configurations').get();
+      
+      int loadedCount = 0;
+      for (final doc in printerSnapshot.docs) {
+        try {
+          final data = doc.data();
+          
+          // Skip if not for current restaurant
+          if (data['restaurant_id'] != _currentRestaurantId) {
+            continue;
+          }
+          
+          // Create printer configuration from Firebase data
+          final printer = models.PrinterConfiguration(
+            id: data['id'] as String,
+            name: data['name'] as String,
+            description: data['description'] as String? ?? '',
+            type: models.PrinterType.values.firstWhere(
+              (e) => e.toString().split('.').last == (data['type'] as String? ?? 'wifi'),
+              orElse: () => models.PrinterType.wifi,
+            ),
+            model: models.PrinterModel.values.firstWhere(
+              (e) => e.toString().split('.').last == (data['model'] as String? ?? 'epsonTMGeneric'),
+              orElse: () => models.PrinterModel.epsonTMGeneric,
+            ),
+            ipAddress: data['ip_address'] as String? ?? '',
+            port: data['port'] as int? ?? 9100,
+            macAddress: data['mac_address'] as String? ?? '',
+            isActive: (data['is_active'] as bool? ?? true),
+            connectionStatus: models.PrinterConnectionStatus.values.firstWhere(
+              (e) => e.toString().split('.').last == (data['connection_status'] as String? ?? 'unknown'),
+              orElse: () => models.PrinterConnectionStatus.unknown,
+            ),
+            lastConnected: data['last_connected'] != null 
+                ? DateTime.parse(data['last_connected'] as String)
+                : null,
+          );
+          
+          // Add to local list if not already present
+          if (!_tenantPrinters.any((p) => p.id == printer.id)) {
+            _tenantPrinters.add(printer);
+            loadedCount++;
+            debugPrint('$_logTag ✅ Loaded printer from Firebase: ${printer.name}');
+          }
+          
+        } catch (e) {
+          debugPrint('$_logTag ⚠️ Error parsing printer data from Firebase: $e');
+        }
+      }
+      
+      debugPrint('$_logTag ✅ Loaded $loadedCount printers from Firebase');
+      
+    } catch (e) {
+      debugPrint('$_logTag ❌ Error loading printers from Firebase: $e');
+    }
+  }
+  
+  /// CRITICAL: Load printer assignments from Firebase on tenant initialization
+  Future<void> _loadAssignmentsFromFirebase() async {
+    try {
+      if (_firestore == null) {
+        debugPrint('$_logTag ⚠️ Firebase not available for loading assignments');
+        return;
+      }
+      
+      debugPrint('$_logTag 🔄 Loading printer assignments from Firebase for tenant: $_currentTenantId');
+      
+      final tenantDoc = _firestore!.collection('tenants').doc(_currentTenantId);
+      final assignmentSnapshot = await tenantDoc.collection('printer_assignments').get();
+      
+      int loadedCount = 0;
+      for (final doc in assignmentSnapshot.docs) {
+        try {
+          final data = doc.data();
+          
+          // Skip if not for current restaurant
+          if (data['restaurant_id'] != _currentRestaurantId) {
+            continue;
+          }
+          
+          // Create assignment from Firebase data
+          final assignment = PrinterAssignment(
+            id: data['id'] as String,
+            printerId: data['printer_id'] as String,
+            printerName: data['printer_name'] as String,
+            printerAddress: data['printer_address'] as String,
+            assignmentType: AssignmentType.values.firstWhere(
+              (e) => e.toString().split('.').last == (data['assignment_type'] as String? ?? 'category'),
+              orElse: () => AssignmentType.category,
+            ),
+            targetId: data['target_id'] as String,
+            targetName: data['target_name'] as String,
+            priority: data['priority'] as int? ?? 1,
+            isActive: (data['is_active'] as bool? ?? true),
+            createdAt: data['created_at'] != null 
+                ? DateTime.parse(data['created_at'] as String)
+                : DateTime.now(),
+            updatedAt: data['updated_at'] != null 
+                ? DateTime.parse(data['updated_at'] as String)
+                : DateTime.now(),
+          );
+          
+          // Add to local list if not already present
+          if (!_tenantAssignments.any((a) => a.id == assignment.id)) {
+            _tenantAssignments.add(assignment);
+            loadedCount++;
+            debugPrint('$_logTag ✅ Loaded assignment from Firebase: ${assignment.targetName} -> ${assignment.printerName}');
+          }
+          
+        } catch (e) {
+          debugPrint('$_logTag ⚠️ Error parsing assignment data from Firebase: $e');
+        }
+      }
+      
+      debugPrint('$_logTag ✅ Loaded $loadedCount assignments from Firebase');
+      
+    } catch (e) {
+      debugPrint('$_logTag ❌ Error loading assignments from Firebase: $e');
+    }
+  }
+  
+  /// CRITICAL: Start real-time Firebase sync for cross-device updates
+  void _startFirebaseSync() {
+    if (_firestore == null) return;
+    
+    debugPrint('$_logTag 🔄 Starting real-time Firebase sync for cross-device updates');
+    
+    final tenantDoc = _firestore!.collection('tenants').doc(_currentTenantId);
+    
+    // Listen for printer configuration changes
+    tenantDoc.collection('printer_configurations')
+        .snapshots()
+        .listen((snapshot) {
+      _handlePrinterConfigChanges(snapshot);
+    });
+    
+    // Listen for printer assignment changes
+    tenantDoc.collection('printer_assignments')
+        .snapshots()
+        .listen((snapshot) {
+      _handleAssignmentChanges(snapshot);
+    });
+    
+    debugPrint('$_logTag ✅ Real-time Firebase sync started');
+  }
+  
+  /// Handle printer configuration changes from Firebase
+  void _handlePrinterConfigChanges(QuerySnapshot snapshot) {
+    for (final change in snapshot.docChanges) {
+      try {
+        final data = change.doc.data() as Map<String, dynamic>;
+        
+        // Skip if not for current restaurant
+        if (data['restaurant_id'] != _currentRestaurantId) {
+          continue;
+        }
+        
+        switch (change.type) {
+          case DocumentChangeType.added:
+            _addPrinterFromFirebase(data);
+            break;
+          case DocumentChangeType.modified:
+            _updatePrinterFromFirebase(data);
+            break;
+          case DocumentChangeType.removed:
+            _removePrinterFromFirebase(data['id'] as String);
+            break;
+        }
+      } catch (e) {
+        debugPrint('$_logTag ⚠️ Error handling printer config change: $e');
+      }
+    }
+  }
+  
+  /// Handle assignment changes from Firebase
+  void _handleAssignmentChanges(QuerySnapshot snapshot) {
+    for (final change in snapshot.docChanges) {
+      try {
+        final data = change.doc.data() as Map<String, dynamic>;
+        
+        // Skip if not for current restaurant
+        if (data['restaurant_id'] != _currentRestaurantId) {
+          continue;
+        }
+        
+        switch (change.type) {
+          case DocumentChangeType.added:
+            _addAssignmentFromFirebase(data);
+            break;
+          case DocumentChangeType.modified:
+            _updateAssignmentFromFirebase(data);
+            break;
+          case DocumentChangeType.removed:
+            _removeAssignmentFromFirebase(data['id'] as String);
+            break;
+        }
+      } catch (e) {
+        debugPrint('$_logTag ⚠️ Error handling assignment change: $e');
+      }
+    }
+  }
+  
+  /// Add printer from Firebase data
+  void _addPrinterFromFirebase(Map<String, dynamic> data) {
+    try {
+      final printer = models.PrinterConfiguration(
+        id: data['id'] as String,
+        name: data['name'] as String,
+        description: data['description'] as String? ?? '',
+        type: models.PrinterType.values.firstWhere(
+          (e) => e.toString().split('.').last == (data['type'] as String? ?? 'wifi'),
+          orElse: () => models.PrinterType.wifi,
+        ),
+        model: models.PrinterModel.values.firstWhere(
+          (e) => e.toString().split('.').last == (data['model'] as String? ?? 'epsonTMGeneric'),
+          orElse: () => models.PrinterModel.epsonTMGeneric,
+        ),
+        ipAddress: data['ip_address'] as String? ?? '',
+        port: data['port'] as int? ?? 9100,
+        macAddress: data['mac_address'] as String? ?? '',
+        isActive: (data['is_active'] as bool? ?? true),
+        connectionStatus: models.PrinterConnectionStatus.values.firstWhere(
+          (e) => e.toString().split('.').last == (data['connection_status'] as String? ?? 'unknown'),
+          orElse: () => models.PrinterConnectionStatus.unknown,
+        ),
+        lastConnected: data['last_connected'] != null 
+            ? DateTime.parse(data['last_connected'] as String)
+            : null,
+      );
+      
+      if (!_tenantPrinters.any((p) => p.id == printer.id)) {
+        _tenantPrinters.add(printer);
+        debugPrint('$_logTag ➕ Added printer from Firebase: ${printer.name}');
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('$_logTag ❌ Error adding printer from Firebase: $e');
+    }
+  }
+  
+  /// Update printer from Firebase data
+  void _updatePrinterFromFirebase(Map<String, dynamic> data) {
+    try {
+      final index = _tenantPrinters.indexWhere((p) => p.id == data['id']);
+      if (index != -1) {
+        final updatedPrinter = models.PrinterConfiguration(
+          id: data['id'] as String,
+          name: data['name'] as String,
+          description: data['description'] as String? ?? '',
+          type: models.PrinterType.values.firstWhere(
+            (e) => e.toString().split('.').last == (data['type'] as String? ?? 'wifi'),
+            orElse: () => models.PrinterType.wifi,
+          ),
+          model: models.PrinterModel.values.firstWhere(
+            (e) => e.toString().split('.').last == (data['model'] as String? ?? 'epsonTMGeneric'),
+            orElse: () => models.PrinterModel.epsonTMGeneric,
+        ),
+          ipAddress: data['ip_address'] as String? ?? '',
+          port: data['port'] as int? ?? 9100,
+          macAddress: data['mac_address'] as String? ?? '',
+          isActive: (data['is_active'] as bool? ?? true),
+          connectionStatus: models.PrinterConnectionStatus.values.firstWhere(
+            (e) => e.toString().split('.').last == (data['connection_status'] as String? ?? 'unknown'),
+            orElse: () => models.PrinterConnectionStatus.unknown,
+          ),
+          lastConnected: data['last_connected'] != null 
+              ? DateTime.parse(data['last_connected'] as String)
+              : null,
+        );
+        
+        _tenantPrinters[index] = updatedPrinter;
+        debugPrint('$_logTag 🔄 Updated printer from Firebase: ${updatedPrinter.name}');
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('$_logTag ❌ Error updating printer from Firebase: $e');
+    }
+  }
+  
+  /// Remove printer from Firebase data
+  void _removePrinterFromFirebase(String printerId) {
+    final index = _tenantPrinters.indexWhere((p) => p.id == printerId);
+    if (index != -1) {
+      final removedPrinter = _tenantPrinters.removeAt(index);
+      debugPrint('$_logTag ➖ Removed printer from Firebase: ${removedPrinter.name}');
+      notifyListeners();
+    }
+  }
+  
+  /// Add assignment from Firebase data
+  void _addAssignmentFromFirebase(Map<String, dynamic> data) {
+    try {
+      final assignment = PrinterAssignment(
+        id: data['id'] as String,
+        printerId: data['printer_id'] as String,
+        printerName: data['printer_name'] as String,
+        printerAddress: data['printer_address'] as String,
+        assignmentType: AssignmentType.values.firstWhere(
+          (e) => e.toString().split('.').last == (data['assignment_type'] as String? ?? 'category'),
+          orElse: () => AssignmentType.category,
+        ),
+        targetId: data['target_id'] as String,
+        targetName: data['target_name'] as String,
+        priority: data['priority'] as int? ?? 1,
+        isActive: (data['is_active'] as bool? ?? true),
+        createdAt: data['created_at'] != null 
+            ? DateTime.parse(data['created_at'] as String)
+            : DateTime.now(),
+        updatedAt: data['updated_at'] != null 
+            ? DateTime.parse(data['updated_at'] as String)
+            : DateTime.now(),
+      );
+      
+      if (!_tenantAssignments.any((a) => a.id == assignment.id)) {
+        _tenantAssignments.add(assignment);
+        debugPrint('$_logTag ➕ Added assignment from Firebase: ${assignment.targetName} -> ${assignment.printerName}');
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('$_logTag ❌ Error adding assignment from Firebase: $e');
+    }
+  }
+  
+  /// Update assignment from Firebase data
+  void _updateAssignmentFromFirebase(Map<String, dynamic> data) {
+    try {
+      final index = _tenantAssignments.indexWhere((a) => a.id == data['id']);
+      if (index != -1) {
+        final updatedAssignment = PrinterAssignment(
+          id: data['id'] as String,
+          printerId: data['printer_id'] as String,
+          printerName: data['printer_name'] as String,
+          printerAddress: data['printer_address'] as String,
+          assignmentType: AssignmentType.values.firstWhere(
+            (e) => e.toString().split('.').last == (data['assignment_type'] as String? ?? 'category'),
+            orElse: () => AssignmentType.category,
+          ),
+          targetId: data['target_id'] as String,
+          targetName: data['target_name'] as String,
+          priority: data['priority'] as int? ?? 1,
+          isActive: (data['is_active'] as bool? ?? true),
+          createdAt: data['created_at'] != null 
+              ? DateTime.parse(data['created_at'] as String)
+              : DateTime.now(),
+          updatedAt: data['updated_at'] != null 
+              ? DateTime.parse(data['updated_at'] as String)
+              : DateTime.now(),
+        );
+        
+        _tenantAssignments[index] = updatedAssignment;
+        debugPrint('$_logTag 🔄 Updated assignment from Firebase: ${updatedAssignment.targetName} -> ${updatedAssignment.printerName}');
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('$_logTag ❌ Error updating assignment from Firebase: $e');
+    }
+  }
+  
+  /// Remove assignment from Firebase data
+  void _removeAssignmentFromFirebase(String assignmentId) {
+    final index = _tenantAssignments.indexWhere((a) => a.id == assignmentId);
+    if (index != -1) {
+      final removedAssignment = _tenantAssignments.removeAt(index);
+      debugPrint('$_logTag ➖ Removed assignment from Firebase: ${removedAssignment.targetName} -> ${removedAssignment.printerName}');
+      notifyListeners();
+    }
   }
   
   /// Dispose of resources

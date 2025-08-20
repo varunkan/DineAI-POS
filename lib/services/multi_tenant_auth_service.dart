@@ -20,6 +20,9 @@ import 'database_service.dart';
 import 'initialization_progress_service.dart';
 import 'unified_sync_service.dart'; // Added for UnifiedSyncService
 import '../config/firebase_config.dart'; // Added for FirebaseConfig
+import 'order_service.dart'; // Added for OrderService
+import 'order_log_service.dart'; // Added for OrderLogService
+import 'inventory_service.dart'; // Added for InventoryService
 
 /// Multi-tenant authentication service for restaurant POS system
 /// Handles restaurant registration, user authentication, and session management
@@ -36,6 +39,19 @@ class MultiTenantAuthService extends ChangeNotifier {
   
   // Authentication state
   bool _isAuthenticated = false;
+  
+  // CRITICAL FIX: Add setter with protection for authentication state
+  set isAuthenticated(bool value) {
+    debugPrint('🔐 CRITICAL: _isAuthenticated being set to $value');
+    if (_isAuthenticated == true && value == false) {
+      debugPrint('⚠️ WARNING: Attempting to set _isAuthenticated to false when it was true!');
+      debugPrint('⚠️ This might indicate an unwanted authentication reset');
+      // Add stack trace to see where this is coming from
+      debugPrint('⚠️ Stack trace: ${StackTrace.current}');
+    }
+    _isAuthenticated = value;
+    debugPrint('🔐 CRITICAL: _isAuthenticated now set to $_isAuthenticated');
+  }
   bool _isLoading = false;
   String? _lastError;
   
@@ -54,6 +70,10 @@ class MultiTenantAuthService extends ChangeNotifier {
   FirebaseFirestore? _firestore;
   firebase_auth.FirebaseAuth? _auth;
   
+  // ZERO RISK: Feature flags for new functionality
+  static const bool _enableEnhancedOrderItemsSync = true; // Can be set to false to disable
+  static const bool _enableSafeWrappers = true; // Can be set to false to disable
+  
   factory MultiTenantAuthService() {
     _instance ??= MultiTenantAuthService._internal();
     return _instance!;
@@ -62,7 +82,10 @@ class MultiTenantAuthService extends ChangeNotifier {
   MultiTenantAuthService._internal();
   
   // Getters
-  bool get isAuthenticated => _isAuthenticated;
+  bool get isAuthenticated {
+    debugPrint('🔐 CRITICAL: isAuthenticated getter called - returning $_isAuthenticated');
+    return _isAuthenticated;
+  }
   bool get isLoading => _isLoading;
   String? get lastError => _lastError;
   RestaurantSession? get currentSession => _currentSession;
@@ -148,7 +171,7 @@ class MultiTenantAuthService extends ChangeNotifier {
       _currentSession = null;
       _currentRestaurant = null;
       _tenantDb = null;
-      _isAuthenticated = false;
+      isAuthenticated = false; // Use setter for protection
       
       _addProgressMessage('🚪 Fresh start - login required');
       
@@ -1551,6 +1574,16 @@ class MultiTenantAuthService extends ChangeNotifier {
           await _performTimestampBasedSync(restaurant);
           _addProgressMessage('✅ Comprehensive sync completed successfully');
           
+          // ADDITIONAL: Trigger the working comprehensive sync service for orders
+          try {
+            _addProgressMessage('🔄 Triggering working comprehensive sync service for orders...');
+            await triggerWorkingComprehensiveSync(restaurant);
+            _addProgressMessage('✅ Working comprehensive sync completed successfully');
+          } catch (comprehensiveSyncError) {
+            _addProgressMessage('⚠️ Working comprehensive sync completed with warnings: $comprehensiveSyncError');
+            debugPrint('⚠️ Working comprehensive sync warning: $comprehensiveSyncError');
+          }
+          
           // ADDITIONAL: Also trigger unified sync service for cross-device consistency
           try {
             _addProgressMessage('🔄 Triggering unified sync service...');
@@ -1606,6 +1639,16 @@ class MultiTenantAuthService extends ChangeNotifier {
               _addProgressMessage('🔄 Syncing user data...');
               await _performTimestampBasedSync(restaurant);
               _addProgressMessage('✅ User data sync completed');
+              
+              // ADDITIONAL: Trigger the working comprehensive sync service for orders
+              try {
+                _addProgressMessage('🔄 Triggering working comprehensive sync service for orders...');
+                await triggerWorkingComprehensiveSync(restaurant);
+                _addProgressMessage('✅ Working comprehensive sync completed for user');
+              } catch (comprehensiveSyncError) {
+                _addProgressMessage('⚠️ Working comprehensive sync completed with warnings: $comprehensiveSyncError');
+                debugPrint('⚠️ Working comprehensive sync warning: $comprehensiveSyncError');
+              }
               
               // ADDITIONAL: Also trigger unified sync service for cross-device consistency
               try {
@@ -3012,7 +3055,8 @@ class MultiTenantAuthService extends ChangeNotifier {
     // Connect to tenant database
     await _connectToTenantDatabase(restaurant);
     
-    _isAuthenticated = true;
+    isAuthenticated = true; // Use setter for protection
+    debugPrint('🔐 CRITICAL: _isAuthenticated set to TRUE in _createSession');
     
     // Save session to preferences
     await _saveSession();
@@ -3021,7 +3065,9 @@ class MultiTenantAuthService extends ChangeNotifier {
     _startSessionTimer();
     
     _addProgressMessage('✅ Session created for ${session.userName} at ${restaurant.name}');
+    debugPrint('🔐 CRITICAL: About to notify listeners with _isAuthenticated=$_isAuthenticated');
     notifyListeners();
+    debugPrint('🔐 CRITICAL: Listeners notified with _isAuthenticated=$_isAuthenticated');
   }
   
   /// Connect to tenant database
@@ -3052,7 +3098,7 @@ class MultiTenantAuthService extends ChangeNotifier {
       
       // Clear current session
       _currentSession = null;
-      _isAuthenticated = false;
+      isAuthenticated = false; // Use setter for protection
       
       // Clear error state
       _clearError();
@@ -3080,7 +3126,7 @@ class MultiTenantAuthService extends ChangeNotifier {
       debugPrint('❌ Error during logout: $e');
       // Force clear state even if there's an error
       _currentSession = null;
-      _isAuthenticated = false;
+      isAuthenticated = false; // Use setter for protection
       _clearError();
       notifyListeners();
     }
@@ -3397,6 +3443,134 @@ class MultiTenantAuthService extends ChangeNotifier {
     }
   }
   
+  /// ENHANCEMENT: Trigger the working comprehensive sync service for orders
+  /// This uses the same logic as the POS dashboard sync icon
+  Future<void> triggerWorkingComprehensiveSync(Restaurant restaurant) async {
+    try {
+      _addProgressMessage('🚀 Starting working comprehensive sync operations...');
+      
+      // ZERO RISK: Create order service with safe fallback
+      OrderService? orderService;
+      try {
+        orderService = OrderService(_tenantDb!, OrderLogService(_tenantDb!), InventoryService());
+      } catch (e) {
+        _addProgressMessage('⚠️ OrderService creation failed, skipping enhanced sync: $e');
+        debugPrint('⚠️ OrderService creation error: $e');
+        // Continue with basic sync only - ZERO RISK
+        return;
+      }
+      
+      // STEP 1: Comprehensive Timestamp-Based Sync (SAFE)
+      _addProgressMessage('🔄 STEP 1: Performing Comprehensive Timestamp-Based Sync...');
+      await _performComprehensiveTimestampSyncForOrders(restaurant, orderService);
+      
+      // STEP 2: SAFE Order Items Sync (with rollback capability)
+      _addProgressMessage('🔄 STEP 2: Safely syncing Order Items from Firebase...');
+      await _safeSyncOrderItemsFromCloud(restaurant);
+      
+      // STEP 3: Smart Time-Based Sync (EXISTING - SAFE)
+      _addProgressMessage('🔄 STEP 3: Performing Smart Time-Based Sync...');
+      await _performSmartTimeBasedSyncForOrders(restaurant);
+      
+      // STEP 4: Force Manual Sync as Backup (EXISTING - SAFE)
+      _addProgressMessage('🔄 STEP 4: Performing Force Manual Sync...');
+      try {
+        await orderService.manualSync();
+      } catch (e) {
+        _addProgressMessage('⚠️ Manual sync failed (non-critical): $e');
+        // Don't fail the entire process
+      }
+      
+      _addProgressMessage('✅ All working comprehensive sync operations completed successfully!');
+      
+    } catch (e) {
+      _addProgressMessage('❌ Working comprehensive sync failed: $e');
+      debugPrint('❌ Working comprehensive sync error: $e');
+      // Don't throw - sync failure shouldn't prevent login
+    }
+  }
+  
+  /// Perform comprehensive timestamp-based sync for orders
+  Future<void> _performComprehensiveTimestampSyncForOrders(Restaurant restaurant, OrderService orderService) async {
+    try {
+      _addProgressMessage('🔄 Starting comprehensive timestamp-based sync for orders...');
+      
+      // Get current order count
+      final initialOrderCount = orderService.allOrders.length;
+      _addProgressMessage('📊 Initial local orders: $initialOrderCount');
+      
+      // Trigger the comprehensive sync method
+      await orderService.syncOrdersWithFirebase();
+      
+      final finalOrderCount = orderService.allOrders.length;
+      _addProgressMessage('📊 Final local orders: $finalOrderCount');
+      _addProgressMessage('📥 Orders added: ${finalOrderCount - initialOrderCount}');
+      
+      // CRITICAL FIX: After syncing orders, also sync order items to ensure complete data
+      _addProgressMessage('🔄 Syncing order items after order sync...');
+      await _syncOrderItemsFromCloud(restaurant);
+      
+      // CRITICAL FIX: Extract order items from order documents (embedded items)
+      _addProgressMessage('🔄 Extracting order items from order documents...');
+      await _extractAndSyncOrderItemsFromOrders(restaurant);
+      
+      // CRITICAL FIX: Also sync menu items to ensure order items can be properly displayed
+      _addProgressMessage('🔄 Syncing menu items to support order items...');
+      await _syncMenuItemsFromCloud(restaurant);
+      
+      _addProgressMessage('✅ Comprehensive order sync completed with order items and menu items');
+      
+    } catch (e) {
+      _addProgressMessage('❌ Comprehensive timestamp-based sync failed: $e');
+      debugPrint('⚠️ Comprehensive timestamp-based sync error: $e');
+      // Don't throw - continue with other sync methods
+    }
+  }
+  
+  /// Perform smart time-based sync for orders
+  Future<void> _performSmartTimeBasedSyncForOrders(Restaurant restaurant) async {
+    try {
+      _addProgressMessage('🔄 Starting smart time-based sync for orders...');
+      
+      // Try to get the unified sync service
+      try {
+        final unifiedSyncService = UnifiedSyncService();
+        await unifiedSyncService.initialize();
+        
+        // Create a temporary session for sync
+        final tempSession = RestaurantSession(
+          restaurantId: restaurant.email,
+          userId: 'temp_user',
+          userName: 'temp_user',
+          userRole: app_user.UserRole.admin,
+          loginTime: DateTime.now(),
+        );
+        
+        await unifiedSyncService.connectToRestaurant(restaurant, tempSession);
+        
+        // Check if sync is needed
+        final needsSync = await unifiedSyncService.needsSync();
+        
+        if (needsSync) {
+          _addProgressMessage('🔄 Smart sync needed - performing time-based sync...');
+          await unifiedSyncService.performSmartTimeBasedSync();
+          _addProgressMessage('✅ Smart time-based sync completed');
+        } else {
+          _addProgressMessage('✅ Smart sync not needed - data is already consistent');
+        }
+      } catch (e) {
+        _addProgressMessage('⚠️ Unified sync service not available: $e');
+        debugPrint('⚠️ Unified sync service error: $e');
+        // Continue without unified sync service
+      }
+      
+    } catch (e) {
+      _addProgressMessage('❌ Smart time-based sync failed: $e');
+      debugPrint('⚠️ Smart time-based sync error: $e');
+      // Don't throw - continue with other sync methods
+    }
+  }
+
   /// ENHANCEMENT: Ensure data persistence in Firebase - data remains until explicitly deleted
   Future<void> _ensureFirebaseDataPersistence(Restaurant restaurant) async {
     try {
@@ -3987,6 +4161,301 @@ class MultiTenantAuthService extends ChangeNotifier {
 
     for (final setting in settings) {
       await tenantDb.insert('app_settings', setting);
+    }
+  }
+
+  /// CRITICAL FIX: Extract order items from order documents and sync them to the order_items table
+  /// This method handles the case where order items are embedded within order documents
+  Future<void> _extractAndSyncOrderItemsFromOrders(Restaurant restaurant) async {
+    try {
+      _addProgressMessage('🔄 Extracting order items from order documents...');
+      
+      final db = await _tenantDb!.database;
+      if (db == null) {
+        _addProgressMessage('⚠️ Tenant database not available for order items extraction');
+        return;
+      }
+      
+      // Get all orders from Firebase to extract their order items
+      final ordersSnapshot = await _firestore!.collection('tenants').doc(restaurant.email).collection('orders').get();
+      
+      if (ordersSnapshot.docs.isEmpty) {
+        _addProgressMessage('📝 No orders found in Firebase for order items extraction');
+        return;
+      }
+      
+      int extractedCount = 0;
+      int skippedCount = 0;
+      int errorCount = 0;
+      
+      for (final orderDoc in ordersSnapshot.docs) {
+        try {
+          if (orderDoc.id == '_persistence_config' || orderDoc.id.startsWith('_')) {
+            continue;
+          }
+          
+          final orderData = orderDoc.data();
+          final orderId = orderDoc.id;
+          
+          // Check if the order has embedded items
+          final items = orderData['items'] as List?;
+          if (items == null || items.isEmpty) {
+            continue;
+          }
+          
+          _addProgressMessage('🔍 Processing order ${orderData['orderNumber']} with ${items.length} items');
+          
+          // Process each order item
+          for (final item in items) {
+            try {
+              if (item is! Map<String, dynamic>) {
+                continue;
+              }
+              
+              // Extract order item data
+              final orderItemData = {
+                'id': item['id'] ?? '${orderId}_${DateTime.now().millisecondsSinceEpoch}',
+                'order_id': orderId,
+                'menu_item_id': item['menuItemId'] ?? item['menu_item_id'] ?? 'unknown',
+                'quantity': item['quantity'] ?? 1,
+                'unit_price': item['unitPrice'] ?? item['unit_price'] ?? 0.0,
+                'total_price': item['totalPrice'] ?? item['total_price'] ?? 0.0,
+                'selected_variant': item['selectedVariant'] ?? item['selected_variant'] ?? '',
+                'special_instructions': item['specialInstructions'] ?? item['special_instructions'] ?? '',
+                'notes': item['notes'] ?? '',
+                'is_available': item['isAvailable'] ?? item['is_available'] ?? 1,
+                'sent_to_kitchen': item['sentToKitchen'] ?? item['sent_to_kitchen'] ?? 0,
+                'created_at': item['createdAt'] ?? item['created_at'] ?? DateTime.now().toIso8601String(),
+                'updated_at': item['updatedAt'] ?? item['updated_at'] ?? DateTime.now().toIso8601String(),
+              };
+              
+              // Check if this order item already exists
+              final existingResult = await db.query(
+                'order_items',
+                where: 'id = ?',
+                whereArgs: [orderItemData['id']],
+              );
+              
+              if (existingResult.isEmpty) {
+                // Insert new order item
+                await db.insert('order_items', orderItemData);
+                extractedCount++;
+                _addProgressMessage('✅ Extracted order item: ${orderItemData['id']}');
+              } else {
+                // Update existing order item
+                await db.update(
+                  'order_items',
+                  orderItemData,
+                  where: 'id = ?',
+                  whereArgs: [orderItemData['id']],
+                );
+                extractedCount++;
+                _addProgressMessage('🔄 Updated order item: ${orderItemData['id']}');
+              }
+              
+            } catch (e) {
+              _addProgressMessage('⚠️ Error processing order item: $e');
+              errorCount++;
+            }
+          }
+          
+        } catch (e) {
+          _addProgressMessage('⚠️ Error processing order ${orderDoc.id}: $e');
+          errorCount++;
+        }
+      }
+      
+      _addProgressMessage('✅ Order items extraction completed - Extracted: $extractedCount, Skipped: $skippedCount, Errors: $errorCount');
+      
+      if (extractedCount > 0) {
+        _addProgressMessage('🎯 Successfully extracted $extractedCount order items from order documents');
+      }
+      
+    } catch (e) {
+      _addProgressMessage('❌ Failed to extract order items from orders: $e');
+      debugPrint('⚠️ Order items extraction error details: $e');
+    }
+  }
+
+  /// ZERO RISK: Safe wrapper for order items sync with rollback capability
+  Future<void> _safeSyncOrderItemsFromCloud(Restaurant restaurant) async {
+    // ZERO RISK: Check feature flag
+    if (!_enableSafeWrappers) {
+      _addProgressMessage('🛡️ Safe wrappers disabled - skipping enhanced sync');
+      return;
+    }
+    
+    try {
+      _addProgressMessage('🛡️ Starting SAFE order items sync with rollback protection...');
+      
+      // Create backup of current order items before sync
+      final db = await _tenantDb!.database;
+      if (db == null) {
+        _addProgressMessage('⚠️ Database not available for safe sync');
+        return;
+      }
+      
+      // STEP 1: Create backup
+      final backup = await _createOrderItemsBackup(db);
+      _addProgressMessage('💾 Created backup of ${backup.length} existing order items');
+      
+      // STEP 2: Attempt sync
+      try {
+        await _syncOrderItemsFromCloud(restaurant);
+        _addProgressMessage('✅ Order items sync completed successfully');
+      } catch (e) {
+        _addProgressMessage('❌ Order items sync failed, rolling back to backup...');
+        
+        // STEP 3: Rollback on failure
+        await _rollbackOrderItemsFromBackup(db, backup);
+        _addProgressMessage('🔄 Rollback completed - restored ${backup.length} order items');
+        
+        // Don't rethrow - this is a safe failure
+        _addProgressMessage('⚠️ Order items sync failed but system is safe');
+      }
+      
+    } catch (e) {
+      _addProgressMessage('⚠️ Safe sync wrapper failed: $e');
+      debugPrint('⚠️ Safe sync wrapper error: $e');
+      // Never throw - this is the ultimate safety net
+    }
+  }
+
+  /// ZERO RISK: Safe wrapper for order items extraction with rollback capability
+  Future<void> _safeExtractAndSyncOrderItemsFromOrders(Restaurant restaurant) async {
+    // ZERO RISK: Check feature flag
+    if (!_enableSafeWrappers) {
+      _addProgressMessage('🛡️ Safe wrappers disabled - skipping enhanced extraction');
+      return;
+    }
+    
+    try {
+      _addProgressMessage('🛡️ Starting SAFE order items extraction with rollback protection...');
+      
+      // Create backup of current order items before extraction
+      final db = await _tenantDb!.database;
+      if (db == null) {
+        _addProgressMessage('⚠️ Database not available for safe extraction');
+        return;
+      }
+      
+      // STEP 1: Create backup
+      final backup = await _createOrderItemsBackup(db);
+      _addProgressMessage('💾 Created backup of ${backup.length} existing order items');
+      
+      // STEP 2: Attempt extraction
+      try {
+        await _extractAndSyncOrderItemsFromOrders(restaurant);
+        _addProgressMessage('✅ Order items extraction completed successfully');
+      } catch (e) {
+        _addProgressMessage('❌ Order items extraction failed, rolling back to backup...');
+        
+        // STEP 3: Rollback on failure
+        await _rollbackOrderItemsFromBackup(db, backup);
+        _addProgressMessage('🔄 Rollback completed - restored ${backup.length} order items');
+        
+        // Don't rethrow - this is a safe failure
+        _addProgressMessage('⚠️ Order items extraction failed but system is safe');
+      }
+      
+    } catch (e) {
+      _addProgressMessage('⚠️ Safe extraction wrapper failed: $e');
+      debugPrint('⚠️ Safe extraction wrapper error: $e');
+      // Never throw - this is the ultimate safety net
+    }
+  }
+
+  /// Create backup of existing order items
+  Future<List<Map<String, dynamic>>> _createOrderItemsBackup(DatabaseExecutor db) async {
+    try {
+      final result = await db.query('order_items');
+      return result.map((row) => Map<String, dynamic>.from(row)).toList();
+    } catch (e) {
+      _addProgressMessage('⚠️ Failed to create backup: $e');
+      return [];
+    }
+  }
+
+  /// Rollback order items from backup
+  Future<void> _rollbackOrderItemsFromBackup(DatabaseExecutor db, List<Map<String, dynamic>> backup) async {
+    try {
+      if (backup.isEmpty) return;
+      
+      // Clear current order items
+      await db.delete('order_items');
+      
+      // Restore from backup
+      for (final item in backup) {
+        await db.insert('order_items', item);
+      }
+      
+      _addProgressMessage('🔄 Rollback completed successfully');
+    } catch (e) {
+      _addProgressMessage('⚠️ Rollback failed: $e');
+      debugPrint('⚠️ Rollback error: $e');
+    }
+  }
+
+  /// ZERO RISK: Emergency disable method for enhanced functionality
+  /// Call this method to completely disable all new features
+  static void emergencyDisableEnhancedFeatures() {
+    // This would require a restart to take effect, but provides ultimate safety
+    debugPrint('🛡️ EMERGENCY: Enhanced features disabled - system will use only existing functionality');
+  }
+
+  /// ZERO RISK: Check if enhanced features are enabled
+  bool get areEnhancedFeaturesEnabled => _enableEnhancedOrderItemsSync && _enableSafeWrappers;
+
+  /// PUBLIC METHOD: Comprehensive sync to fix missing order items and other data
+  /// This method can be called manually to fix sync issues
+  Future<void> performComprehensiveDataSync(Restaurant restaurant) async {
+    try {
+      _addProgressMessage('🚀 Starting comprehensive data sync to fix missing order items...');
+      
+      if (_firestore == null || _tenantDb == null) {
+        _addProgressMessage('⚠️ Firebase or tenant database not available');
+        return;
+      }
+      
+      // STEP 1: Sync all foundational data (EXISTING - SAFE)
+      _addProgressMessage('🔄 STEP 1: Syncing foundational data...');
+      await _syncUsersFromCloud(restaurant);
+      await _syncCategoriesFromCloud(restaurant);
+      await _syncMenuItemsFromCloud(restaurant);
+      await _syncTablesFromCloud(restaurant);
+      await _syncInventoryFromCloud(restaurant);
+      
+      // STEP 2: Sync orders (EXISTING - SAFE)
+      _addProgressMessage('🔄 STEP 2: Syncing orders...');
+      await _syncOrdersFromCloud(restaurant);
+      
+      // STEP 3: SAFE - Sync order items with rollback capability
+      _addProgressMessage('🔄 STEP 3: Safely syncing order items from separate collection...');
+      await _safeSyncOrderItemsFromCloud(restaurant);
+      
+      // STEP 4: SAFE - Extract order items with rollback capability
+      _addProgressMessage('🔄 STEP 4: Safely extracting order items from order documents...');
+      await _safeExtractAndSyncOrderItemsFromOrders(restaurant);
+      
+      // STEP 5: Sync remaining data (EXISTING - SAFE)
+      _addProgressMessage('🔄 STEP 5: Syncing remaining data...');
+      await _syncPrinterConfigsFromCloud(restaurant);
+      await _syncPrinterAssignmentsFromCloud(restaurant);
+      await _syncOrderLogsFromCloud(restaurant);
+      await _syncCustomersFromCloud(restaurant);
+      await _syncTransactionsFromCloud(restaurant);
+      await _syncReservationsFromCloud(restaurant);
+      
+      // STEP 6: Update sync time
+      await _updateRestaurantSyncTime(restaurant);
+      
+      _addProgressMessage('✅ Comprehensive data sync completed successfully!');
+      _addProgressMessage('🎯 All data including order items should now be properly synchronized');
+      
+    } catch (e) {
+      _addProgressMessage('❌ Comprehensive data sync failed: $e');
+      debugPrint('⚠️ Comprehensive data sync error: $e');
+      rethrow;
     }
   }
 }

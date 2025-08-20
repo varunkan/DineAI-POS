@@ -151,10 +151,12 @@ class Order {
   /// Alias for totalAmount
   double get total => totalAmount;
 
-  /// Generates a unique order number.
+  /// Generates a unique order number with timestamp-based uniqueness.
   static String _generateOrderNumber() {
     final now = DateTime.now();
-    return 'ORD${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}${now.second.toString().padLeft(2, '0')}';
+    final timestamp = now.millisecondsSinceEpoch;
+    final randomSuffix = (timestamp % 10000).toString().padLeft(4, '0');
+    return 'ORD-${timestamp.toString().substring(8)}-$randomSuffix';
   }
 
   /// Calculates the subtotal for a list of items.

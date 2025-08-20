@@ -355,10 +355,15 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       
       _servicesInitialized = true;
       debugPrint('🎉 All POS services initialized successfully');
+      debugPrint('🔍 BUILD: _servicesInitialized set to true, about to trigger UI rebuild');
       
       // Trigger UI rebuild
       if (mounted) {
+        debugPrint('🔍 BUILD: Widget is mounted, calling setState()');
         setState(() {});
+        debugPrint('🔍 BUILD: setState() called successfully');
+      } else {
+        debugPrint('⚠️ BUILD: Widget not mounted, cannot call setState()');
       }
       
     } catch (e, stackTrace) {
@@ -1126,17 +1131,19 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   Widget _buildMainScreen() {
     return Builder(
       builder: (context) {
+        debugPrint('🔍 BUILD: _buildMainScreen called');
         debugPrint('🔍 BUILD: isAuthenticated=${widget.authService.isAuthenticated}, servicesInitialized=$_servicesInitialized, userService=${_userService != null}');
+        debugPrint('🔍 BUILD: Current restaurant: ${widget.authService.currentRestaurant?.name ?? 'null'}');
         
         // Show authentication screen if not authenticated
         if (!widget.authService.isAuthenticated) {
-          debugPrint('🔍 BUILD: Showing RestaurantAuthScreen');
+          debugPrint('🔍 BUILD: Showing RestaurantAuthScreen - user not authenticated');
           return const RestaurantAuthScreen();
         }
         
-        // Show progress screen while services are initializing
-        if (!_servicesInitialized) {
-          debugPrint('🔍 BUILD: Showing InitializationProgressScreen');
+        // Show progress screen while services are initializing (only when authenticated)
+        if (widget.authService.isAuthenticated && !_servicesInitialized) {
+          debugPrint('🔍 BUILD: Showing InitializationProgressScreen - authenticated but services not ready');
           return InitializationProgressScreen(
             restaurantName: widget.authService.currentRestaurant?.name ?? 'Restaurant',
           );

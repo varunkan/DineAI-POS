@@ -11,8 +11,21 @@ import '../models/menu_item.dart';
 import '../models/category.dart';
 import '../models/user.dart';
 import '../models/table.dart';
+import '../models/customer.dart';
+import '../models/inventory_item.dart';
+import '../models/restaurant.dart';
+import '../models/store.dart';
+import '../models/activity_log.dart';
+import '../models/app_settings.dart';
+import '../models/loyalty_reward.dart';
+import '../models/loyalty_transaction.dart';
+import '../models/reservation.dart';
+import '../models/printer_configuration.dart';
+import '../models/printer_assignment.dart';
+import '../models/order_log.dart';
 import '../utils/exceptions.dart';
 import 'package:uuid/uuid.dart';
+import 'schema_validation_service.dart';
 
 /// Custom exception for database operations
 class DatabaseException implements Exception {
@@ -184,6 +197,9 @@ class DatabaseService {
           
           // Perform schema migrations for existing databases
           await _performSchemaMigrations(db);
+          
+          // ZERO RISK: Validate schema after opening existing database
+          await _validateAndCorrectSchema(db);
         },
       );
     } catch (e) {
@@ -228,9 +244,40 @@ class DatabaseService {
       // ENHANCEMENT: Migrate existing tables to add missing columns
       // This ensures top-notch data synchronization with Firebase
       await _migrateOrdersTable(db);
+      
+      // ZERO RISK: Validate schema after creation
+      await _validateAndCorrectSchema(db);
     } catch (e) {
       debugPrint('❌ Error creating database tables: $e');
       throw DatabaseException('Failed to create database tables', operation: 'create_tables', originalError: e);
+    }
+  }
+
+  /// ZERO RISK: Validate and correct database schema
+  Future<void> _validateAndCorrectSchema(Database db) async {
+    try {
+      debugPrint('🔍 Validating database schema after creation...');
+      
+      final schemaValidationService = SchemaValidationService();
+      final validationResult = await schemaValidationService.validateDatabaseSchema(db);
+      
+      if (validationResult.isValid) {
+        debugPrint('✅ Database schema validation passed');
+      } else {
+        debugPrint('⚠️ Database schema validation found ${validationResult.issues.length} issues:');
+        for (final issue in validationResult.issues) {
+          debugPrint('  - ${issue.severity}: ${issue.message}');
+        }
+        
+        // ZERO RISK: Auto-correct non-critical issues
+        if (SchemaValidationService.isAutoCorrectionEnabled) {
+          debugPrint('🔧 Auto-correcting non-critical schema issues...');
+          // Auto-correction is handled within the validation service
+        }
+      }
+    } catch (e) {
+      debugPrint('⚠️ Schema validation failed: $e');
+      // Don't throw - schema validation failure shouldn't break database initialization
     }
   }
 

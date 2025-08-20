@@ -897,6 +897,7 @@ class _RestaurantAuthScreenState extends State<RestaurantAuthScreen>
     TextInputType? keyboardType,
     int maxLines = 1,
     void Function(String)? onChanged,
+    bool enabled = true, // Add enabled parameter with default true
   }) {
     final isTablet = TabletResponsive.isTablet(context);
     final isLargeTablet = TabletResponsive.isLargeTablet(context);
@@ -907,6 +908,7 @@ class _RestaurantAuthScreenState extends State<RestaurantAuthScreen>
       keyboardType: keyboardType,
       maxLines: maxLines,
       onChanged: onChanged,
+      enabled: enabled, // Use the enabled parameter
       style: TextStyle(
         fontSize: TabletResponsive.getResponsiveFontSize(context, mobile: 16, tablet: 18, largeTablet: 20),
       ),
@@ -946,7 +948,7 @@ class _RestaurantAuthScreenState extends State<RestaurantAuthScreen>
           borderSide: const BorderSide(color: Colors.red, width: 2),
         ),
         filled: true,
-        fillColor: Colors.grey.shade50,
+        fillColor: enabled ? Colors.grey.shade50 : Colors.grey.shade100, // Adjust fill color based on enabled state
         // Add subtle elevation effect
         isDense: true,
       ),

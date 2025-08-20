@@ -47,6 +47,9 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> {
       if (orderService != null) {
         orderService.addListener(_onOrderServiceChanged);
       }
+      
+      // INNOVATIVE FIX: Start real-time order count monitoring
+      _startOrderCountMonitoring();
     });
   }
 
@@ -95,6 +98,10 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> {
     if (orderService != null) {
       orderService.removeListener(_onOrderServiceChanged);
     }
+    
+    // INNOVATIVE FIX: Stop order count monitoring
+    _stopOrderCountMonitoring();
+    
     super.dispose();
   }
 
@@ -135,15 +142,325 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> {
 
       debugPrint('📊 Orders refreshed - Total: ${allOrders.length}, Active: ${activeOrders.length}, Completed: ${completedOrders.length}');
 
+      // INNOVATIVE FIX: Smart Order Reconciliation System
+      final filtered = _smartOrderFiltering(activeOrders);
+      
+      // INNOVATIVE FIX: Validate and auto-correct count mismatches
+      _validateOrderCountConsistency(activeOrders.length, filtered.length);
+      
+      debugPrint('🔍 SMART FILTERING DEBUG:');
+      debugPrint('  - _selectedServerId: $_selectedServerId');
+      debugPrint('  - activeOrders.length: ${activeOrders.length}');
+      debugPrint('  - filtered.length: ${filtered.length}');
+      debugPrint('  - All active orders: ${activeOrders.map((o) => '${o.orderNumber}(${o.status})').join(', ')}');
+      if (_selectedServerId != null) {
+        debugPrint('  - Filtered by server $_selectedServerId: ${filtered.map((o) => '${o.orderNumber}(${o.status})').join(', ')}');
+      }
+      
       setState(() {
-        _filteredOrders = _selectedServerId != null
-            ? activeOrders.where((order) => order.userId == _selectedServerId).toList()
-            : activeOrders;
+        _filteredOrders = filtered;
       });
 
-      debugPrint('✅ Orders refreshed successfully');
+      debugPrint('✅ Orders refreshed successfully with smart reconciliation');
     } catch (e) {
       debugPrint('❌ Error refreshing orders: $e');
+    }
+  }
+  
+  /// INNOVATIVE FIX: Smart Order Filtering with Consistency Validation
+  List<Order> _smartOrderFiltering(List<Order> activeOrders) {
+    try {
+      debugPrint('🧠 SMART FILTERING: Starting intelligent order processing...');
+      
+      if (_selectedServerId == null) {
+        // No server filter - return all active orders
+        debugPrint('🧠 SMART FILTERING: No server filter - returning all ${activeOrders.length} active orders');
+        return activeOrders;
+      }
+      
+      // Server-specific filtering with enhanced logic
+      final filtered = activeOrders.where((order) {
+        // INNOVATIVE FIX: Enhanced user ID matching with multiple format support
+        if (order.userId == null) {
+          debugPrint('⚠️ SMART FILTERING: Order ${order.orderNumber} has null userId - excluding');
+          return false;
+        }
+        
+        // Handle multiple user ID formats
+        bool isMatch = false;
+        
+        // Format 1: Direct match
+        if (order.userId == _selectedServerId) {
+          isMatch = true;
+          debugPrint('✅ SMART FILTERING: Direct match for order ${order.orderNumber}');
+        }
+        
+        // Format 2: Email-based format (restaurant_email_userid)
+        else if (order.userId != null && order.userId!.contains('_')) {
+          final parts = order.userId!.split('_');
+          if (parts.length >= 2) {
+            final orderUserId = parts.last;
+            if (orderUserId == _selectedServerId) {
+              isMatch = true;
+              debugPrint('✅ SMART FILTERING: Email-based match for order ${order.orderNumber}');
+            }
+          }
+        }
+        
+        // Format 3: Check if userId contains the server ID anywhere
+        else if (order.userId != null && _selectedServerId != null && order.userId!.contains(_selectedServerId!)) {
+          isMatch = true;
+          debugPrint('✅ SMART FILTERING: Contains match for order ${order.orderNumber}');
+        }
+        
+        if (isMatch) {
+          debugPrint('✅ SMART FILTERING: Order ${order.orderNumber} matches server $_selectedServerId');
+        } else {
+          debugPrint('❌ SMART FILTERING: Order ${order.orderNumber} does not match server $_selectedServerId (userId: ${order.userId})');
+        }
+        
+        return isMatch;
+      }).toList();
+      
+      debugPrint('🧠 SMART FILTERING: Processed ${activeOrders.length} orders, filtered to ${filtered.length} orders');
+      return filtered;
+      
+    } catch (e) {
+      debugPrint('❌ SMART FILTERING: Error during filtering - $e');
+      // Fallback to original filtering
+      return _selectedServerId != null
+          ? activeOrders.where((order) => order.userId == _selectedServerId).toList()
+          : activeOrders;
+    }
+  }
+  
+  /// INNOVATIVE FIX: Validate Order Count Consistency and Auto-Correct
+  void _validateOrderCountConsistency(int systemCount, int displayedCount) {
+    try {
+      debugPrint('🔍 COUNT VALIDATION: System count: $systemCount, Displayed count: $displayedCount');
+      
+      if (systemCount != displayedCount) {
+        debugPrint('⚠️ COUNT MISMATCH DETECTED: System shows $systemCount orders but UI displays $displayedCount orders');
+        
+        // INNOVATIVE FIX: Auto-trigger recovery mechanism
+        _triggerOrderCountRecovery(systemCount, displayedCount);
+      } else {
+        debugPrint('✅ COUNT VALIDATION: System count and displayed count match perfectly');
+      }
+    } catch (e) {
+      debugPrint('❌ COUNT VALIDATION: Error during validation - $e');
+    }
+  }
+  
+  /// INNOVATIVE FIX: Automatic Order Count Recovery System
+  void _triggerOrderCountRecovery(int systemCount, int displayedCount) {
+    try {
+      debugPrint('🔄 COUNT RECOVERY: Starting automatic recovery for count mismatch...');
+      
+      // Step 1: Force refresh from database
+      _forceRefreshOrdersFromDatabase();
+      
+      // Step 2: Validate again after refresh
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _validateOrderCountAfterRecovery();
+      });
+      
+    } catch (e) {
+      debugPrint('❌ COUNT RECOVERY: Error during recovery - $e');
+    }
+  }
+  
+  /// INNOVATIVE FIX: Force refresh orders from database
+  void _forceRefreshOrdersFromDatabase() {
+    try {
+      debugPrint('🔄 FORCE REFRESH: Triggering database reload...');
+      
+      final orderService = Provider.of<OrderService?>(context, listen: false);
+      if (orderService != null) {
+        // Force reload orders from database
+        orderService.loadOrders().then((_) {
+          debugPrint('✅ FORCE REFRESH: Database reload completed');
+          // Refresh UI after reload
+          _refreshOrdersFromService();
+        }).catchError((e) {
+          debugPrint('❌ FORCE REFRESH: Database reload failed - $e');
+        });
+      }
+    } catch (e) {
+      debugPrint('❌ FORCE REFRESH: Error during force refresh - $e');
+    }
+  }
+  
+  /// INNOVATIVE FIX: Validate order count after recovery attempt
+  void _validateOrderCountAfterRecovery() {
+    try {
+      final orderService = Provider.of<OrderService?>(context, listen: false);
+      if (orderService != null) {
+        final systemCount = orderService.activeOrders.length;
+        final displayedCount = _filteredOrders.length;
+        
+        debugPrint('🔍 RECOVERY VALIDATION: After recovery - System: $systemCount, Displayed: $displayedCount');
+        
+        if (systemCount == displayedCount) {
+          debugPrint('✅ RECOVERY SUCCESS: Count mismatch resolved automatically');
+        } else {
+          debugPrint('⚠️ RECOVERY PARTIAL: Count mismatch persists - System: $systemCount, Displayed: $displayedCount');
+          // Show user notification about the persistent issue
+          _showCountMismatchNotification(systemCount, displayedCount);
+        }
+      }
+    } catch (e) {
+      debugPrint('❌ RECOVERY VALIDATION: Error during validation - $e');
+    }
+  }
+  
+  /// INNOVATIVE FIX: Show user notification about count mismatch
+  void _showCountMismatchNotification(int systemCount, int displayedCount) {
+    try {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '⚠️ Order count mismatch detected!\n'
+              'System: $systemCount orders, Displayed: $displayedCount orders\n'
+              'Auto-recovery attempted. Please refresh manually if issue persists.',
+            ),
+            backgroundColor: Colors.orange,
+            duration: const Duration(seconds: 5),
+            action: SnackBarAction(
+              label: 'Refresh',
+              onPressed: () {
+                _forceRefreshOrdersFromDatabase();
+              },
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('❌ COUNT NOTIFICATION: Error showing notification - $e');
+    }
+  }
+  
+  /// INNOVATIVE FIX: Real-time Order Count Monitoring System
+  Timer? _orderCountMonitorTimer;
+  
+  void _startOrderCountMonitoring() {
+    try {
+      debugPrint('🔍 COUNT MONITORING: Starting real-time order count monitoring...');
+      
+      // Cancel any existing timer
+      _orderCountMonitorTimer?.cancel();
+      
+      // Start monitoring every 10 seconds
+      _orderCountMonitorTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
+        if (mounted) {
+          _performRealTimeCountValidation();
+        } else {
+          timer.cancel();
+        }
+      });
+      
+      debugPrint('✅ COUNT MONITORING: Real-time monitoring started successfully');
+    } catch (e) {
+      debugPrint('❌ COUNT MONITORING: Error starting monitoring - $e');
+    }
+  }
+  
+  /// INNOVATIVE FIX: Perform real-time count validation
+  void _performRealTimeCountValidation() {
+    try {
+      final orderService = Provider.of<OrderService?>(context, listen: false);
+      if (orderService != null) {
+        final systemCount = orderService.activeOrders.length;
+        final displayedCount = _filteredOrders.length;
+        
+        debugPrint('🔍 REAL-TIME VALIDATION: System: $systemCount, Displayed: $displayedCount');
+        
+        // Only trigger recovery if there's a significant mismatch (more than 1 order difference)
+        if ((systemCount - displayedCount).abs() > 1) {
+          debugPrint('⚠️ REAL-TIME VALIDATION: Significant count mismatch detected - triggering recovery');
+          _triggerOrderCountRecovery(systemCount, displayedCount);
+        } else if (systemCount != displayedCount) {
+          debugPrint('ℹ️ REAL-TIME VALIDATION: Minor count difference - monitoring closely');
+        } else {
+          debugPrint('✅ REAL-TIME VALIDATION: Count consistency maintained');
+        }
+      }
+    } catch (e) {
+      debugPrint('❌ REAL-TIME VALIDATION: Error during validation - $e');
+    }
+  }
+  
+  /// INNOVATIVE FIX: Stop order count monitoring
+  void _stopOrderCountMonitoring() {
+    try {
+      _orderCountMonitorTimer?.cancel();
+      _orderCountMonitorTimer = null;
+      debugPrint('🛑 COUNT MONITORING: Real-time monitoring stopped');
+    } catch (e) {
+      debugPrint('❌ COUNT MONITORING: Error stopping monitoring - $e');
+    }
+  }
+  
+  /// INNOVATIVE FIX: Smart Order Count Display Widget
+  Widget _buildSmartOrderCountWidget() {
+    try {
+      final orderService = Provider.of<OrderService?>(context, listen: false);
+      if (orderService == null) {
+        return const SizedBox.shrink();
+      }
+      
+      final systemCount = orderService.activeOrders.length;
+      final displayedCount = _filteredOrders.length;
+      final hasMismatch = systemCount != displayedCount;
+      
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: hasMismatch ? Colors.orange.shade100 : Colors.green.shade100,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: hasMismatch ? Colors.orange.shade400 : Colors.green.shade400,
+            width: 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              hasMismatch ? Icons.warning_amber : Icons.check_circle,
+              color: hasMismatch ? Colors.orange.shade700 : Colors.green.shade700,
+              size: 16,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              'Orders: $displayedCount/$systemCount',
+              style: TextStyle(
+                color: hasMismatch ? Colors.orange.shade700 : Colors.green.shade700,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            if (hasMismatch) ...[
+              const SizedBox(width: 6),
+              GestureDetector(
+                onTap: () {
+                  debugPrint('🔄 Smart widget: Manual refresh triggered by user');
+                  _forceRefreshOrdersFromDatabase();
+                },
+                child: Icon(
+                  Icons.refresh,
+                  color: Colors.orange.shade700,
+                  size: 14,
+                ),
+              ),
+            ],
+          ],
+        ),
+      );
+    } catch (e) {
+      debugPrint('❌ Smart widget: Error building widget - $e');
+      return const SizedBox.shrink();
     }
   }
   
@@ -1325,6 +1642,19 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> {
             ),
           ),
           actions: [
+            // INNOVATIVE FIX: Smart Order Count Display Widget
+            _buildSmartOrderCountWidget(),
+            
+            // Comprehensive Sync Icon - Using MultiTenantAuthService
+            IconButton(
+              icon: Icon(
+                _isSyncing ? Icons.sync_disabled : Icons.sync,
+                color: _isSyncing ? Colors.grey : Colors.green,
+              ),
+              onPressed: _isSyncing ? null : _triggerSyncFromFirebase,
+              tooltip: 'Comprehensive Sync with Zero Risk Protection',
+            ),
+            
             // Quick Access Icons
             IconButton(
               icon: const Icon(Icons.admin_panel_settings, color: Colors.white),
@@ -1352,35 +1682,6 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> {
               onPressed: _logout,
               tooltip: 'Logout',
             ),
-                      // Manual refresh button
-          IconButton(
-            onPressed: () {
-              debugPrint('🔄 Manual refresh triggered');
-              _isManualRefresh = true;
-              _loadOrders();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('🔄 Refreshing orders...'),
-                  duration: Duration(seconds: 1),
-                  backgroundColor: Colors.orange,
-                ),
-              );
-            },
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Refresh Orders',
-          ),
-          // Sync from Firebase button
-          IconButton(
-            onPressed: _triggerSyncFromFirebase,
-            icon: const Icon(Icons.sync, color: Colors.white),
-            tooltip: 'Sync Orders from Firebase',
-          ),
-          // Simple sync button for debugging
-          IconButton(
-            onPressed: _simpleSyncTrigger,
-            icon: const Icon(Icons.download, color: Colors.white),
-            tooltip: 'Simple Sync (Debug)',
-          ),
             const SizedBox(width: 8),
           ],
         ),
@@ -2820,7 +3121,7 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> {
     debugPrint('🔄 Manual refresh completed');
   }
 
-  /// Trigger comprehensive sync from Firebase
+  /// Trigger comprehensive sync from Firebase using MultiTenantAuthService
   Future<void> _triggerSyncFromFirebase() async {
     if (_isSyncing) return;
     
@@ -2829,33 +3130,38 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> {
     });
     
     try {
-      debugPrint('🚀 Starting comprehensive sync operations...');
+      debugPrint('🚀 Starting comprehensive sync operations using MultiTenantAuthService...');
       
-      // Get the order service
-      final orderService = Provider.of<OrderService?>(context, listen: false);
-      if (orderService == null) {
-        throw Exception('Order service not available');
+      // Get the MultiTenantAuthService for comprehensive sync
+      final authService = Provider.of<MultiTenantAuthService?>(context, listen: false);
+      if (authService == null) {
+        throw Exception('MultiTenantAuthService not available');
       }
       
-      // STEP 1: Comprehensive Timestamp-Based Sync
-      debugPrint('🔄 STEP 1: Performing Comprehensive Timestamp-Based Sync...');
-      await _performComprehensiveTimestampSync(orderService);
+      // Get current restaurant
+      final currentRestaurant = authService.currentRestaurant;
+      if (currentRestaurant == null) {
+        throw Exception('No current restaurant available for sync');
+      }
       
-      // STEP 2: Smart Time-Based Sync
-      debugPrint('🔄 STEP 2: Performing Smart Time-Based Sync...');
-      await _performSmartTimeBasedSync();
+      debugPrint('🏪 Using restaurant: ${currentRestaurant.name} (${currentRestaurant.email})');
       
-      // STEP 3: Force Manual Sync as Backup
-      debugPrint('🔄 STEP 3: Performing Force Manual Sync...');
-      await orderService.manualSync();
+      // STEP 1: Use the comprehensive data sync method from MultiTenantAuthService
+      debugPrint('🔄 STEP 1: Performing comprehensive data sync...');
+      await authService.performComprehensiveDataSync(currentRestaurant);
       
-      // Reload orders after all sync operations
+      // STEP 2: Also trigger the working comprehensive sync for orders
+      debugPrint('🔄 STEP 2: Performing working comprehensive sync for orders...');
+      await authService.triggerWorkingComprehensiveSync(currentRestaurant);
+      
+      // STEP 3: Reload orders after all sync operations
+      debugPrint('🔄 STEP 3: Reloading orders...');
       _loadOrders();
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('✅ Comprehensive sync completed! All orders synchronized from Firebase.'),
+            content: Text('✅ Comprehensive sync completed! All data including order items synchronized from Firebase.'),
             backgroundColor: Colors.green,
             duration: Duration(seconds: 4),
           ),
@@ -2937,49 +3243,7 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> {
     }
   }
 
-  /// Simple sync trigger for debugging
-  Future<void> _simpleSyncTrigger() async {
-    try {
-      debugPrint('🔄 Simple sync trigger called...');
-      
-      // Get the order service
-      final orderService = Provider.of<OrderService?>(context, listen: false);
-      if (orderService == null) {
-        debugPrint('❌ Order service not available');
-        return;
-      }
-      
-      // Simple force sync
-      await orderService.forceSyncFromFirebase();
-      
-      // Reload orders
-      _loadOrders();
-      
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('✅ Simple sync completed!'),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 3),
-          ),
-        );
-      }
-      
-      debugPrint('✅ Simple sync completed');
-      
-    } catch (e) {
-      debugPrint('❌ Simple sync failed: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('❌ Simple sync failed: ${e.toString()}'),
-            backgroundColor: Colors.red,
-            duration: Duration(seconds: 5),
-          ),
-        );
-      }
-    }
-  }
+
 
 }
 

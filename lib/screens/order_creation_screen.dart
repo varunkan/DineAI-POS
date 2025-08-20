@@ -99,6 +99,40 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
     super.dispose();
   }
 
+  /// Helper method to convert order type string to OrderType enum
+  OrderType _getOrderTypeFromString(String orderType) {
+    switch (orderType.toLowerCase()) {
+      case 'dine-in':
+        return OrderType.dineIn;
+      case 'takeout':
+        return OrderType.takeaway;
+      case 'delivery':
+        return OrderType.delivery;
+      default:
+        debugPrint('⚠️ Unknown order type: $orderType, defaulting to dine-in');
+        return OrderType.dineIn;
+    }
+  }
+
+  /// Helper method to generate order number based on order type
+  String _generateOrderNumber(String orderType) {
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final randomSuffix = (timestamp % 10000).toString().padLeft(4, '0');
+    final baseNumber = '${timestamp.toString().substring(8)}-$randomSuffix';
+    
+    switch (orderType.toLowerCase()) {
+      case 'dine-in':
+        return 'DI-$baseNumber';
+      case 'takeout':
+        return 'TO-$baseNumber';
+      case 'delivery':
+        return 'DL-$baseNumber';
+      default:
+        debugPrint('⚠️ Unknown order type for number generation: $orderType, using DI-');
+        return 'DI-$baseNumber';
+    }
+  }
+
   void _initializeOrder() {
     // If we have an existing order, use it for editing
     if (widget.existingOrder != null) {
@@ -139,7 +173,7 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
       });
       
       final orderNumber = widget.orderNumber ??
-          'DI-${DateTime.now().millisecondsSinceEpoch.toString().substring(8)}';
+          _generateOrderNumber(widget.orderType);
 
       // Get current session to use restaurant email for user identification
       final authService = MultiTenantAuthService();
@@ -162,7 +196,7 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
         orderNumber: orderNumber,
         customerName: widget.table?.customerName,
         tableId: widget.table?.id,
-        type: widget.orderType == 'dine-in' ? OrderType.dineIn : OrderType.delivery,
+        type: _getOrderTypeFromString(widget.orderType),
         orderTime: DateTime.now(),
         userId: emailBasedUserId, // Use email-based user ID
         status: OrderStatus.pending, // Set initial status
@@ -1276,6 +1310,56 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
     setState(() => _isLoading = true);
 
     try {
+      // CRITICAL FIX: Add overall timeout to prevent infinite hanging
+      await _sendOrderToKitchenInternal().timeout(
+        const Duration(seconds: 45), // 45 second overall timeout
+        onTimeout: () {
+          debugPrint('⏰ Overall send to kitchen operation timed out');
+          // Show success message since order is still saved
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('✅ Order saved successfully! (Kitchen operation timed out)'),
+                backgroundColor: Colors.green,
+                duration: Duration(seconds: 3),
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+            _refreshOrderFromDatabase();
+          }
+        },
+      );
+      
+    } catch (e) {
+      debugPrint('❌ Error in kitchen printing process: $e');
+      if (mounted) {
+        // CRITICAL FIX: Order is still saved successfully even if printer fails
+        // Show success message instead of error - printer issues are handled silently
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Order saved successfully! (Kitchen printing not available)'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        
+        // Always refresh order state since it was saved successfully
+        _refreshOrderFromDatabase();
+      }
+    } finally {
+      // CRITICAL SAFETY: Always ensure loading state is cleared
+      debugPrint('🧹 Ensuring loading state is cleared...');
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+      debugPrint('✅ Loading state cleared successfully');
+    }
+  }
+  
+  /// Internal method for send to kitchen logic
+  Future<void> _sendOrderToKitchenInternal() async {
+    try {
       // CRITICAL FIX: Use the existing RobustKitchenService for independent parallel processing
       if (!mounted) {
         debugPrint('⚠️ Widget not mounted, aborting send to kitchen');
@@ -1341,8 +1425,6 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
         return;
       }
       
-      setState(() => _isLoading = false);
-      
       // CRITICAL FIX: Handle updated order with sentToKitchen flags
       if (mounted) {
         final success = result['success'] as bool;
@@ -1406,23 +1488,7 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
       
     } catch (e) {
       debugPrint('❌ Error in kitchen printing process: $e');
-      setState(() => _isLoading = false);
-      
-      if (mounted) {
-        // CRITICAL FIX: Order is still saved successfully even if printer fails
-        // Show success message instead of error - printer issues are handled silently
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('✅ Order saved successfully! (Kitchen printing not available)'),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 3),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-        
-        // Always refresh order state since it was saved successfully
-        _refreshOrderFromDatabase();
-      }
+      throw e; // Re-throw to be handled by the outer method
     }
   }
   

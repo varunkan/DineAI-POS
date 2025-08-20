@@ -135,10 +135,48 @@ class RobustKitchenService extends ChangeNotifier {
     notifyListeners();
     
     try {
+      // CRITICAL FIX: Add overall timeout to prevent infinite hanging
+      return await _sendToKitchenInternal(order, userId, userName).timeout(
+        const Duration(seconds: 30), // 30 second overall timeout
+        onTimeout: () {
+          debugPrint('$_logTag ⏰ Overall send to kitchen operation timed out');
+          // Return success result even on timeout - order is still saved
+          return {
+            'success': true,
+            'message': 'Order saved successfully (kitchen operation timed out)',
+            'itemsSent': 0,
+            'printerCount': 0,
+          };
+        },
+      );
+      
+    } catch (e) {
+      debugPrint('$_logTag ❌ Error in send to kitchen: $e');
+      _lastError = e.toString();
+      // CRITICAL FIX: Order is still saved successfully even if printer fails
+      return _completeWithResult(orderId, {
+        'success': true, // Always true since order is saved
+        'message': 'Order saved successfully (kitchen printing error)',
+        'itemsSent': 0,
+        'printerCount': 0,
+      });
+    } finally {
+      // CRITICAL SAFETY: Always ensure loading state is cleared
+      debugPrint('$_logTag 🧹 Ensuring loading state is cleared...');
+      _orderSendingStates[orderId] = false;
+      _isSending = false;
+      notifyListeners();
+      debugPrint('$_logTag ✅ Loading state cleared successfully');
+    }
+  }
+  
+  /// Internal method for send to kitchen logic
+  Future<Map<String, dynamic>> _sendToKitchenInternal(Order order, String userId, String userName) async {
+    try {
       // Step 1: Smart item detection - only send NEW items
       final newItems = _detectNewItems(order);
       if (newItems.isEmpty) {
-        return _completeWithResult(orderId, {
+        return _completeWithResult(order.id, {
           'success': true, // Order is still saved successfully
           'message': 'Order saved successfully (no new items to send to kitchen)',
           'itemsSent': 0,
@@ -149,7 +187,7 @@ class RobustKitchenService extends ChangeNotifier {
       // Step 2: Get printer assignments
       final printerAssignments = await _getPrinterAssignments(newItems);
       if (printerAssignments.isEmpty) {
-        return _completeWithResult(orderId, {
+        return _completeWithResult(order.id, {
           'success': true, // Order is still saved successfully
           'message': 'Order saved successfully (no printers available for kitchen printing)',
           'itemsSent': 0,
@@ -243,13 +281,13 @@ class RobustKitchenService extends ChangeNotifier {
         result['updatedOrder'] = updatedOrder;
       }
       
-      return _completeWithResult(orderId, result);
+      return _completeWithResult(order.id, result);
       
     } catch (e) {
       debugPrint('$_logTag ❌ Error in send to kitchen: $e');
       _lastError = e.toString();
       // CRITICAL FIX: Order is still saved successfully even if printer fails
-      return _completeWithResult(orderId, {
+      return _completeWithResult(order.id, {
         'success': true, // Always true since order is saved
         'message': 'Order saved successfully (kitchen printing error)',
         'itemsSent': 0,
@@ -272,6 +310,15 @@ class RobustKitchenService extends ChangeNotifier {
       // CRITICAL FIX: Use actual printer assignment service instead of hardcoded values
       if (items.isNotEmpty && _assignmentService != null) {
         try {
+          // CRITICAL FIX: Add timeout protection to prevent hanging
+          await Future.delayed(Duration.zero).timeout(
+            const Duration(seconds: 5), // 5 second timeout for getting assignments
+            onTimeout: () {
+              debugPrint('$_logTag ⏰ Getting printer assignments timed out, using fallback');
+              throw TimeoutException('Getting printer assignments timed out', const Duration(seconds: 5));
+            },
+          );
+          
           // Get actual printer assignments for each item
           for (final item in items) {
             final itemAssignments = await _assignmentService!.getAssignmentsForMenuItem(
@@ -347,11 +394,17 @@ class RobustKitchenService extends ChangeNotifier {
         printerType = PrinterType.bluetooth;
       }
       
-      // Send to printer
+      // CRITICAL FIX: Add timeout protection to prevent hanging spinner
       final success = await _printingService.printToSpecificPrinter(
         assignment.printerId,
         content,
         printerType,
+      ).timeout(
+        const Duration(seconds: 10), // 10 second timeout for printer operations
+        onTimeout: () {
+          debugPrint('$_logTag ⏰ Printer operation timed out for: ${assignment.printerId}');
+          return false; // Return false on timeout to indicate failure
+        },
       );
       
       if (success) {

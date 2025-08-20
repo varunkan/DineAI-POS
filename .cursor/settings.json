@@ -1,0 +1,19 @@
+{
+  "ai.assistant.rules": [
+    "🚨 ABSOLUTE ZERO RISK MANDATE: NEVER modify existing working code without comprehensive safety measures",
+    "🛡️ ALWAYS implement rollback mechanisms before any data changes",
+    "💾 ALWAYS create backups before modifying critical data structures",
+    "🚫 NEVER break existing functionality, even if it means not implementing new features",
+    "🚩 ALWAYS use feature flags for new functionality",
+    "🔄 ALWAYS implement graceful degradation on failures",
+    "⚠️ NEVER throw errors that could break existing flow",
+    "🔒 Existing functionality is SACRED and must NEVER be compromised"
+  ],
+  "ai.assistant.startupMessage": "🚨 ZERO RISK RULES LOADED - ALL CODE CHANGES MUST FOLLOW SAFETY PROTOCOLS",
+  "ai.assistant.enforceRules": true,
+  "ai.assistant.requireSafetyChecks": true,
+  "ai.assistant.backupBeforeChanges": true,
+  "ai.assistant.featureFlagsRequired": true,
+  "ai.assistant.rollbackMechanismsRequired": true,
+  "ai.assistant.zeroRiskMandatory": true
+} 

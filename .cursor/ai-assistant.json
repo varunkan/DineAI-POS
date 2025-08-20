@@ -1,0 +1,50 @@
+{
+  "ai.assistant": {
+    "rules": [
+      "🚨 ABSOLUTE ZERO RISK MANDATE: NEVER modify existing working code without comprehensive safety measures",
+      "🛡️ ALWAYS implement rollback mechanisms before any data changes",
+      "💾 ALWAYS create backups before modifying critical data structures",
+      "🚫 NEVER break existing functionality, even if it means not implementing new features",
+      "🚩 ALWAYS use feature flags for new functionality",
+      "🔄 ALWAYS implement graceful degradation on failures",
+      "⚠️ NEVER throw errors that could break existing flow",
+      "🔒 Existing functionality is SACRED and must NEVER be compromised"
+    ],
+    "startupMessage": "🚨 ZERO RISK RULES LOADED - ALL CODE CHANGES MUST FOLLOW SAFETY PROTOCOLS",
+    "enforceRules": true,
+    "requireSafetyChecks": true,
+    "backupBeforeChanges": true,
+    "featureFlagsRequired": true,
+    "rollbackMechanismsRequired": true,
+    "zeroRiskMandatory": true,
+    "complianceCheck": true,
+    "safetyFirst": true,
+    "protectExistingCode": true,
+    "mandatoryBackups": true,
+    "automaticRollback": true,
+    "gracefulDegradation": true,
+    "noBreakingChanges": true,
+    "preserveFunctionality": true,
+    "emergencyDisable": true
+  },
+  "ai.codeReview": {
+    "enforceZeroRisk": true,
+    "requireSafetyMeasures": true,
+    "checkBackupStrategies": true,
+    "verifyRollbackMechanisms": true,
+    "validateFeatureFlags": true,
+    "ensureErrorHandling": true,
+    "preventBreakingChanges": true,
+    "protectExistingAPIs": true
+  },
+  "ai.development": {
+    "safetyFirst": true,
+    "zeroRiskMandatory": true,
+    "backupBeforeModification": true,
+    "rollbackOnFailure": true,
+    "featureFlagProtection": true,
+    "gracefulErrorHandling": true,
+    "preserveExistingCode": true,
+    "emergencyProcedures": true
+  }
+} 

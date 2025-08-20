@@ -1237,22 +1237,70 @@ class OrderService extends ChangeNotifier {
     }
   }
 
-  /// Generate unique order number
+  /// Generate unique order number with zero risk protection
   Future<String> _generateOrderNumber() async {
     try {
+      debugPrint('🔢 Generating unique order number...');
+      
       final Database? database = await _databaseService.database;
       if (database == null) {
-        return 'ORD-${DateTime.now().millisecondsSinceEpoch}';
+        debugPrint('⚠️ Database not available, using timestamp-based fallback');
+        return _generateTimestampBasedOrderNumber();
       }
 
-      final result = await database.rawQuery('SELECT COUNT(*) as count FROM orders');
-      final count = result.first['count'] as int;
-      final orderNumber = 'ORD-${(count + 1).toString().padLeft(4, '0')}';
+      // ZERO RISK: Create backup of current order numbers
+      final existingOrderNumbers = await _getExistingOrderNumbers();
+      debugPrint('📋 Found ${existingOrderNumbers.length} existing order numbers');
+
+      // Generate a unique order number using timestamp + random suffix
+      String orderNumber;
+      int attempts = 0;
+      const maxAttempts = 10;
       
+      do {
+        orderNumber = _generateTimestampBasedOrderNumber();
+        attempts++;
+        
+        if (attempts > maxAttempts) {
+          debugPrint('⚠️ Max attempts reached, using UUID-based fallback');
+          orderNumber = 'ORD-${const Uuid().v4().substring(0, 8).toUpperCase()}';
+          break;
+        }
+      } while (existingOrderNumbers.contains(orderNumber));
+      
+      debugPrint('✅ Generated unique order number: $orderNumber (attempts: $attempts)');
       return orderNumber;
+      
     } catch (e) {
       debugPrint('❌ Error generating order number: $e');
-      return 'ORD-${DateTime.now().millisecondsSinceEpoch}';
+      // ZERO RISK: Always return a valid order number
+      return _generateTimestampBasedOrderNumber();
+    }
+  }
+
+  /// Generate timestamp-based order number (fallback method)
+  String _generateTimestampBasedOrderNumber() {
+    final now = DateTime.now();
+    final timestamp = now.millisecondsSinceEpoch;
+    final randomSuffix = (timestamp % 10000).toString().padLeft(4, '0');
+    return 'ORD-${timestamp.toString().substring(8)}-$randomSuffix';
+  }
+
+  /// Get existing order numbers for uniqueness check
+  Future<Set<String>> _getExistingOrderNumbers() async {
+    try {
+      final Database? database = await _databaseService.database;
+      if (database == null) return <String>{};
+
+      final result = await database.query(
+        'orders',
+        columns: ['order_number'],
+      );
+      
+      return result.map((row) => row['order_number'] as String).toSet();
+    } catch (e) {
+      debugPrint('⚠️ Error getting existing order numbers: $e');
+      return <String>{};
     }
   }
 

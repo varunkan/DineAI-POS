@@ -19,6 +19,7 @@ import '../screens/unified_printer_dashboard.dart';
 
 import '../screens/restaurant_auth_screen.dart';
 import '../screens/bluetooth_printer_management_screen.dart';
+import '../services/unified_sync_service.dart';
 
 /// Universal navigation widget that provides consistent navigation across all screens
 class UniversalNavigation extends StatelessWidget implements PreferredSizeWidget {
@@ -210,6 +211,49 @@ class UniversalNavigation extends StatelessWidget implements PreferredSizeWidget
                   ),
                 ),
             ],
+          );
+        },
+      ),
+    );
+
+    // Comprehensive Sync Icon - Available on Both Tablet and Mobile
+    actions.add(
+      Consumer<UnifiedSyncService>(
+        builder: (context, syncService, child) {
+          if (!syncService.isInitialized) {
+            return const SizedBox.shrink();
+          }
+          
+          return IconButton(
+            icon: Icon(
+              syncService.isConnected ? Icons.sync : Icons.sync_problem,
+              color: syncService.isConnected ? Colors.green : Colors.orange,
+            ),
+            onPressed: () async {
+              try {
+                await syncService.manualSync();
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('✅ Comprehensive sync completed!'),
+                      backgroundColor: Colors.green,
+                      duration: Duration(seconds: 2),
+                    ),
+                  );
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('❌ Sync failed: $e'),
+                      backgroundColor: Colors.red,
+                      duration: Duration(seconds: 3),
+                    ),
+                  );
+                }
+              }
+            },
+            tooltip: 'Comprehensive Sync',
           );
         },
       ),

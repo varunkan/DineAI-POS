@@ -52,6 +52,9 @@ class OrderService extends ChangeNotifier {
   // Cache for frequently accessed data
   final Map<String, MenuItem> _menuItemCache = {};
   
+  // Feature flag: enable enhanced server filtering that considers both userId and assignedTo
+  static const bool _enableEnhancedServerFiltering = true; // Can be disabled instantly
+  
   OrderService(this._databaseService, this._orderLogService, this._inventoryService) {
     debugPrint('🔧 OrderService initialized');
     _initializeCache();
@@ -103,45 +106,138 @@ class OrderService extends ChangeNotifier {
 
   /// Get orders by server
   List<Order> getAllOrdersByServer(String serverId) {
-    return _allOrders.where((order) => order.userId == serverId).toList();
+    try {
+      if (!_enableEnhancedServerFiltering) {
+        return _allOrders.where((order) => order.userId == serverId).toList();
+      }
+      final normalized = serverId.trim().toLowerCase();
+      return _allOrders.where((order) => _matchesServer(order, normalized)).toList();
+    } catch (e) {
+      debugPrint('⚠️ getAllOrdersByServer fallback due to error: $e');
+      // Fallback to original strict behavior
+      return _allOrders.where((order) => order.userId == serverId).toList();
+    }
   }
 
   /// Get ACTIVE orders by server (for operational UI displays)
   List<Order> getActiveOrdersByServer(String serverId) {
-    return _activeOrders.where((order) {
-      // Handle both simple user IDs and email-based user IDs
-      if (order.userId != null && order.userId!.contains('_')) {
-        // Email-based format: restaurant_email_userid
-        final parts = order.userId!.split('_');
-        if (parts.length >= 2) {
-          final orderUserId = parts.last; // Get the user ID part
-          return orderUserId == serverId;
-        }
-      } else {
-        // Simple user ID format
-        return order.userId == serverId;
+    try {
+      if (!_enableEnhancedServerFiltering) {
+        return _activeOrders.where((order) {
+          // Handle both simple user IDs and email-based user IDs
+          if (order.userId != null && order.userId!.contains('_')) {
+            // Email-based format: restaurant_email_userid
+            final parts = order.userId!.split('_');
+            if (parts.length >= 2) {
+              final orderUserId = parts.last; // Get the user ID part
+              return orderUserId == serverId;
+            }
+          } else {
+            // Simple user ID format
+            return order.userId == serverId;
+          }
+          return false;
+        }).toList();
       }
-      return false;
-    }).toList();
+      final normalized = serverId.trim().toLowerCase();
+      return _activeOrders.where((order) => _matchesServer(order, normalized)).toList();
+    } catch (e) {
+      debugPrint('⚠️ getActiveOrdersByServer fallback due to error: $e');
+      // Fallback to original strict behavior
+      return _activeOrders.where((order) {
+        if (order.userId != null && order.userId!.contains('_')) {
+          final parts = order.userId!.split('_');
+          if (parts.length >= 2) {
+            final orderUserId = parts.last;
+            return orderUserId == serverId;
+          }
+        } else {
+          return order.userId == serverId;
+        }
+        return false;
+      }).toList();
+    }
   }
 
   /// Get active orders count by server
   int getActiveOrdersCountByServer(String serverId) {
-    return _activeOrders.where((order) {
-      // Handle both simple user IDs and email-based user IDs
-      if (order.userId != null && order.userId!.contains('_')) {
-        // Email-based format: restaurant_email_userid
-        final parts = order.userId!.split('_');
-        if (parts.length >= 2) {
-          final orderUserId = parts.last; // Get the user ID part
-          return orderUserId == serverId;
-        }
-      } else {
-        // Simple user ID format
-        return order.userId == serverId;
+    try {
+      if (!_enableEnhancedServerFiltering) {
+        return _activeOrders.where((order) {
+          // Handle both simple user IDs and email-based user IDs
+          if (order.userId != null && order.userId!.contains('_')) {
+            // Email-based format: restaurant_email_userid
+            final parts = order.userId!.split('_');
+            if (parts.length >= 2) {
+              final orderUserId = parts.last; // Get the user ID part
+              return orderUserId == serverId;
+            }
+          } else {
+            // Simple user ID format
+            return order.userId == serverId;
+          }
+          return false;
+        }).length;
       }
+      final normalized = serverId.trim().toLowerCase();
+      return _activeOrders.where((order) => _matchesServer(order, normalized)).length;
+    } catch (e) {
+      debugPrint('⚠️ getActiveOrdersCountByServer fallback due to error: $e');
+      // Fallback to original strict behavior
+      return _activeOrders.where((order) {
+        if (order.userId != null && order.userId!.contains('_')) {
+          final parts = order.userId!.split('_');
+          if (parts.length >= 2) {
+            final orderUserId = parts.last;
+            return orderUserId == serverId;
+          }
+        } else {
+          return order.userId == serverId;
+        }
+        return false;
+      }).length;
+    }
+  }
+
+  /// Robust matching to determine if an order belongs to a given server
+  bool _matchesServer(Order order, String normalizedServerId) {
+    try {
+      // Normalize candidate fields
+      final userId = (order.userId ?? '').trim().toLowerCase();
+      final assignedTo = (order.assignedTo ?? '').trim().toLowerCase();
+
+      // Direct matches
+      if (userId == normalizedServerId || assignedTo == normalizedServerId) {
+        return true;
+      }
+
+      // Underscore-separated composite userId: restaurant_email_userid → compare last token
+      if (userId.contains('_')) {
+        final parts = userId.split('_');
+        if (parts.isNotEmpty && parts.last == normalizedServerId) {
+          return true;
+        }
+      }
+
+      // Containment heuristic (e.g., userId contains server short id or name)
+      if (userId.contains(normalizedServerId) || assignedTo.contains(normalizedServerId)) {
+        return true;
+      }
+
+      // Metadata fallbacks (in case servers are tracked via metadata)
+      if (order.metadata.isNotEmpty) {
+        final metaServerId = (order.metadata['serverId'] ?? order.metadata['server_id'] ?? '').toString().trim().toLowerCase();
+        final metaServerName = (order.metadata['serverName'] ?? order.metadata['server_name'] ?? '').toString().trim().toLowerCase();
+        if (metaServerId == normalizedServerId || metaServerName == normalizedServerId) {
+          return true;
+        }
+      }
+
       return false;
-    }).length;
+    } catch (e) {
+      debugPrint('⚠️ _matchesServer error: $e');
+      return false;
+    }
   }
 
   /// Validate order integrity before saving
@@ -547,6 +643,8 @@ class OrderService extends ChangeNotifier {
         'is_urgent': order.isUrgent ? 1 : 0,  // Convert boolean to integer
         'priority': order.priority ?? 0,
         'assigned_to': order.assignedTo ?? '',
+        'custom_fields': order.customFields.isNotEmpty ? jsonEncode(order.customFields) : null,
+        'metadata': order.metadata.isNotEmpty ? jsonEncode(order.metadata) : null,
         'created_at': order.createdAt.toIso8601String(),
         'updated_at': order.updatedAt.toIso8601String(),
       };
@@ -1015,12 +1113,24 @@ class OrderService extends ChangeNotifier {
         
         final unifiedSyncService = UnifiedSyncService();
         
+        // CRITICAL FIX: Ensure real-time sync is always active before syncing
+        await unifiedSyncService.ensureRealTimeSyncActive();
+        
         // Ensure sync service is initialized and connected
         try {
           if (action == 'created') {
             await unifiedSyncService.syncOrderToFirebase(order, 'created');
+            
+            // CRITICAL: Trigger immediate cross-device sync notification
+            debugPrint('🔴 ORDER CREATED - TRIGGERING IMMEDIATE CROSS-DEVICE SYNC!');
+            await _triggerImmediateCrossDeviceSync(order);
+            
           } else if (action == 'updated') {
             await unifiedSyncService.syncOrderToFirebase(order, 'updated');
+            
+            // CRITICAL: Trigger immediate cross-device sync notification
+            debugPrint('🔴 ORDER UPDATED - TRIGGERING IMMEDIATE CROSS-DEVICE SYNC!');
+            await _triggerImmediateCrossDeviceSync(order);
           }
           
           debugPrint('✅ Order synced to Firebase: ${order.orderNumber} ($action)');
@@ -1033,6 +1143,27 @@ class OrderService extends ChangeNotifier {
         // Don't fail the order creation - sync will retry later
       }
     });
+  }
+  
+  /// CRITICAL: Trigger immediate cross-device synchronization
+  Future<void> _triggerImmediateCrossDeviceSync(Order order) async {
+    try {
+      debugPrint('🔴 IMMEDIATE CROSS-DEVICE SYNC: Ensuring all devices get updated instantly...');
+      
+      final unifiedSyncService = UnifiedSyncService();
+      
+      // Force a comprehensive sync to ensure all devices get the update
+      await unifiedSyncService.forceSyncAllLocalData();
+      
+      // Additional: Force refresh of real-time listeners to ensure they're active
+      await unifiedSyncService.ensureRealTimeSyncActive();
+      
+      debugPrint('✅ IMMEDIATE CROSS-DEVICE SYNC COMPLETED - All devices should see the new order instantly!');
+      
+    } catch (e) {
+      debugPrint('⚠️ Immediate cross-device sync failed: $e');
+      // Don't fail the main operation - this is just for enhanced sync
+    }
   }
   
   /// Update an existing order

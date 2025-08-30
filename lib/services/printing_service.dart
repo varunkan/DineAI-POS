@@ -3161,6 +3161,24 @@ ${customMessage ?? 'Test print successful!\nPrinter is ready for use.'}
     // STEP 7: Cut paper for Epson TM-M30III
     commands.addAll([0x1D, 0x56, 0x00]); // GS V (Full cut)
     
+    // Feature flag: force triple-size for ALL kitchen ticket text by transforming size commands
+    const bool _forceTripleSizeKitchenTicket = true; // Emergency toggle
+    if (_forceTripleSizeKitchenTicket) {
+      try {
+        for (int i = 0; i < commands.length - 2; i++) {
+          if (commands[i] == 0x1D && commands[i + 1] == 0x21) {
+            final current = commands[i + 2];
+            if (current != 0x33) {
+              commands[i + 2] = 0x22; // Triple width and height
+            }
+          }
+        }
+      } catch (e) {
+        // Never block printing due to transformation errors
+        debugPrint('⚠️ Failed to enforce triple-size on kitchen ticket: $e');
+      }
+    }
+    
     // Convert to string and return
     return String.fromCharCodes(commands);
   }

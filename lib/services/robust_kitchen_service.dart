@@ -456,7 +456,35 @@ class RobustKitchenService extends ChangeNotifier {
     buffer.writeln('Printer: ${assignment.printerId}');
     buffer.writeln('=' * 40);
     
-    return buffer.toString();
+    // Feature flag: triple-size all kitchen ticket text via ESC/POS
+    const bool _enableTripleSizedKitchenTicketAll = true; // Emergency toggle
+    final plainText = buffer.toString();
+    
+    if (!_enableTripleSizedKitchenTicketAll) {
+      return plainText;
+    }
+    
+    try {
+      final bytes = <int>[];
+      // Initialize printer and set formatting
+      bytes.addAll([0x1B, 0x40]); // ESC @ (Initialize)
+      bytes.addAll([0x1B, 0x61, 0x00]); // ESC a 0 (Left align)
+      bytes.addAll([0x1B, 0x45, 0x01]); // ESC E 1 (Bold on)
+      bytes.addAll([0x1D, 0x21, 0x22]); // GS ! 0x22 (Triple width and height)
+      
+      // Ticket content
+      bytes.addAll(plainText.codeUnits);
+      
+      // Restore defaults (do not block if unsupported)
+      bytes.addAll([0x1B, 0x45, 0x00]); // ESC E 0 (Bold off)
+      bytes.addAll([0x1D, 0x21, 0x00]); // GS ! 0x00 (Normal size)
+      
+      return String.fromCharCodes(bytes);
+    } catch (e) {
+      // Fallback to plain text to preserve existing functionality
+      debugPrint('$_logTag ⚠️ Failed to apply triple-size ESC/POS: $e');
+      return plainText;
+    }
   }
   
   /// Log kitchen operation

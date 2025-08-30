@@ -2936,7 +2936,7 @@ ${customMessage ?? 'Test print successful!\nPrinter is ready for use.'}
     
     // STEP 1: Initialize Epson TM-M30III for kitchen printing
     commands.addAll([0x1B, 0x40]); // ESC @ (Initialize printer)
-    commands.addAll([0x1B, 0x4D, 0x01]); // ESC M (Select character font A)
+    commands.addAll([0x1B, 0x4D, 0x00]); // ESC M (Select character font B - smaller base size)
     commands.addAll([0x1D, 0x61, 0x01]); // GS a (Enable automatic status back)
     
     // STEP 2: Kitchen ticket header with maximum emphasis
@@ -3161,21 +3161,19 @@ ${customMessage ?? 'Test print successful!\nPrinter is ready for use.'}
     // STEP 7: Cut paper for Epson TM-M30III
     commands.addAll([0x1D, 0x56, 0x00]); // GS V (Full cut)
     
-    // Feature flag: force triple-size for ALL kitchen ticket text by transforming size commands
-    const bool _forceTripleSizeKitchenTicket = true; // Emergency toggle
-    if (_forceTripleSizeKitchenTicket) {
+    // Feature flag: normalize kitchen ticket size to about 55% of previous (use double size)
+    const bool _normalizeKitchenSizeToDouble = true; // Emergency toggle
+    if (_normalizeKitchenSizeToDouble) {
       try {
         for (int i = 0; i < commands.length - 2; i++) {
           if (commands[i] == 0x1D && commands[i + 1] == 0x21) {
-            final current = commands[i + 2];
-            if (current != 0x33) {
-              commands[i + 2] = 0x22; // Triple width and height
-            }
+            // Force to 0x11 (double width and height)
+            commands[i + 2] = 0x11;
           }
         }
       } catch (e) {
         // Never block printing due to transformation errors
-        debugPrint('⚠️ Failed to enforce triple-size on kitchen ticket: $e');
+        debugPrint('⚠️ Failed to normalize kitchen ticket size: $e');
       }
     }
     

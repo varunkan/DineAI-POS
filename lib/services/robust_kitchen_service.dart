@@ -470,7 +470,7 @@ class RobustKitchenService extends ChangeNotifier {
       bytes.addAll([0x1B, 0x40]); // ESC @ (Initialize)
       bytes.addAll([0x1B, 0x61, 0x00]); // ESC a 0 (Left align)
       bytes.addAll([0x1B, 0x45, 0x01]); // ESC E 1 (Bold on)
-      bytes.addAll([0x1D, 0x21, 0x22]); // GS ! 0x22 (Triple width and height)
+      bytes.addAll([0x1D, 0x21, 0x11]); // GS ! 0x11 (Double width and height)
       
       // Ticket content
       bytes.addAll(plainText.codeUnits);

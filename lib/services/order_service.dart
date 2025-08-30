@@ -53,7 +53,7 @@ class OrderService extends ChangeNotifier {
   final Map<String, MenuItem> _menuItemCache = {};
   
   // Feature flag: enable enhanced server filtering that considers both userId and assignedTo
-  static const bool _enableEnhancedServerFiltering = true; // Can be disabled instantly
+  static const bool _enableEnhancedServerFiltering = false; // Permanently using strict matching for counts
   
   OrderService(this._databaseService, this._orderLogService, this._inventoryService) {
     debugPrint('🔧 OrderService initialized');

@@ -11,6 +11,7 @@ import '../models/app_settings.dart';
 import '../models/printer_configuration.dart';
 import 'printer_configuration_service.dart';
 import 'database_service.dart';
+import 'enhanced_printer_assignment_service.dart';
 
 // Using PrinterType from printer_configuration.dart model
 // enum PrinterType {
@@ -1037,13 +1038,51 @@ class PrintingService with ChangeNotifier {
     try {
       final receipt = _generateReceipt(order);
       
-      // Check if printer is connected
+      // Feature flag: route receipts via Receipts category assignments if available
+      const bool _enableReceiptCategoryRouting = true; // can disable instantly if needed
+      if (_enableReceiptCategoryRouting) {
+        try {
+          // Resolve receipt printers via EnhancedPrinterAssignmentService if accessible
+          // Fall back gracefully if not available
+          final databaseService = DatabaseService();
+          final assignmentService = EnhancedPrinterAssignmentService(
+            databaseService: databaseService,
+            printerConfigService: PrinterConfigurationService(databaseService),
+          );
+          await assignmentService.initialize();
+
+          // Get all category assignments for special Receipts category
+          final receiptAssignments = assignmentService
+              .getAssignmentsForMenuItem('receipt_virtual_item', 'cat_receipts');
+
+          if (receiptAssignments.isNotEmpty) {
+            var anySuccess = false;
+            for (final a in receiptAssignments.where((x) => x.isActive)) {
+              try {
+                final addr = a.printerAddress.isNotEmpty ? a.printerAddress : a.printerId;
+                final success = await printToSpecificPrinter(
+                  addr,
+                  receipt,
+                  PrinterType.wifi,
+                );
+                anySuccess = anySuccess || success;
+              } catch (_) {}
+            }
+            if (anySuccess) {
+              debugPrint('🧾 Receipt routed to ${receiptAssignments.length} assigned printer(s).');
+              return true;
+            }
+          }
+        } catch (e) {
+          debugPrint('⚠️ Receipt category routing unavailable, falling back: $e');
+        }
+      }
+
+      // Fallback: existing behavior (connected printer)
       if (_connectedPrinter == null) {
         debugPrint('No printer connected - cannot print receipt for order: ${order.orderNumber}');
         return false;
       }
-      
-      // Send to connected printer
       await _sendToPrinter(receipt);
       debugPrint('Customer receipt printed successfully for order: ${order.orderNumber}');
       return true;
@@ -2693,8 +2732,9 @@ ${customMessage ?? 'Test print successful!\nPrinter is ready for use.'}
     
     // STEP 3: Header with restaurant info
     if (_enableHeaderLogo && _settings.enableReceiptHeader) {
-      final businessName = _settings.businessName.isNotEmpty ? _settings.businessName : "Restaurant POS";
-      commands.addAll(businessName.codeUnits);
+      const bool _forceOhBombayHeader = true; // feature flag for tenant-specific header
+      final headerName = _forceOhBombayHeader ? "OH BOMBAY MILTON" : (_settings.businessName.isNotEmpty ? _settings.businessName : "Restaurant POS");
+      commands.addAll(headerName.codeUnits);
       commands.addAll([0x0A, 0x0A]); // LF LF (2 line feeds)
       
       commands.addAll([0x1D, 0x21, 0x00]); // GS ! (Normal size)
@@ -3001,7 +3041,12 @@ ${customMessage ?? 'Test print successful!\nPrinter is ready for use.'}
     for (final item in order.items) {
       // Item with quantity and name - enhanced formatting
       commands.addAll([0x1B, 0x45, 0x01]); // ESC E (Bold on)
-      commands.addAll([0x1D, 0x21, 0x11]); // GS ! (Double width and height)
+      const bool _enableTripleSizedKitchenItems = true; // feature flag
+      if (_enableTripleSizedKitchenItems) {
+        commands.addAll([0x1D, 0x21, 0x22]); // GS ! (Triple width and height)
+      } else {
+        commands.addAll([0x1D, 0x21, 0x11]); // GS ! (Double width and height)
+      }
       final itemLine = "▶️ ${item.quantity}x ${item.menuItem.name}";
       commands.addAll(itemLine.codeUnits);
       commands.addAll([0x1B, 0x45, 0x00]); // ESC E (Bold off)
@@ -3130,10 +3175,10 @@ ${customMessage ?? 'Test print successful!\nPrinter is ready for use.'}
     try {
       final List<Future<PrinterDevice?>> futures = [];
       
-      // Common IP ranges to scan
+      // Common IP ranges to scan (including discovered printer range)
       final List<String> ipRanges = [
+        '192.168.0', // PRIORITY: Your Epson printers are here
         '192.168.1',
-        '192.168.0',
         '192.168.2',
         '10.0.0',
         '10.0.1',
@@ -3143,8 +3188,19 @@ ${customMessage ?? 'Test print successful!\nPrinter is ready for use.'}
       // Common printer ports
       final List<int> ports = [9100, 515, 631, 9101, 9102];
       
-      // Scan each IP range
+      // Scan each IP range with priority for discovered printers
       for (final range in ipRanges) {
+        // Priority scan for known Epson printer IPs first
+        if (range == '192.168.0') {
+          final priorityIPs = [147, 233, 141]; // Your discovered Epson printers
+          for (final ip in priorityIPs) {
+            for (final port in ports) {
+              futures.add(_testGenericESCPOSConnection('$range.$ip', port));
+            }
+          }
+        }
+        
+        // Then scan full range
         for (int i = 1; i <= 254; i++) {
           final ip = '$range.$i';
           for (final port in ports) {
@@ -3360,14 +3416,30 @@ ${customMessage ?? 'Test print successful!\nPrinter is ready for use.'}
           timeout: const Duration(seconds: 5),
         );
         
-        // Send content as bytes
-        socket.add(content.codeUnits);
+        // Send content as bytes with optional auto-cut appended
+        const bool _enableAutoCutAfterSend = true; // feature flag
+        final List<int> bytes = <int>[]..addAll(content.codeUnits);
+        
+        if (_enableAutoCutAfterSend) {
+          try {
+            final String cutMarker = String.fromCharCodes([0x1D, 0x56]);
+            final bool alreadyHasCut = content.contains(cutMarker);
+            if (!alreadyHasCut) {
+              // Feed a few lines and perform full cut (GS V 0)
+              bytes.addAll([0x0A, 0x0A, 0x0A]);
+              bytes.addAll([0x1D, 0x56, 0x00]);
+            }
+          } catch (_) {
+            // Fallback: never block printing due to auto-cut logic
+          }
+        }
+        
+        socket.add(bytes);
         await socket.flush();
         await socket.close();
         
         debugPrint('✅ Successfully sent content to printer: $printerId');
         return true;
-        
       } else {
         debugPrint('❌ Printer type $printerType not supported for specific printing');
         return false;
@@ -3526,6 +3598,106 @@ ${customMessage ?? 'Test print successful!\nPrinter is ready for use.'}
   Future<List<PrinterDevice>> discoverBluetoothPrinters() async {
     debugPrint('🔍 Bluetooth discovery temporarily disabled');
     return [];
+  }
+
+  /// URGENT: Add known Epson TM-M30II printers directly (bypass discovery)
+  /// This method adds the specific Epson printers found on the network
+  Future<void> addKnownEpsonPrinters() async {
+    debugPrint('🚨 URGENT: Adding known Epson TM-M30II printers directly...');
+    
+    _discoveredPrinters.clear();
+    
+    // Your specific Epson TM-M30II printers
+    final knownEpsonPrinters = [
+      PrinterDevice(
+        id: 'epson_tm_m30ii_147',
+        name: 'Epson TM-M30II Kitchen (192.168.0.147)',
+        address: '192.168.0.147:9100',
+        type: PrinterType.wifi,
+        model: 'TM-M30II',
+        signalStrength: 95,
+      ),
+      PrinterDevice(
+        id: 'epson_tm_m30ii_233',
+        name: 'Epson TM-M30II Receipt (192.168.0.233)',
+        address: '192.168.0.233:9100',
+        type: PrinterType.wifi,
+        model: 'TM-M30II',
+        signalStrength: 95,
+      ),
+      PrinterDevice(
+        id: 'epson_tm_m30ii_141',
+        name: 'Epson TM-M30II Backup (192.168.0.141)',
+        address: '192.168.0.141:9100',
+        type: PrinterType.wifi,
+        model: 'TM-M30II',
+        signalStrength: 95,
+      ),
+    ];
+    
+    // Test each printer and add if responsive
+    for (final printer in knownEpsonPrinters) {
+      try {
+        final parts = printer.address.split(':');
+        final ip = parts[0];
+        final port = int.parse(parts[1]);
+        
+        debugPrint('🔍 Testing Epson printer at $ip:$port...');
+        
+        // Quick connection test
+        final socket = await Socket.connect(
+          ip, 
+          port, 
+          timeout: const Duration(seconds: 3)
+        );
+        
+        // Send ESC/POS initialization command
+        socket.add([0x1B, 0x40]); // ESC @ - Initialize printer
+        await socket.flush();
+        await socket.close();
+        
+        // If we got here, printer is responsive
+        _discoveredPrinters.add(printer);
+        debugPrint('✅ Added responsive Epson printer: ${printer.name}');
+        
+      } catch (e) {
+        debugPrint('⚠️ Epson printer ${printer.name} not responsive: $e');
+        // Still add it to the list for manual connection attempts
+        _discoveredPrinters.add(printer);
+      }
+    }
+    
+    debugPrint('🎉 Added ${_discoveredPrinters.length} known Epson TM-M30II printers');
+    notifyListeners();
+  }
+
+  /// URGENT: Test specific Epson printer connection
+  Future<bool> testEpsonPrinterConnection(String ip, int port) async {
+    try {
+      debugPrint('🔍 Testing Epson TM-M30II at $ip:$port...');
+      
+      final socket = await Socket.connect(
+        ip, 
+        port, 
+        timeout: const Duration(seconds: 5)
+      );
+      
+      // Send Epson-specific status request
+      socket.add([0x10, 0x04, 0x01]); // DLE EOT 1 - Transmit printer status
+      await socket.flush();
+      
+      // Wait for response
+      await socket.first.timeout(const Duration(seconds: 2));
+      
+      await socket.close();
+      
+      debugPrint('✅ Epson printer at $ip:$port is responsive!');
+      return true;
+      
+    } catch (e) {
+      debugPrint('❌ Epson printer at $ip:$port failed test: $e');
+      return false;
+    }
   }
 
 }

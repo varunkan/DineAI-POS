@@ -118,10 +118,42 @@ class MenuService with ChangeNotifier {
         }
         
         debugPrint('✅ MenuService initialized with ${_categories.length} categories and ${_menuItems.length} items');
+        _isInitialized = true;
       } catch (e) {
         debugPrint('❌ Failed to initialize MenuService: $e');
-        throw MenuServiceException('Failed to initialize menu service', operation: 'ensure_initialized', originalError: e);
+        throw MenuServiceException('Failed to initialize menu service', operation: 'initialize', originalError: e);
       }
+    }
+  }
+
+  /// Ensure a special "Receipts" category exists for routing receipt prints
+  Future<void> ensureReceiptsCategoryExists() async {
+    try {
+      // Use DatabaseService helpers to ensure table exists and query safely
+      final existing = await _databaseService.query(
+        'categories',
+        where: 'id = ? OR name = ?',
+        whereArgs: ['cat_receipts', 'Receipts'],
+        limit: 1,
+      );
+
+      if (existing.isEmpty) {
+        final nowIso = DateTime.now().toIso8601String();
+        await _databaseService.insert('categories', {
+          'id': 'cat_receipts',
+          'name': 'Receipts',
+          'description': 'Category used for routing receipt printing to selected printers',
+          'is_active': 1,
+          'sort_order': 999,
+          'created_at': nowIso,
+          'updated_at': nowIso,
+        });
+        // Reload categories so UI can show it immediately
+        await _loadMenuData();
+        debugPrint('🧾 Created special Receipts category (cat_receipts)');
+      }
+    } catch (e) {
+      debugPrint('⚠️ ensureReceiptsCategoryExists failed: $e');
     }
   }
 

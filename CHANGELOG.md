@@ -5,6 +5,21 @@ All notable changes to the DineAI-POS system will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.5.0] - 2025-08-30
+
+### Added
+- ESC/POS auto-cut after WiFi prints (feature-flagged) to ensure reliable cutter activation
+- Triple-sized kitchen item fonts via ESC/POS GS ! 0x22 (feature-flagged) for improved readability
+- Additional printer management screens and services for Epson TM-M30 series and network discovery
+
+### Changed
+- Enhanced `PrintingService` send path with graceful fallback and health checks
+- Improvements to unified printer service and assignment workflows
+
+### Notes
+- Feature flags located in `lib/services/printing_service.dart`
+- No breaking changes; existing flows continue if flags are disabled
+
 ## [1.3.0] - 2024-08-16
 
 ### Added

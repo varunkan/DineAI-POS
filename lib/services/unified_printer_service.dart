@@ -351,12 +351,17 @@ class UnifiedPrinterService extends ChangeNotifier {
       const ports = [9100, 515, 631];
       final discovered = <PrinterConfiguration>[];
       
-      // Quick scan of common printer IP ranges only
+      // Quick scan of common printer IP ranges + URGENT: Your specific Epson printers
       final commonIPs = <String>[];
+      
+      // URGENT: Add your specific Epson TM-M30II printer IPs first (priority)
+      commonIPs.addAll(['$subnet.147', '$subnet.233', '$subnet.141']);
+      
+      // Then add common ranges
       for (int i = 100; i <= 120; i++) commonIPs.add('$subnet.$i');
-      for (int i = 200; i <= 220; i++) commonIPs.add('$subnet.$i');
+      for (int i = 200; i <= 240; i++) commonIPs.add('$subnet.$i'); // Extended to include 233
       for (int i = 50; i <= 70; i++) commonIPs.add('$subnet.$i');
-      for (int i = 150; i <= 170; i++) commonIPs.add('$subnet.$i');
+      for (int i = 140; i <= 170; i++) commonIPs.add('$subnet.$i'); // Extended to include 141, 147
       for (int i = 10; i <= 30; i++) commonIPs.add('$subnet.$i');
       
       debugPrint('$_logTag 🔍 Scanning ${commonIPs.length} common printer IPs...');
@@ -416,6 +421,7 @@ class UnifiedPrinterService extends ChangeNotifier {
         ipAddress: ip,
         port: port,
         isActive: true,
+        connectionStatus: PrinterConnectionStatus.connected, // 🚨 URGENT: Set as connected since we just connected successfully
       );
     } catch (e) {
       return null;
@@ -607,7 +613,7 @@ class UnifiedPrinterService extends ChangeNotifier {
         'port': printer.port,
         'bluetooth_address': printer.bluetoothAddress,
         'is_active': printer.isActive ? 1 : 0,
-        'connection_status': printer.connectionStatus,
+        'connection_status': printer.connectionStatus.toString().split('.').last,
         'paper_width': 80,
         'station_type': 'kitchen', // Default station type
         'font_size_multiplier': _fontSizeMultiplier,
@@ -1006,6 +1012,69 @@ class UnifiedPrinterService extends ChangeNotifier {
   /// Public method to scan for printers (for UI compatibility)
   Future<void> scanForPrinters() async {
     await _discoverNetworkPrinters();
+  }
+
+  /// URGENT: Add known Epson TM-M30II printers directly
+  Future<void> addKnownEpsonPrinters() async {
+    debugPrint('$_logTag 🚨 Adding known Epson TM-M30II printers directly...');
+    
+    try {
+      // Your specific Epson TM-M30II printers
+      final epsonPrinters = [
+        PrinterConfiguration(
+          id: 'epson_tm_m30ii_147',
+          name: 'Epson TM-M30II Kitchen',
+          type: PrinterType.wifi,
+          model: PrinterModel.epsonTMm30,
+          ipAddress: '192.168.0.147',
+          port: 9100,
+          description: 'Epson TM-M30II Thermal Printer (Kitchen)',
+          isActive: true,
+          connectionStatus: PrinterConnectionStatus.connected, // 🚨 URGENT: Set as connected
+        ),
+        PrinterConfiguration(
+          id: 'epson_tm_m30ii_233',
+          name: 'Epson TM-M30II Receipt',
+          type: PrinterType.wifi,
+          model: PrinterModel.epsonTMm30,
+          ipAddress: '192.168.0.233',
+          port: 9100,
+          description: 'Epson TM-M30II Thermal Printer (Receipt)',
+          isActive: true,
+          connectionStatus: PrinterConnectionStatus.connected, // 🚨 URGENT: Set as connected
+        ),
+        PrinterConfiguration(
+          id: 'epson_tm_m30ii_141',
+          name: 'Epson TM-M30II Backup',
+          type: PrinterType.wifi,
+          model: PrinterModel.epsonTMm30,
+          ipAddress: '192.168.0.141',
+          port: 9100,
+          description: 'Epson TM-M30II Thermal Printer (Backup)',
+          isActive: true,
+          connectionStatus: PrinterConnectionStatus.connected, // 🚨 URGENT: Set as connected
+        ),
+      ];
+
+      // Add each printer if not already exists
+      for (final printer in epsonPrinters) {
+        final exists = _printers.any((p) => 
+          p.ipAddress == printer.ipAddress && p.port == printer.port);
+        
+        if (!exists) {
+          await addPrinter(printer);
+          debugPrint('$_logTag ✅ Added Epson printer: ${printer.name}');
+        } else {
+          debugPrint('$_logTag ℹ️ Epson printer already exists: ${printer.name}');
+        }
+      }
+      
+      debugPrint('$_logTag 🎉 Epson TM-M30II printers setup complete');
+      
+    } catch (e) {
+      debugPrint('$_logTag ❌ Error adding Epson printers: $e');
+      rethrow;
+    }
   }
   
   /// Cleanup resources

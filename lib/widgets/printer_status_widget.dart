@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 // Removed: import '../services/auto_printer_discovery_service.dart'; (redundant service)
 import '../services/printer_configuration_service.dart';
+import '../services/unified_printer_service.dart';
 import '../models/printer_configuration.dart';
 
 /// Widget to display real-time printer connection status
@@ -19,8 +20,33 @@ class PrinterStatusWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<PrinterConfigurationService?>(
-      builder: (context, printerConfigService, child) {
+    return Consumer2<UnifiedPrinterService?, PrinterConfigurationService?>(
+      builder: (context, unifiedPrinterService, printerConfigService, child) {
+        // Prioritize UnifiedPrinterService if available
+        if (unifiedPrinterService != null) {
+          final totalPrinters = unifiedPrinterService.printers.length;
+          final onlinePrinters = unifiedPrinterService.printers.where((p) => p.connectionStatus == PrinterConnectionStatus.connected).length;
+          final isDiscovering = unifiedPrinterService.isScanning;
+          const isEnabled = true;
+
+          return _buildPrinterStatusCard(
+            context, 
+            totalPrinters, 
+            onlinePrinters, 
+            isDiscovering, 
+            isEnabled,
+            unifiedPrinterService.printers,
+            () {
+              // 🚨 URGENT: Use UnifiedPrinterService for discovery
+              debugPrint('🚨 URGENT: Using UnifiedPrinterService for Epson printer discovery');
+              unifiedPrinterService.addKnownEpsonPrinters();
+              unifiedPrinterService.scanForPrinters();
+              if (onRefreshTap != null) onRefreshTap!();
+            },
+          );
+        }
+        
+        // Fallback to PrinterConfigurationService
         if (printerConfigService == null) {
           return const Card(
             child: Padding(
@@ -33,21 +59,46 @@ class PrinterStatusWidget extends StatelessWidget {
           );
         }
 
-        // Use printer configuration service instead of auto discovery
+        // Use printer configuration service as fallback
         final totalPrinters = printerConfigService.configurations.length;
         final onlinePrinters = printerConfigService.activeConfigurations.length;
         final isDiscovering = printerConfigService.isScanning;
         const isEnabled = true; // Always enabled in simplified version
 
-        return Card(
-          elevation: 2,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Header
-                if (showHeader) ...[
+        return _buildPrinterStatusCard(
+          context, 
+          totalPrinters, 
+          onlinePrinters, 
+          isDiscovering, 
+          isEnabled,
+          printerConfigService.configurations,
+          () {
+            printerConfigService.manualDiscovery();
+            if (onRefreshTap != null) onRefreshTap!();
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildPrinterStatusCard(
+    BuildContext context,
+    int totalPrinters,
+    int onlinePrinters,
+    bool isDiscovering,
+    bool isEnabled,
+    List<PrinterConfiguration> printerConfigurations,
+    VoidCallback onScanPressed,
+  ) {
+    return Card(
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header
+            if (showHeader) ...[
                   Row(
                     children: [
                       Icon(
@@ -114,7 +165,7 @@ class PrinterStatusWidget extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  ...printerConfigService.configurations.map((printer) {
+                  ...printerConfigurations.map((printer) {
                     final isOnline = printer.connectionStatus == PrinterConnectionStatus.connected;
                     final lastCheck = printer.lastConnected;
 
@@ -222,10 +273,7 @@ class PrinterStatusWidget extends StatelessWidget {
                   Row(
                     children: [
                       ElevatedButton.icon(
-                        onPressed: isDiscovering ? null : () {
-                          printerConfigService.manualDiscovery();
-                          if (onRefreshTap != null) onRefreshTap!();
-                        },
+                        onPressed: isDiscovering ? null : onScanPressed,
                         icon: Icon(
                           isDiscovering ? Icons.hourglass_empty : Icons.refresh,
                           size: 16,
@@ -295,8 +343,6 @@ class PrinterStatusWidget extends StatelessWidget {
             ),
           ),
         );
-      },
-    );
   }
 
   String _formatTime(DateTime time) {

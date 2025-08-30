@@ -32,6 +32,7 @@ import 'services/printer_validation_service.dart';
 import 'services/robust_kitchen_service.dart';
 import 'services/free_cloud_printing_service.dart';
 import 'services/enhanced_printer_manager.dart';
+import 'services/unified_printer_service.dart';
 import 'services/unified_sync_service.dart';
 import 'services/kitchen_printing_service.dart';
 
@@ -149,6 +150,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   ActivityLogService? _activityLogService;
   InventoryService? _inventoryService;
   PrinterConfigurationService? _printerConfigurationService;
+  UnifiedPrinterService? _unifiedPrinterService;
   UnifiedSyncService? _unifiedSyncService;
   EnhancedPrinterAssignmentService? _enhancedPrinterAssignmentService;
   CrossPlatformPrinterSyncService? _crossPlatformPrinterSyncService;
@@ -548,6 +550,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       widget.progressService.addMessage('🍽️ Loading menu items...');
       _menuService = MenuService(tenantDatabase);
       await _menuService!.ensureInitialized();
+      await _menuService!.ensureReceiptsCategoryExists();
       debugPrint('✅ MenuService reinitialized');
       
       // Create new ActivityLogService instance with updated database
@@ -603,6 +606,22 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         debugPrint('⚠️ PrinterConfigurationService initialization failed, continuing: $e');
       }
       
+      // 🚨 URGENT: Initialize UnifiedPrinterService for Epson printer discovery
+      widget.progressService.addMessage('🚀 Setting up unified printer service...');
+      _unifiedPrinterService = UnifiedPrinterService.getInstance(tenantDatabase);
+      try {
+        await _unifiedPrinterService!.initialize().timeout(
+          const Duration(seconds: 10),
+          onTimeout: () {
+            debugPrint('⚠️ UnifiedPrinterService initialization timed out, continuing...');
+            return false;
+          },
+        );
+        debugPrint('✅ UnifiedPrinterService initialized');
+      } catch (e) {
+        debugPrint('⚠️ UnifiedPrinterService initialization failed, continuing: $e');
+      }
+      
       widget.progressService.addMessage('🎛️ Setting up printer assignments...');
       
       // Initialize enhanced printer assignment service (with full multi-printer support)
@@ -610,6 +629,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       _enhancedPrinterAssignmentService = EnhancedPrinterAssignmentService(
         databaseService: tenantDatabase,
         printerConfigService: _printerConfigurationService!,
+        unifiedPrinterService: _unifiedPrinterService, // 🚨 URGENT: Pass UnifiedPrinterService for Epson printer support
       );
       
       // Initialize the enhanced assignment service
@@ -1078,6 +1098,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     providers.add(ChangeNotifierProvider<PaymentService?>.value(value: _paymentService));
     providers.add(ChangeNotifierProvider<PrintingService?>.value(value: _printingService));
     providers.add(ChangeNotifierProvider<PrinterConfigurationService?>.value(value: _printerConfigurationService));
+    providers.add(ChangeNotifierProvider<UnifiedPrinterService?>.value(value: _unifiedPrinterService));
     providers.add(ChangeNotifierProvider<EnhancedPrinterAssignmentService?>.value(value: _enhancedPrinterAssignmentService));
     providers.add(ChangeNotifierProvider<CrossPlatformPrinterSyncService?>.value(value: _crossPlatformPrinterSyncService));
     // Removed: AutoPrinterDiscoveryService provider (redundant)

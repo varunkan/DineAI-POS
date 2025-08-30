@@ -99,20 +99,79 @@ class _UnifiedPrinterDashboardState extends State<UnifiedPrinterDashboard>
     if (_printerService == null) return;
     
     try {
-      // Trigger comprehensive printer discovery
-      await _printerService!.scanForPrinters();
+      debugPrint('🚨 URGENT: Scan for printers called - using UnifiedPrinterService only');
       
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('🔍 Printer discovery completed'),
-          backgroundColor: Colors.green,
+          content: Text('🔍 Adding Epson printers + scanning network...'),
+          backgroundColor: Colors.blue,
           duration: Duration(seconds: 2),
         ),
       );
+
+      // URGENT: First add known Epson printers directly
+      await _printerService!.addKnownEpsonPrinters();
+      debugPrint('✅ Epson printers added via UnifiedPrinterService');
+      
+      // Then trigger UnifiedPrinterService discovery only
+      await _printerService!.scanForPrinters();
+      debugPrint('✅ UnifiedPrinterService scan completed');
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ Epson printers added + network scan complete'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 3),
+        ),
+      );
+      
+      setState(() {}); // Refresh the UI
+      
     } catch (e) {
+      debugPrint('❌ Scan failed: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('❌ Discovery failed: $e'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
+    /// URGENT: Add known Epson TM-M30II printers directly
+  Future<void> _addEpsonPrinters() async {
+    if (_printerService == null) return;
+    
+    try {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('🚨 Adding Epson TM-M30II printers...'),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      debugPrint('🚨 URGENT: Adding Epson TM-M30II printers directly via UnifiedPrinterService');
+
+      // URGENT: Use the direct method from UnifiedPrinterService
+      await _printerService!.addKnownEpsonPrinters();
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ Added 3 Epson TM-M30II printers - Check Printers tab'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 3),
+        ),
+      );
+      
+      setState(() {}); // Refresh the UI
+      
+    } catch (e) {
+      debugPrint('❌ Failed to add Epson printers: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('❌ Failed to add Epson printers: $e'),
           backgroundColor: Colors.red,
           duration: const Duration(seconds: 3),
         ),
@@ -241,6 +300,12 @@ class _UnifiedPrinterDashboardState extends State<UnifiedPrinterDashboard>
         ),
         leading: const CustomBackButton(),
         actions: [
+          // URGENT: Epson TM-M30II button
+          IconButton(
+            onPressed: _addEpsonPrinters,
+            icon: const Icon(Icons.print, color: Colors.orange),
+            tooltip: 'Add Epson TM-M30II Printers',
+          ),
           IconButton(
             onPressed: _scanForPrinters,
             icon: const Icon(Icons.refresh),
@@ -298,12 +363,27 @@ class _UnifiedPrinterDashboardState extends State<UnifiedPrinterDashboard>
                       style: Theme.of(context).textTheme.titleLarge,
                     ),
                     const SizedBox(height: 8),
-                    const Text('Tap the refresh button to scan for printers'),
+                    const Text('Add your Epson TM-M30II printers or scan for others'),
                     const SizedBox(height: 16),
-                    ElevatedButton.icon(
-                      onPressed: _scanForPrinters,
-                      icon: const Icon(Icons.search),
-                      label: const Text('Scan for Printers'),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        ElevatedButton.icon(
+                          onPressed: _addEpsonPrinters,
+                          icon: const Icon(Icons.print),
+                          label: const Text('Add Epson TM-M30II'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.orange.shade600,
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        ElevatedButton.icon(
+                          onPressed: _scanForPrinters,
+                          icon: const Icon(Icons.search),
+                          label: const Text('Scan All Printers'),
+                        ),
+                      ],
                     ),
                   ],
                 ),

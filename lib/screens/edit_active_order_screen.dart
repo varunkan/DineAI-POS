@@ -853,6 +853,14 @@ class _EditActiveOrderScreenState extends State<EditActiveOrderScreen> {
         await tableService.freeTable(widget.order.tableId!);
       }
 
+      // Print receipt via assigned printers (graceful fallback inside service)
+      try {
+        await printingService.printReceipt(completedOrder);
+        debugPrint('✅ Receipt printed on order close');
+      } catch (e) {
+        debugPrint('⚠️ Failed to print receipt on order close: $e');
+      }
+
       setState(() {
         _isLoading = false;
       });
@@ -1553,7 +1561,38 @@ class _EditActiveOrderScreenState extends State<EditActiveOrderScreen> {
     );
   }
 
-
+  // Print receipt via assigned receipt printers (with fallback in PrintingService)
+  Future<void> _printReceiptAssigned() async {
+    try {
+      if (_currentOrder.items.isEmpty) return;
+      final printingService = Provider.of<PrintingService>(context, listen: false);
+      final success = await printingService.printReceipt(_currentOrder);
+      if (!mounted) return;
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Receipt sent to assigned printer(s)'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to print receipt'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to print receipt: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1749,7 +1788,7 @@ class _EditActiveOrderScreenState extends State<EditActiveOrderScreen> {
               // Print receipt button
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: hasAnyItems ? _printKitchenTicket : null,
+                  onPressed: hasAnyItems ? _printReceiptAssigned : null,
                   icon: const Icon(Icons.print, size: 16),
                   label: const Text('Print'),
                   style: OutlinedButton.styleFrom(

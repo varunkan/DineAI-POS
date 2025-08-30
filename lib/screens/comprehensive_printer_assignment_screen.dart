@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/enhanced_printer_assignment_service.dart';
 import '../services/printer_configuration_service.dart';
+import '../services/unified_printer_service.dart';
 import '../services/menu_service.dart';
 import '../models/printer_configuration.dart';
 import '../models/printer_assignment.dart';
@@ -79,13 +80,41 @@ class _ComprehensivePrinterAssignmentScreenState extends State<ComprehensivePrin
   }
 
   Future<void> _loadPrinters() async {
+    // 🚨 URGENT: Load printers from both services to show discovered Epson printers
     final printerService = Provider.of<PrinterConfigurationService>(context, listen: false);
-    _printers = printerService.configurations;
+    final unifiedPrinterService = Provider.of<UnifiedPrinterService?>(context, listen: false);
+    
+    // Start with printers from the old service
+    _printers = List.from(printerService.configurations);
+    
+    // Add printers from UnifiedPrinterService (where Epson printers are discovered)
+    if (unifiedPrinterService != null) {
+      final unifiedPrinters = unifiedPrinterService.printers;
+      debugPrint('🚨 URGENT: Found ${unifiedPrinters.length} printers in UnifiedPrinterService');
+      
+      // Add printers that aren't already in the list (avoid duplicates)
+      for (final unifiedPrinter in unifiedPrinters) {
+        final exists = _printers.any((p) => p.id == unifiedPrinter.id || 
+                                            (p.ipAddress == unifiedPrinter.ipAddress && p.port == unifiedPrinter.port));
+        if (!exists) {
+          _printers.add(unifiedPrinter);
+          debugPrint('🚨 URGENT: Added UnifiedPrinter to assignments: ${unifiedPrinter.name}');
+        }
+      }
+    }
+    
+    debugPrint('🚨 URGENT: Total printers available for assignment: ${_printers.length}');
   }
 
   Future<void> _loadCategories() async {
     final menuService = Provider.of<MenuService>(context, listen: false);
     _categories = menuService.categories;
+    
+    // 🚨 URGENT: Debug category IDs to fix assignment issue
+    debugPrint('🔍 CATEGORIES DEBUG: Found ${_categories.length} categories:');
+    for (final category in _categories) {
+      debugPrint('🔍 Category: ${category.name} (ID: ${category.id})');
+    }
   }
 
   Future<void> _loadMenuItems() async {
@@ -821,6 +850,14 @@ class _ComprehensivePrinterAssignmentScreenState extends State<ComprehensivePrin
 
   Future<void> _assignToPrinter(String targetId, String targetName, AssignmentType assignmentType, PrinterConfiguration printer) async {
     try {
+      // 🚨 URGENT: Debug assignment parameters
+      debugPrint('🎯 ASSIGNMENT DEBUG: Attempting to assign:');
+      debugPrint('🎯 Target ID: $targetId');
+      debugPrint('🎯 Target Name: $targetName');
+      debugPrint('🎯 Assignment Type: $assignmentType');
+      debugPrint('🎯 Printer ID: ${printer.id}');
+      debugPrint('🎯 Printer Name: ${printer.name}');
+      
       final assignmentService = Provider.of<EnhancedPrinterAssignmentService>(context, listen: false);
       
       final success = await assignmentService.addAssignment(

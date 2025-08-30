@@ -1295,11 +1295,12 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
             scrollDirection: Axis.horizontal,
             children: [
               // All Servers Chip
-              _buildMobileServerChip(
+              _buildServerChip(
                 label: 'All Servers',
                 serverId: null,
                 isSelected: _selectedServerId == null,
-                orderCount: orderService.activeOrdersCount,
+                // FIX: Calculate All servers count as sum of individual server counts
+                orderCount: _calculateAllServersCount(orderService, userService),
               ),
               const SizedBox(width: 8),
               // Individual Server Chips
@@ -1799,7 +1800,8 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
                       label: 'All Servers',
                       serverId: null,
                       isSelected: _selectedServerId == null,
-                      orderCount: orderService.activeOrdersCount,
+                      // FIX: Calculate All servers count as sum of individual server counts
+                      orderCount: _calculateAllServersCount(orderService, userService),
                     ),
                     ...users.where((user) => 
                       user.role == UserRole.server || 
@@ -1845,7 +1847,8 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
                     label: 'All Servers',
                     serverId: null,
                     isSelected: _selectedServerId == null,
-                    orderCount: orderService.activeOrdersCount,
+                    // FIX: Calculate All servers count as sum of individual server counts
+                    orderCount: _calculateAllServersCount(orderService, userService),
                   ),
                   ...users.where((user) => 
                     user.role == UserRole.server || 
@@ -3980,6 +3983,24 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
     } catch (e) {
       debugPrint('❌ REAL-TIME SYNC: Error ensuring listeners are active - $e');
     }
+  }
+
+  /// Calculate All servers count as sum of individual server counts
+  /// This ensures the "All servers" count matches the sum of individual server counts
+  int _calculateAllServersCount(OrderService orderService, UserService userService) {
+    int totalCount = 0;
+    final servers = userService.users.where((user) => 
+      user.role == UserRole.server || 
+      user.role == UserRole.admin || 
+      user.role == UserRole.manager
+    );
+    
+    for (var server in servers) {
+      totalCount += orderService.getActiveOrdersCountByServer(server.id);
+    }
+    
+    debugPrint('🧮 All servers count calculation: $totalCount (sum of individual server counts)');
+    return totalCount;
   }
 
 }

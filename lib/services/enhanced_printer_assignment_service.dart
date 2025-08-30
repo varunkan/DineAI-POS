@@ -1,12 +1,14 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:collection/collection.dart';
+import 'package:sqflite/sqflite.dart';
 import '../models/printer_assignment.dart';
 import '../models/printer_configuration.dart';
 import '../models/order.dart';
 import '../models/menu_item.dart';
 import '../services/database_service.dart';
 import '../services/printer_configuration_service.dart';
+import '../services/unified_printer_service.dart';
 import '../services/enhanced_printer_manager.dart';
 
 /// Enhanced Printer Assignment Service
@@ -16,6 +18,7 @@ class EnhancedPrinterAssignmentService extends ChangeNotifier {
   
   final DatabaseService _databaseService;
   final PrinterConfigurationService _printerConfigService;
+  final UnifiedPrinterService? _unifiedPrinterService;
   
   // Assignment state management
   List<PrinterAssignment> _assignments = [];
@@ -30,8 +33,10 @@ class EnhancedPrinterAssignmentService extends ChangeNotifier {
   EnhancedPrinterAssignmentService({
     required DatabaseService databaseService,
     required PrinterConfigurationService printerConfigService,
+    UnifiedPrinterService? unifiedPrinterService,
   }) : _databaseService = databaseService,
-       _printerConfigService = printerConfigService;
+       _printerConfigService = printerConfigService,
+       _unifiedPrinterService = unifiedPrinterService;
   
   // Getters
   List<PrinterAssignment> get assignments => List.unmodifiable(_assignments);
@@ -219,11 +224,33 @@ class EnhancedPrinterAssignmentService extends ChangeNotifier {
     try {
       debugPrint('$_logTag 🎯 Adding assignment: $targetName → $printerId');
       
-      // Get printer configuration
-      final printerConfig = await _printerConfigService.getConfigurationById(printerId);
+      // 🚨 URGENT: Get printer configuration from both services (old and new)
+      PrinterConfiguration? printerConfig = await _printerConfigService.getConfigurationById(printerId);
+      
+      // If not found in old service, check UnifiedPrinterService
+      if (printerConfig == null && _unifiedPrinterService != null) {
+        printerConfig = _unifiedPrinterService!.printers.firstWhereOrNull((p) => p.id == printerId);
+        debugPrint('$_logTag 🚀 Found printer in UnifiedPrinterService: ${printerConfig?.name}');
+      }
+      
       if (printerConfig == null) {
-        debugPrint('$_logTag ❌ Printer configuration not found: $printerId');
+        debugPrint('$_logTag ❌ Printer configuration not found in both services: $printerId');
         return false;
+      }
+
+      // 🚨 URGENT: Check if the target category/item exists before creating assignment
+      if (assignmentType == AssignmentType.category) {
+        final categoryExists = await _checkCategoryExists(targetId);
+        if (!categoryExists) {
+          debugPrint('$_logTag ⚠️ Category not found: $targetId - creating placeholder category');
+          await _createPlaceholderCategory(targetId, targetName);
+        }
+      } else if (assignmentType == AssignmentType.menuItem) {
+        final itemExists = await _checkMenuItemExists(targetId);
+        if (!itemExists) {
+          debugPrint('$_logTag ⚠️ Menu item not found: $targetId - creating placeholder item');
+          await _createPlaceholderMenuItem(targetId, targetName);
+        }
       }
       
       // Check if this specific assignment already exists
@@ -250,23 +277,100 @@ class EnhancedPrinterAssignmentService extends ChangeNotifier {
         isActive: true,
       );
       
-      // Save to database first
+      // Save to database first (ensure FK safety by upserting printer configuration)
       final db = await _databaseService.database;
       if (db == null) throw Exception('Database not available');
-      
-      await db.insert('enhanced_printer_assignments', {
-        'id': assignment.id,
-        'printer_id': assignment.printerId,
-        'printer_name': assignment.printerName,
-        'printer_address': assignment.printerAddress,
-        'assignment_type': assignment.assignmentType.name,
-        'target_id': assignment.targetId,
-        'target_name': assignment.targetName,
-        'priority': assignment.priority,
-        'is_active': assignment.isActive ? 1 : 0,
-        'is_persistent': 1,
-        'created_at': assignment.createdAt.toIso8601String(),
-        'updated_at': assignment.updatedAt.toIso8601String(),
+
+      await db.transaction((txn) async {
+        // Ensure printer_configurations table exists with required columns (id at minimum)
+        await txn.execute('''
+          CREATE TABLE IF NOT EXISTS printer_configurations (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT 'Printer configuration',
+            type TEXT NOT NULL DEFAULT 'wifi',
+            model TEXT,
+            ip_address TEXT,
+            port INTEGER DEFAULT 9100,
+            mac_address TEXT,
+            bluetooth_address TEXT,
+            station_id TEXT DEFAULT 'main_kitchen',
+            is_active INTEGER DEFAULT 1,
+            is_default INTEGER DEFAULT 0,
+            connection_status TEXT DEFAULT 'unknown',
+            last_connected TEXT,
+            last_test_print TEXT,
+            custom_settings TEXT DEFAULT '{}',
+            remote_config TEXT DEFAULT '{}',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+          )
+        ''');
+
+        // 1) Ensure printer exists in printer_configurations (FK target)
+        final existingPrinter = await txn.query(
+          'printer_configurations',
+          where: 'id = ?',
+          whereArgs: [printerConfig!.id],
+          limit: 1,
+        );
+        if (existingPrinter.isEmpty) {
+          // Minimal upsert with safe defaults; conflict ignored if schema differs
+          final Map<String, Object?> configRow = {
+            'id': printerConfig.id,
+            'name': printerConfig.name,
+            'description': 'Auto-upserted for assignment',
+            'type': printerConfig.type.toString().split('.').last,
+            'model': printerConfig.model.toString().split('.').last,
+            'ip_address': printerConfig.ipAddress,
+            'port': printerConfig.port,
+            'is_active': printerConfig.isActive ? 1 : 0,
+            'connection_status': printerConfig.connectionStatus.toString().split('.').last,
+            'created_at': DateTime.now().toIso8601String(),
+            'updated_at': DateTime.now().toIso8601String(),
+          };
+          try {
+            await txn.insert('printer_configurations', configRow, conflictAlgorithm: ConflictAlgorithm.ignore);
+            debugPrint('$_logTag 💾 Upserted printer into printer_configurations for FK safety: ${printerConfig.name} (${printerConfig.id})');
+          } catch (e) {
+            debugPrint('$_logTag ⚠️ Upsert printer failed (retrying minimal insert): $e');
+            // Fallback: minimal raw insert with columns guaranteed in both schemas
+            try {
+              await txn.rawInsert(
+                'INSERT OR IGNORE INTO printer_configurations (id, name, type, model, is_active, connection_status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                [
+                  printerConfig.id,
+                  printerConfig.name,
+                  printerConfig.type.toString().split('.').last,
+                  (printerConfig.model?.toString().split('.').last) ?? 'epsonTMGeneric',
+                  printerConfig.isActive ? 1 : 0,
+                  printerConfig.connectionStatus.toString().split('.').last,
+                  DateTime.now().toIso8601String(),
+                  DateTime.now().toIso8601String(),
+                ],
+              );
+              debugPrint('$_logTag 💾 Minimal upsert succeeded for printer ${printerConfig.id}');
+            } catch (e2) {
+              debugPrint('$_logTag ❌ Minimal upsert failed for printer ${printerConfig.id}: $e2');
+            }
+          }
+        }
+
+        // 2) Insert assignment referencing existing printer_id
+        await txn.insert('enhanced_printer_assignments', {
+          'id': assignment.id,
+          'printer_id': assignment.printerId,
+          'printer_name': assignment.printerName,
+          'printer_address': assignment.printerAddress,
+          'assignment_type': assignment.assignmentType.name,
+          'target_id': assignment.targetId,
+          'target_name': assignment.targetName,
+          'priority': assignment.priority,
+          'is_active': assignment.isActive ? 1 : 0,
+          'is_persistent': 1,
+          'created_at': assignment.createdAt.toIso8601String(),
+          'updated_at': assignment.updatedAt.toIso8601String(),
+        });
       });
       
       // Add to memory
@@ -486,6 +590,114 @@ class EnhancedPrinterAssignmentService extends ChangeNotifier {
     }
   }
   
+  /// 🚨 URGENT: Check if a category exists in the database
+  Future<bool> _checkCategoryExists(String categoryId) async {
+    try {
+      final db = await _databaseService.database;
+      if (db == null) {
+        debugPrint('$_logTag ❌ Database not available for category check');
+        return false;
+      }
+      final result = await db.query(
+        'categories',
+        where: 'id = ?',
+        whereArgs: [categoryId],
+        limit: 1,
+      );
+      return result.isNotEmpty;
+    } catch (e) {
+      debugPrint('$_logTag ❌ Error checking category existence: $e');
+      return false;
+    }
+  }
+
+  /// 🚨 URGENT: Check if a menu item exists in the database
+  Future<bool> _checkMenuItemExists(String itemId) async {
+    try {
+      final db = await _databaseService.database;
+      if (db == null) {
+        debugPrint('$_logTag ❌ Database not available for menu item check');
+        return false;
+      }
+      final result = await db.query(
+        'menu_items',
+        where: 'id = ?',
+        whereArgs: [itemId],
+        limit: 1,
+      );
+      return result.isNotEmpty;
+    } catch (e) {
+      debugPrint('$_logTag ❌ Error checking menu item existence: $e');
+      return false;
+    }
+  }
+
+  /// 🚨 URGENT: Create a placeholder category to prevent foreign key constraint errors
+  Future<void> _createPlaceholderCategory(String categoryId, String categoryName) async {
+    try {
+      final db = await _databaseService.database;
+      if (db == null) return;
+      
+      await db.insert(
+        'categories',
+        {
+          'id': categoryId,
+          'name': categoryName,
+          'description': 'Auto-created for printer assignment',
+          'sort_order': 999,
+          'is_active': 1,
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        },
+        conflictAlgorithm: ConflictAlgorithm.ignore, // Don't fail if already exists
+      );
+      debugPrint('$_logTag ✅ Created placeholder category: $categoryName ($categoryId)');
+    } catch (e) {
+      debugPrint('$_logTag ❌ Error creating placeholder category: $e');
+    }
+  }
+
+  /// 🚨 URGENT: Create a placeholder menu item to prevent foreign key constraint errors
+  Future<void> _createPlaceholderMenuItem(String itemId, String itemName) async {
+    try {
+      final db = await _databaseService.database;
+      if (db == null) return;
+
+      // Ensure default category exists for potential FK on category_id
+      await db.insert(
+        'categories',
+        {
+          'id': 'default_category',
+          'name': 'Uncategorized',
+          'description': 'Auto-created default category',
+          'sort_order': 999,
+          'is_active': 1,
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        },
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
+      
+      await db.insert(
+        'menu_items',
+        {
+          'id': itemId,
+          'name': itemName,
+          'description': 'Auto-created for printer assignment',
+          'price': 0.0,
+          'category_id': 'default_category',
+          'is_available': 1,
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        },
+        conflictAlgorithm: ConflictAlgorithm.ignore, // Don't fail if already exists
+      );
+      debugPrint('$_logTag ✅ Created placeholder menu item: $itemName ($itemId)');
+    } catch (e) {
+      debugPrint('$_logTag ❌ Error creating placeholder menu item: $e');
+    }
+  }
+
   /// Dispose resources
   @override
   void dispose() {

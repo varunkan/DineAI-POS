@@ -47,11 +47,11 @@ class EnhancedPrinterManager extends ChangeNotifier {
   
   /// Manual printer discovery - called from UI
   Future<List<PrinterConfiguration>> discoverPrinters() async {
-    debugPrint('$_logTag 🔍 Manual printer discovery triggered by user');
+    debugPrint('$_logTag 🔍 Manual printer discovery triggered by user - delegating to UnifiedPrinterService');
     
     try {
-      // Use printer configuration service for discovery
-      await _printerConfigService.manualDiscovery();
+      // Skip old service discovery - let UnifiedPrinterService handle it
+      // await _printerConfigService.manualDiscovery();
       
       // Refresh available printers
       await _loadAvailablePrinters();
@@ -166,8 +166,9 @@ class EnhancedPrinterManager extends ChangeNotifier {
       debugPrint('$_logTag 📂 Loaded ${_availablePrinters.length} printer configurations');
       
       if (_availablePrinters.isEmpty) {
-        debugPrint('$_logTag ⚠️ No printers found - running emergency discovery...');
-        await _emergencyPrinterDiscovery();
+        debugPrint('$_logTag ⚠️ No printers found - skipping emergency discovery (UnifiedPrinterService will handle)');
+        // Skip emergency discovery to avoid conflicts with UnifiedPrinterService
+        // await _emergencyPrinterDiscovery();
       }
       
     } catch (e) {

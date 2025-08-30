@@ -3713,7 +3713,7 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
               // Print receipt button
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: hasAnyItems ? _printKitchenTicket : null,
+                  onPressed: hasAnyItems ? _printReceiptAssigned : null,
                   icon: const Icon(Icons.print, size: 16),
                   label: const Text('Print'),
                   style: OutlinedButton.styleFrom(
@@ -3834,38 +3834,37 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
     );
   }
 
-  // Print kitchen ticket with segregated printing
-  Future<void> _printKitchenTicket() async {
+  // Print receipt via assigned receipt printers (with fallback in PrintingService)
+  Future<void> _printReceiptAssigned() async {
     if (_currentOrder == null) return;
-    
     try {
       final printingService = Provider.of<PrintingService>(context, listen: false);
-      final printerAssignmentService = Provider.of<EnhancedPrinterAssignmentService>(context, listen: false);
-      
-      // Segregate items by printer assignments
-      final itemsByPrinter = await printingService.segregateOrderItems(
-        _currentOrder!,
-        printerAssignmentService,
-      );
-      
-      // Print to segregated printers
-      await printingService.printOrderSegregated(_currentOrder!, itemsByPrinter);
-      
-      // Show success message with printer details
-      final printerCount = itemsByPrinter.length;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Kitchen tickets printed to $printerCount printer${printerCount == 1 ? '' : 's'} successfully'),
-          backgroundColor: Colors.green,
-          duration: const Duration(seconds: 3),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      final success = await printingService.printReceipt(_currentOrder!);
+      if (!mounted) return;
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Receipt sent to assigned printer(s)'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to print receipt'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     } catch (e) {
-      debugPrint('Error printing kitchen ticket: $e');
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Failed to print: ${e.toString()}'),
+          content: Text('Failed to print receipt: $e'),
           backgroundColor: Colors.red,
           duration: const Duration(seconds: 3),
           behavior: SnackBarBehavior.floating,

@@ -384,34 +384,37 @@ class RobustKitchenService extends ChangeNotifier {
       // Generate kitchen ticket content
       final content = _generateKitchenTicket(order, items, assignment);
       
-      // Determine printer type based on assignment
+      // Determine address and type
+      final String address = (assignment.printerAddress.isNotEmpty)
+        ? assignment.printerAddress
+        : assignment.printerId; // Fallback to id if address missing (legacy)
+      
       PrinterType printerType;
-      if (assignment.printerAddress.contains(':') && assignment.printerAddress.contains('.')) {
-        // IP address format (e.g., "192.168.1.100:9100")
+      if (address.contains(':') && address.contains('.')) {
+        // IP:Port format
         printerType = PrinterType.wifi;
       } else {
-        // Bluetooth address format (e.g., "00:11:22:33:44:55")
         printerType = PrinterType.bluetooth;
       }
       
-      // CRITICAL FIX: Add timeout protection to prevent hanging spinner
+      // CRITICAL FIX: Use the actual address for printing (not the logical id)
       final success = await _printingService.printToSpecificPrinter(
-        assignment.printerId,
+        address,
         content,
         printerType,
       ).timeout(
-        const Duration(seconds: 10), // 10 second timeout for printer operations
+        const Duration(seconds: 10),
         onTimeout: () {
-          debugPrint('$_logTag ⏰ Printer operation timed out for: ${assignment.printerId}');
-          return false; // Return false on timeout to indicate failure
+          debugPrint('$_logTag ⏰ Printer operation timed out for: $address');
+          return false;
         },
       );
       
       if (success) {
-        debugPrint('$_logTag ✅ Successfully sent to printer: ${assignment.printerId}');
+        debugPrint('$_logTag ✅ Successfully sent to printer: $address');
         return true;
       } else {
-        debugPrint('$_logTag ❌ Failed to send to printer: ${assignment.printerId}');
+        debugPrint('$_logTag ❌ Failed to send to printer: $address');
         return false;
       }
       

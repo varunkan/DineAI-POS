@@ -1979,7 +1979,23 @@ class MultiTenantAuthService extends ChangeNotifier {
         
         final db = await _tenantDb!.database;
         if (db != null) {
-          await db.insert('categories', categoryData);
+          // Use INSERT OR REPLACE to handle existing categories gracefully
+          await db.rawInsert('''
+            INSERT OR REPLACE INTO categories (
+              id, name, description, image_url, is_active, sort_order, 
+              created_at, updated_at, icon_code_point
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ''', [
+            categoryData['id'],
+            categoryData['name'],
+            categoryData['description'] ?? '',
+            categoryData['image_url'] ?? '',
+            categoryData['is_active'] ?? 1,
+            categoryData['sort_order'] ?? 0,
+            categoryData['created_at'] ?? DateTime.now().toIso8601String(),
+            categoryData['updated_at'] ?? DateTime.now().toIso8601String(),
+            categoryData['icon_code_point'] ?? 0,
+          ]);
           syncedCount++;
         }
       }
@@ -2028,8 +2044,34 @@ class MultiTenantAuthService extends ChangeNotifier {
           
           final db = await _tenantDb!.database;
           if (db != null) {
-            _addProgressMessage('💾 Inserting menu item ${doc.id} into database...');
-            await db.insert('menu_items', sanitizedMenuItem);
+            _addProgressMessage('💾 Upserting menu item ${doc.id} into database...');
+            // Use INSERT OR REPLACE to handle existing items gracefully
+            await db.rawInsert('''
+              INSERT OR REPLACE INTO menu_items (
+                id, name, description, price, category_id, is_available, 
+                is_vegetarian, is_vegan, is_gluten_free, is_spicy, 
+                spice_level, stock_quantity, low_stock_threshold, 
+                popularity_score, preparation_time, created_at, updated_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', [
+              sanitizedMenuItem['id'],
+              sanitizedMenuItem['name'],
+              sanitizedMenuItem['description'],
+              sanitizedMenuItem['price'],
+              sanitizedMenuItem['category_id'],
+              sanitizedMenuItem['is_available'],
+              sanitizedMenuItem['is_vegetarian'],
+              sanitizedMenuItem['is_vegan'],
+              sanitizedMenuItem['is_gluten_free'],
+              sanitizedMenuItem['is_spicy'],
+              sanitizedMenuItem['spice_level'],
+              sanitizedMenuItem['stock_quantity'],
+              sanitizedMenuItem['low_stock_threshold'],
+              sanitizedMenuItem['popularity_score'],
+              sanitizedMenuItem['preparation_time'],
+              sanitizedMenuItem['created_at'],
+              sanitizedMenuItem['updated_at'],
+            ]);
             syncedCount++;
             _addProgressMessage('✅ Successfully synced menu item: ${doc.id}');
           } else {

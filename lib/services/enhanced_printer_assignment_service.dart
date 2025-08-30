@@ -91,8 +91,7 @@ class EnhancedPrinterAssignmentService extends ChangeNotifier {
           is_persistent INTEGER DEFAULT 1,
           created_at TEXT DEFAULT CURRENT_TIMESTAMP,
           updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-          metadata TEXT,
-          FOREIGN KEY (printer_id) REFERENCES printer_configurations(id)
+          metadata TEXT
         )
       ''');
       
@@ -281,83 +280,9 @@ class EnhancedPrinterAssignmentService extends ChangeNotifier {
       final db = await _databaseService.database;
       if (db == null) throw Exception('Database not available');
 
-      await db.transaction((txn) async {
-        // Ensure printer_configurations table exists with required columns (id at minimum)
-        await txn.execute('''
-          CREATE TABLE IF NOT EXISTS printer_configurations (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            description TEXT NOT NULL DEFAULT 'Printer configuration',
-            type TEXT NOT NULL DEFAULT 'wifi',
-            model TEXT,
-            ip_address TEXT,
-            port INTEGER DEFAULT 9100,
-            mac_address TEXT,
-            bluetooth_address TEXT,
-            station_id TEXT DEFAULT 'main_kitchen',
-            is_active INTEGER DEFAULT 1,
-            is_default INTEGER DEFAULT 0,
-            connection_status TEXT DEFAULT 'unknown',
-            last_connected TEXT,
-            last_test_print TEXT,
-            custom_settings TEXT DEFAULT '{}',
-            remote_config TEXT DEFAULT '{}',
-            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-          )
-        ''');
-
-        // 1) Ensure printer exists in printer_configurations (FK target)
-        final existingPrinter = await txn.query(
-          'printer_configurations',
-          where: 'id = ?',
-          whereArgs: [printerConfig!.id],
-          limit: 1,
-        );
-        if (existingPrinter.isEmpty) {
-          // Minimal upsert with safe defaults; conflict ignored if schema differs
-          final Map<String, Object?> configRow = {
-            'id': printerConfig.id,
-            'name': printerConfig.name,
-            'description': 'Auto-upserted for assignment',
-            'type': printerConfig.type.toString().split('.').last,
-            'model': printerConfig.model.toString().split('.').last,
-            'ip_address': printerConfig.ipAddress,
-            'port': printerConfig.port,
-            'is_active': printerConfig.isActive ? 1 : 0,
-            'connection_status': printerConfig.connectionStatus.toString().split('.').last,
-            'created_at': DateTime.now().toIso8601String(),
-            'updated_at': DateTime.now().toIso8601String(),
-          };
-          try {
-            await txn.insert('printer_configurations', configRow, conflictAlgorithm: ConflictAlgorithm.ignore);
-            debugPrint('$_logTag 💾 Upserted printer into printer_configurations for FK safety: ${printerConfig.name} (${printerConfig.id})');
-          } catch (e) {
-            debugPrint('$_logTag ⚠️ Upsert printer failed (retrying minimal insert): $e');
-            // Fallback: minimal raw insert with columns guaranteed in both schemas
-            try {
-              await txn.rawInsert(
-                'INSERT OR IGNORE INTO printer_configurations (id, name, type, model, is_active, connection_status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-                [
-                  printerConfig.id,
-                  printerConfig.name,
-                  printerConfig.type.toString().split('.').last,
-                  (printerConfig.model?.toString().split('.').last) ?? 'epsonTMGeneric',
-                  printerConfig.isActive ? 1 : 0,
-                  printerConfig.connectionStatus.toString().split('.').last,
-                  DateTime.now().toIso8601String(),
-                  DateTime.now().toIso8601String(),
-                ],
-              );
-              debugPrint('$_logTag 💾 Minimal upsert succeeded for printer ${printerConfig.id}');
-            } catch (e2) {
-              debugPrint('$_logTag ❌ Minimal upsert failed for printer ${printerConfig.id}: $e2');
-            }
-          }
-        }
-
-        // 2) Insert assignment referencing existing printer_id
-        await txn.insert('enhanced_printer_assignments', {
+      try {
+        // Insert assignment directly without foreign key dependency
+        await db.insert('enhanced_printer_assignments', {
           'id': assignment.id,
           'printer_id': assignment.printerId,
           'printer_name': assignment.printerName,
@@ -371,7 +296,11 @@ class EnhancedPrinterAssignmentService extends ChangeNotifier {
           'created_at': assignment.createdAt.toIso8601String(),
           'updated_at': assignment.updatedAt.toIso8601String(),
         });
-      });
+      } catch (e) {
+        debugPrint('$_logTag ❌ Error creating assignment: $e');
+        // Don't throw - just return false to prevent breaking menu item addition
+        return false;
+      }
       
       // Add to memory
       _assignments.add(assignment);

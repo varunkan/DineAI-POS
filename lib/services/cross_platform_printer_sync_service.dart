@@ -61,13 +61,15 @@ class CrossPlatformPrinterSyncService extends ChangeNotifier {
         _lastSyncTime = DateTime.tryParse(lastSyncStr);
       }
       
+      // COMPLETELY DISABLED: No automatic sync to prevent menu item addition issues
       // Start periodic sync
-      _startPeriodicSync();
+      // _startPeriodicSync();
       
+      // COMPLETELY DISABLED: No initial sync to prevent foreign key constraint errors
       // Perform initial sync
-      await _performInitialSync();
+      // await _performInitialSync();
       
-      debugPrint('$_logTag ✅ Cross-platform sync service initialized');
+      debugPrint('$_logTag ✅ Cross-platform sync service initialized (manual mode only)');
       
     } catch (e) {
       debugPrint('$_logTag ❌ Error initializing sync service: $e');
@@ -133,16 +135,21 @@ class CrossPlatformPrinterSyncService extends ChangeNotifier {
       await _assignmentService.clearAllAssignments();
       
       for (final assignment in assignments) {
-        await _assignmentService.addAssignment(
-          printerId: assignment.printerId,
-          assignmentType: assignment.assignmentType,
-          targetId: assignment.targetId,
-          targetName: assignment.targetName,
-          priority: assignment.priority,
-        );
+        try {
+          await _assignmentService.addAssignment(
+            printerId: assignment.printerId,
+            assignmentType: assignment.assignmentType,
+            targetId: assignment.targetId,
+            targetName: assignment.targetName,
+            priority: assignment.priority,
+          );
+        } catch (e) {
+          // Log error but continue with other assignments
+          debugPrint('$_logTag ⚠️ Failed to restore assignment ${assignment.id}: $e');
+        }
       }
       
-      debugPrint('$_logTag ✅ Successfully restored ${assignments.length} assignments');
+      debugPrint('$_logTag ✅ Successfully restored assignments from storage');
       
     } catch (e) {
       debugPrint('$_logTag ❌ Error restoring assignments: $e');
@@ -205,6 +212,12 @@ class CrossPlatformPrinterSyncService extends ChangeNotifier {
       _isSyncing = false;
       notifyListeners();
     }
+  }
+
+  /// Manual sync trigger - only call from printer assignment screen
+  Future<void> manualSync() async {
+    debugPrint('$_logTag 🎯 Manual sync triggered from printer assignment screen');
+    await _performSync();
   }
   
   /// Save to persistent database with enhanced metadata

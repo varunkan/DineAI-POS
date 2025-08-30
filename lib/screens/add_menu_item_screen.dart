@@ -7,6 +7,7 @@ import '../widgets/loading_overlay.dart';
 import '../widgets/error_dialog.dart';
 import '../widgets/form_field.dart';
 import '../widgets/back_button.dart';
+import 'package:uuid/uuid.dart';
 
 class AddMenuItemScreen extends StatefulWidget {
   const AddMenuItemScreen({super.key});
@@ -58,6 +59,21 @@ class _AddMenuItemScreenState extends State<AddMenuItemScreen> {
       return;
     }
 
+    // Validate category selection
+    if (_selectedCategory == null) {
+      setState(() {
+        _error = 'Please select a category for this menu item.';
+      });
+      if (mounted) {
+        await ErrorDialogHelper.showError(
+          context,
+          title: 'Category Required',
+          message: 'Please select a category for this menu item.',
+        );
+      }
+      return;
+    }
+
     _formKey.currentState!.save();
     setState(() {
       _isSaving = true;
@@ -66,12 +82,47 @@ class _AddMenuItemScreenState extends State<AddMenuItemScreen> {
 
     try {
       final menuService = Provider.of<MenuService>(context, listen: false);
+      
+      // Check if item with same name already exists
+      final existingItems = await menuService.getAllMenuItems();
+      final existingItem = existingItems.firstWhere(
+        (item) => item.name.toLowerCase().trim() == _nameController.text.toLowerCase().trim(),
+        orElse: () => MenuItem(
+          name: '',
+          description: '',
+          price: 0,
+          categoryId: '',
+        ),
+      );
+      
+      if (existingItem.name.isNotEmpty) {
+        setState(() {
+          _isSaving = false;
+          _error = 'An item with this name already exists. Please use a different name.';
+        });
+        if (mounted) {
+          await ErrorDialogHelper.showError(
+            context,
+            title: 'Item Already Exists',
+            message: 'An item with the name "${_nameController.text}" already exists. Please use a different name.',
+          );
+        }
+        return;
+      }
+      
+      // Create new item with explicit ID generation
       final newItem = MenuItem(
-        name: _nameController.text,
-        description: _descriptionController.text,
+        id: const Uuid().v4(), // Explicitly generate new UUID
+        name: _nameController.text.trim(),
+        description: _descriptionController.text.trim().isEmpty ? '' : _descriptionController.text.trim(),
         price: double.parse(_priceController.text),
         categoryId: _selectedCategory!.id,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
       );
+      
+      debugPrint('🎯 Attempting to add menu item: ${newItem.name} with category: ${newItem.categoryId}');
+      
       await menuService.addMenuItem(newItem);
       setState(() {
         _isSaving = false;
@@ -90,11 +141,25 @@ class _AddMenuItemScreenState extends State<AddMenuItemScreen> {
         _isSaving = false;
         _error = 'Error saving menu item: $e';
       });
+      
+      debugPrint('❌ Menu item addition error: $e');
+      
       if (mounted) {
+        String errorMessage = 'Failed to save menu item: $e';
+        
+        // Provide more specific error messages
+        if (e.toString().contains('Category with ID') && e.toString().contains('does not exist')) {
+          errorMessage = 'The selected category no longer exists. Please refresh and select a valid category.';
+        } else if (e.toString().contains('constraint') || e.toString().contains('foreign key')) {
+          errorMessage = 'Database constraint error. Please ensure all required fields are valid and try again.';
+        } else if (e.toString().contains('database')) {
+          errorMessage = 'Database error. Please check your connection and try again.';
+        }
+        
         await ErrorDialogHelper.showError(
           context,
           title: 'Error Saving Menu Item',
-          message: 'Failed to save menu item: $e',
+          message: errorMessage,
         );
       }
     }

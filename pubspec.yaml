@@ -77,6 +77,7 @@ dependencies:
   
   # Collection utilities (required by multiple services)
   collection: ^1.18.0
+  path_provider: ^2.1.4
 
 dev_dependencies:
   # Code generation for Hive

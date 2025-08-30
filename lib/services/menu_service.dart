@@ -358,9 +358,25 @@ class MenuService with ChangeNotifier {
         );
 
         if (existing.isEmpty) {
-          // Insert new menu item
-          await _databaseService.insert('menu_items', itemData);
-          _menuItems.add(item);
+          // Insert new menu item with better error handling
+          try {
+            await _databaseService.insert('menu_items', itemData);
+            _menuItems.add(item);
+            debugPrint('✅ Menu item inserted successfully: ${item.name}');
+          } catch (dbError) {
+            debugPrint('❌ Database insert error for menu item ${item.name}: $dbError');
+            debugPrint('📊 Item data: $itemData');
+            
+            // Check if it's a constraint error
+            if (dbError.toString().contains('constraint') || dbError.toString().contains('foreign key')) {
+              throw MenuServiceException(
+                'Database constraint error. Please ensure the category exists and all required fields are valid.',
+                operation: 'save_menu_item',
+                originalError: dbError
+              );
+            }
+            rethrow;
+          }
         } else {
           // Update existing menu item
           await _databaseService.update(
@@ -378,7 +394,7 @@ class MenuService with ChangeNotifier {
 
       _sortMenuItems();
       
-      // Sync to Firebase using unified sync service
+      // Sync to Firebase using unified sync service (non-blocking)
       try {
         final syncService = UnifiedSyncService();
         if (syncService.isConnected) {
@@ -386,6 +402,7 @@ class MenuService with ChangeNotifier {
         }
       } catch (e) {
         debugPrint('⚠️ Failed to sync menu item to Firebase: $e');
+        // Don't throw - local save was successful
       }
       
       // Safely notify listeners
@@ -401,7 +418,14 @@ class MenuService with ChangeNotifier {
         debugPrint('Error scheduling notification during menu item save: $e');
       }
     } catch (e) {
-      throw MenuServiceException('Failed to save menu item', operation: 'save_menu_item', originalError: e);
+      if (e is MenuServiceException) {
+        rethrow;
+      }
+      throw MenuServiceException(
+        'Failed to save menu item: ${item.name}',
+        operation: 'save_menu_item',
+        originalError: e
+      );
     }
   }
 
@@ -410,11 +434,41 @@ class MenuService with ChangeNotifier {
   /// [item] is the menu item to add.
   /// Throws [MenuServiceException] if adding fails.
   Future<void> addMenuItem(MenuItem item) async {
-    await saveMenuItem(item);
-    
-    // ENHANCEMENT: Automatic Firebase sync trigger
-    final unifiedSyncService = UnifiedSyncService();
-    await unifiedSyncService.syncMenuItemToFirebase(item, 'created');
+    try {
+      // Validate that the category exists before adding the menu item
+      final categories = await getCategories();
+      final categoryExists = categories.any((cat) => cat.id == item.categoryId);
+      
+      if (!categoryExists) {
+        throw MenuServiceException(
+          'Category with ID ${item.categoryId} does not exist. Please select a valid category.',
+          operation: 'add_menu_item',
+          originalError: Exception('Invalid category_id')
+        );
+      }
+      
+      await saveMenuItem(item);
+      
+      // ENHANCEMENT: Automatic Firebase sync trigger
+      try {
+        final unifiedSyncService = UnifiedSyncService();
+        await unifiedSyncService.syncMenuItemToFirebase(item, 'created');
+      } catch (e) {
+        debugPrint('⚠️ Firebase sync failed for menu item ${item.name}: $e');
+        // Don't throw here - the item was saved locally successfully
+      }
+      
+      debugPrint('✅ Menu item added successfully: ${item.name}');
+    } catch (e) {
+      if (e is MenuServiceException) {
+        rethrow;
+      }
+      throw MenuServiceException(
+        'Failed to add menu item: ${item.name}',
+        operation: 'add_menu_item',
+        originalError: e
+      );
+    }
   }
 
   /// Updates an existing menu item.

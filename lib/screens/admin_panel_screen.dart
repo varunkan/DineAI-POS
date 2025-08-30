@@ -676,7 +676,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with TickerProvider
         final newMenuItem = MenuItem(
           id: DateTime.now().millisecondsSinceEpoch.toString(),
           name: result['name']!,
-          description: result['description']!.isEmpty ? null : result['description']!,
+          description: result['description']!.isEmpty ? '' : result['description']!,
           price: result['price']!,
           categoryId: result['categoryId']!,
           tags: [],
@@ -821,7 +821,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with TickerProvider
         final menuService = Provider.of<MenuService>(context, listen: false);
         final updatedMenuItem = item.copyWith(
           name: result['name']!,
-          description: result['description']!.isEmpty ? null : result['description']!,
+          description: result['description']!.isEmpty ? '' : result['description']!,
           price: result['price']!,
           categoryId: result['categoryId']!,
         );

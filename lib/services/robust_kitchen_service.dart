@@ -198,20 +198,22 @@ class RobustKitchenService extends ChangeNotifier {
       // Step 3: Send to each assigned printer
       int totalItemsSent = 0;
       int successfulPrinters = 0;
-      
-      for (final assignment in printerAssignments) {
+      // UNIQUE printers only: print once per printer
+      final uniquePrinterIds = printerAssignments.map((a) => a.printerId).toSet();
+      for (final printerId in uniquePrinterIds) {
+        final assignment = printerAssignments.firstWhere((a) => a.printerId == printerId);
         try {
           final success = await _sendToPrinter(order, assignment, newItems);
           if (success) {
             successfulPrinters++;
-            totalItemsSent += newItems.length;
-            _printerSuccessCount[assignment.printerId] = (_printerSuccessCount[assignment.printerId] ?? 0) + 1;
+            totalItemsSent += newItems.length; // metrics: count items per printer
+            _printerSuccessCount[printerId] = (_printerSuccessCount[printerId] ?? 0) + 1;
           } else {
-            _printerFailureCount[assignment.printerId] = (_printerFailureCount[assignment.printerId] ?? 0) + 1;
+            _printerFailureCount[printerId] = (_printerFailureCount[printerId] ?? 0) + 1;
           }
         } catch (e) {
-          debugPrint('$_logTag ❌ Error sending to printer ${assignment.printerId}: $e');
-          _printerFailureCount[assignment.printerId] = (_printerFailureCount[assignment.printerId] ?? 0) + 1;
+          debugPrint('$_logTag ❌ Error sending to printer $printerId: $e');
+          _printerFailureCount[printerId] = (_printerFailureCount[printerId] ?? 0) + 1;
         }
       }
       

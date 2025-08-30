@@ -801,6 +801,17 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           );
           debugPrint('✅ Unified sync service connected to restaurant');
           
+          // CRITICAL FIX: Set required services for category sync to work
+          _unifiedSyncService!.setServices(
+            databaseService: tenantDatabase,
+            orderService: _orderService,
+            menuService: _menuService,
+            userService: _userService,
+            inventoryService: _inventoryService,
+            tableService: _tableService,
+          );
+          debugPrint('✅ Unified sync service configured with all required services');
+          
           // FIXED: Proper Firebase sync with DEBOUNCED UI updates to prevent infinite loops
           _unifiedSyncService!.setCallbacks(
             onOrdersUpdated: () {

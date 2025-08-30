@@ -5,6 +5,7 @@ import '../models/user.dart';
 import '../services/order_service.dart';
 import '../widgets/universal_navigation.dart';
 import '../widgets/loading_overlay.dart';
+import 'total_orders_report_screen.dart';
 
 class ReportsScreen extends StatefulWidget {
   final User user;
@@ -407,7 +408,7 @@ class _ReportsScreenState extends State<ReportsScreen> with TickerProviderStateM
               children: [
                 Expanded(child: _buildMetricCard('Total Revenue', '\$${_totalRevenue.toStringAsFixed(2)}', Colors.green, Icons.attach_money)),
                 const SizedBox(width: 12),
-                Expanded(child: _buildMetricCard('Total Orders', _totalOrders.toString(), Colors.blue, Icons.receipt)),
+                Expanded(child: _buildMetricCard('Total Orders', _totalOrders.toString(), Colors.blue, Icons.receipt, onTap: _openTotalOrdersDetail)),
               ],
             ),
             const SizedBox(height: 12),
@@ -556,8 +557,8 @@ class _ReportsScreenState extends State<ReportsScreen> with TickerProviderStateM
     );
   }
 
-  Widget _buildMetricCard(String title, String value, Color color, IconData icon) {
-    return Card(
+  Widget _buildMetricCard(String title, String value, Color color, IconData icon, {VoidCallback? onTap}) {
+    final card = Card(
       elevation: 2,
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -588,6 +589,24 @@ class _ReportsScreenState extends State<ReportsScreen> with TickerProviderStateM
         ),
       ),
     );
+    if (onTap == null) return card;
+    return InkWell(
+      onTap: onTap,
+      child: card,
+    );
+  }
+
+  void _openTotalOrdersDetail() {
+    try {
+      if (_filteredOrders.isEmpty) return;
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (context) => TotalOrdersReportScreen(orders: _filteredOrders),
+        ),
+      );
+    } catch (e) {
+      // Non-blocking: ignore navigation errors
+    }
   }
 
   Widget _buildTopSellingItems() {

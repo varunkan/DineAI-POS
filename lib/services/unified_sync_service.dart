@@ -604,6 +604,13 @@ class UnifiedSyncService extends ChangeNotifier {
       return;
     }
     
+    // Check if services are available
+    if (!_areServicesAvailable()) {
+      debugPrint('⚠️ Cannot sync - required services not available');
+      _onSyncError?.call('Cannot sync - required services not available');
+      return;
+    }
+    
     // Prevent multiple simultaneous syncs
     if (_isSyncing) {
       debugPrint('⚠️ Manual sync: Already syncing, skipping duplicate call');
@@ -1881,12 +1888,18 @@ class UnifiedSyncService extends ChangeNotifier {
   /// Download order from Firebase
   Future<void> _downloadOrderFromFirebase(Map<String, dynamic> orderData) async {
     try {
+      // Add null check for order service
+      if (_orderService == null) {
+        debugPrint('⚠️ OrderService not available for order sync - skipping order: ${orderData['orderNumber']}');
+        return;
+      }
+      
       final order = pos_order.Order.fromJson(orderData);
       await _orderService!.updateOrderFromFirebase(order);
       debugPrint('✅ Order downloaded from Firebase: ${order.orderNumber}');
     } catch (e) {
       debugPrint('❌ Failed to download order from Firebase: $e');
-      rethrow;
+      // Don't rethrow to prevent breaking the entire sync process
     }
   }
   
@@ -1910,12 +1923,18 @@ class UnifiedSyncService extends ChangeNotifier {
   /// Download menu item from Firebase
   Future<void> _downloadMenuItemFromFirebase(Map<String, dynamic> itemData) async {
     try {
+      // Add null check for menu service
+      if (_menuService == null) {
+        debugPrint('⚠️ MenuService not available for menu item sync - skipping item: ${itemData['name']}');
+        return;
+      }
+      
       final item = MenuItem.fromJson(itemData);
       await _menuService!.updateMenuItemFromFirebase(item);
       debugPrint('✅ Menu item downloaded from Firebase: ${item.name}');
     } catch (e) {
       debugPrint('❌ Failed to download menu item from Firebase: $e');
-      rethrow;
+      // Don't rethrow to prevent breaking the entire sync process
     }
   }
   
@@ -1939,12 +1958,18 @@ class UnifiedSyncService extends ChangeNotifier {
   /// Download user from Firebase
   Future<void> _downloadUserFromFirebase(Map<String, dynamic> userData) async {
     try {
+      // Add null check for user service
+      if (_userService == null) {
+        debugPrint('⚠️ UserService not available for user sync - skipping user: ${userData['name']}');
+        return;
+      }
+      
       final user = User.fromJson(userData);
       await _userService!.updateUserFromFirebase(user);
       debugPrint('✅ User downloaded from Firebase: ${user.name}');
     } catch (e) {
       debugPrint('❌ Failed to download user from Firebase: $e');
-      rethrow;
+      // Don't rethrow to prevent breaking the entire sync process
     }
   }
   
@@ -1968,12 +1993,18 @@ class UnifiedSyncService extends ChangeNotifier {
   /// Download inventory item from Firebase
   Future<void> _downloadInventoryItemFromFirebase(Map<String, dynamic> itemData) async {
     try {
+      // Add null check for inventory service
+      if (_inventoryService == null) {
+        debugPrint('⚠️ InventoryService not available for inventory sync - skipping item: ${itemData['name']}');
+        return;
+      }
+      
       final item = InventoryItem.fromJson(itemData);
       await _inventoryService!.updateItemFromFirebase(item);
       debugPrint('✅ Inventory item downloaded from Firebase: ${item.name}');
     } catch (e) {
       debugPrint('❌ Failed to download inventory item from Firebase: $e');
-      rethrow;
+      // Don't rethrow to prevent breaking the entire sync process
     }
   }
   
@@ -1997,12 +2028,18 @@ class UnifiedSyncService extends ChangeNotifier {
   /// Download table from Firebase
   Future<void> _downloadTableFromFirebase(Map<String, dynamic> tableData) async {
     try {
+      // Add null check for table service
+      if (_tableService == null) {
+        debugPrint('⚠️ TableService not available for table sync - skipping table: ${tableData['number']}');
+        return;
+      }
+      
       final table = Table.fromJson(tableData);
       await _tableService!.updateTableFromFirebase(table);
       debugPrint('✅ Table downloaded from Firebase: ${table.number}');
     } catch (e) {
       debugPrint('❌ Failed to download table from Firebase: $e');
-      rethrow;
+      // Don't rethrow to prevent breaking the entire sync process
     }
   }
   
@@ -2026,12 +2063,18 @@ class UnifiedSyncService extends ChangeNotifier {
   /// Download category from Firebase
   Future<void> _downloadCategoryFromFirebase(Map<String, dynamic> categoryData) async {
     try {
+      // Add null check for menu service
+      if (_menuService == null) {
+        debugPrint('⚠️ MenuService not available for category sync - skipping category: ${categoryData['name']}');
+        return;
+      }
+      
       final category = pos_category.Category.fromJson(categoryData);
       await _menuService!.updateCategoryFromFirebase(category);
       debugPrint('✅ Category downloaded from Firebase: ${category.name}');
     } catch (e) {
       debugPrint('❌ Failed to download category from Firebase: $e');
-      rethrow;
+      // Don't rethrow to prevent breaking the entire sync process
     }
   }
   
@@ -2721,11 +2764,24 @@ class UnifiedSyncService extends ChangeNotifier {
     }
   }
 
-
-
-
-
-
-
+  /// Check if all required services are available for sync
+  bool _areServicesAvailable() {
+    final missingServices = <String>[];
+    
+    if (_databaseService == null) missingServices.add('DatabaseService');
+    if (_orderService == null) missingServices.add('OrderService');
+    if (_menuService == null) missingServices.add('MenuService');
+    if (_userService == null) missingServices.add('UserService');
+    if (_inventoryService == null) missingServices.add('InventoryService');
+    if (_tableService == null) missingServices.add('TableService');
+    
+    if (missingServices.isNotEmpty) {
+      debugPrint('⚠️ Missing services for sync: ${missingServices.join(', ')}');
+      debugPrint('💡 Call setServices() to provide service instances before syncing');
+      return false;
+    }
+    
+    return true;
+  }
 
 } 

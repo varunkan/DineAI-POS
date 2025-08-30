@@ -73,6 +73,7 @@ class MultiTenantAuthService extends ChangeNotifier {
   // ZERO RISK: Feature flags for new functionality
   static const bool _enableEnhancedOrderItemsSync = true; // Can be set to false to disable
   static const bool _enableSafeWrappers = true; // Can be set to false to disable
+  static const bool _nonBlockingLoginSync = true; // Decouple sync from login completion
   
   factory MultiTenantAuthService() {
     _instance ??= MultiTenantAuthService._internal();
@@ -1571,14 +1572,35 @@ class MultiTenantAuthService extends ChangeNotifier {
         // This ensures all data is up-to-date when the user enters the app
         try {
           _addProgressMessage('🔄 Database connected, starting comprehensive sync...');
-          await _performTimestampBasedSync(restaurant);
-          _addProgressMessage('✅ Comprehensive sync completed successfully');
+          if (_nonBlockingLoginSync) {
+            // Fire-and-forget with timeout to avoid blocking login
+            unawaited(_performTimestampBasedSync(restaurant).timeout(
+              const Duration(seconds: 10),
+              onTimeout: () {
+                _addProgressMessage('⏱️ Sync continuing in background');
+                return;
+              },
+            ));
+          } else {
+            await _performTimestampBasedSync(restaurant);
+            _addProgressMessage('✅ Comprehensive sync completed successfully');
+          }
           
           // ADDITIONAL: Trigger the working comprehensive sync service for orders
           try {
             _addProgressMessage('🔄 Triggering working comprehensive sync service for orders...');
-            await triggerWorkingComprehensiveSync(restaurant);
-            _addProgressMessage('✅ Working comprehensive sync completed successfully');
+            if (_nonBlockingLoginSync) {
+              unawaited(triggerWorkingComprehensiveSync(restaurant).timeout(
+                const Duration(seconds: 8),
+                onTimeout: () {
+                  _addProgressMessage('⏱️ Order sync continuing in background');
+                  return;
+                },
+              ));
+            } else {
+              await triggerWorkingComprehensiveSync(restaurant);
+              _addProgressMessage('✅ Working comprehensive sync completed successfully');
+            }
           } catch (comprehensiveSyncError) {
             _addProgressMessage('⚠️ Working comprehensive sync completed with warnings: $comprehensiveSyncError');
             debugPrint('⚠️ Working comprehensive sync warning: $comprehensiveSyncError');
@@ -1596,7 +1618,11 @@ class MultiTenantAuthService extends ChangeNotifier {
               userRole: app_user.UserRole.admin,
               loginTime: DateTime.now(),
             ));
-            await unifiedSyncService.autoSyncOnDeviceLogin();
+            if (_nonBlockingLoginSync) {
+              unawaited(unifiedSyncService.autoSyncOnDeviceLogin());
+            } else {
+              await unifiedSyncService.autoSyncOnDeviceLogin();
+            }
             _addProgressMessage('✅ Unified sync service completed');
           } catch (unifiedSyncError) {
             _addProgressMessage('⚠️ Unified sync completed with warnings: $unifiedSyncError');
@@ -1637,14 +1663,28 @@ class MultiTenantAuthService extends ChangeNotifier {
             // ENHANCEMENT: Also sync for regular users
             try {
               _addProgressMessage('🔄 Syncing user data...');
-              await _performTimestampBasedSync(restaurant);
-              _addProgressMessage('✅ User data sync completed');
+              if (_nonBlockingLoginSync) {
+                unawaited(_performTimestampBasedSync(restaurant).timeout(
+                  const Duration(seconds: 10),
+                  onTimeout: () { _addProgressMessage('⏱️ User sync continuing in background'); return; },
+                ));
+              } else {
+                await _performTimestampBasedSync(restaurant);
+                _addProgressMessage('✅ User data sync completed');
+              }
               
               // ADDITIONAL: Trigger the working comprehensive sync service for orders
               try {
                 _addProgressMessage('🔄 Triggering working comprehensive sync service for orders...');
-                await triggerWorkingComprehensiveSync(restaurant);
-                _addProgressMessage('✅ Working comprehensive sync completed for user');
+                if (_nonBlockingLoginSync) {
+                  unawaited(triggerWorkingComprehensiveSync(restaurant).timeout(
+                    const Duration(seconds: 8),
+                    onTimeout: () { _addProgressMessage('⏱️ Order sync continuing in background'); return; },
+                  ));
+                } else {
+                  await triggerWorkingComprehensiveSync(restaurant);
+                  _addProgressMessage('✅ Working comprehensive sync completed for user');
+                }
               } catch (comprehensiveSyncError) {
                 _addProgressMessage('⚠️ Working comprehensive sync completed with warnings: $comprehensiveSyncError');
                 debugPrint('⚠️ Working comprehensive sync warning: $comprehensiveSyncError');
@@ -1665,7 +1705,11 @@ class MultiTenantAuthService extends ChangeNotifier {
                   ),
                   loginTime: DateTime.now(),
                 ));
-                await unifiedSyncService.autoSyncOnDeviceLogin();
+                if (_nonBlockingLoginSync) {
+                  unawaited(unifiedSyncService.autoSyncOnDeviceLogin());
+                } else {
+                  await unifiedSyncService.autoSyncOnDeviceLogin();
+                }
                 _addProgressMessage('✅ Unified sync service completed for user');
               } catch (unifiedSyncError) {
                 _addProgressMessage('⚠️ Unified sync completed with warnings: $unifiedSyncError');
@@ -3473,13 +3517,31 @@ class MultiTenantAuthService extends ChangeNotifier {
       if (db == null) return;
       
       final now = DateTime.now();
-      await db.update(
+      
+      // First try to update by restaurant id
+      int updatedRows = await db.update(
         'restaurants',
         {'updated_at': now.toIso8601String()},
         where: 'id = ?',
         whereArgs: [restaurant.id],
       );
-      _addProgressMessage('✅ Restaurant sync time updated to ${now.toIso8601String()}');
+      
+      // Fallback: some records may key on email; try updating by email if id didn't match
+      if (updatedRows == 0) {
+        updatedRows = await db.update(
+          'restaurants',
+          {'updated_at': now.toIso8601String()},
+          where: 'email = ?',
+          whereArgs: [restaurant.email],
+        );
+      }
+      
+      if (updatedRows > 0) {
+        _addProgressMessage('✅ Restaurant sync time updated to ${now.toIso8601String()}');
+      } else {
+        // Not critical; no matching record to update
+        _addProgressMessage('ℹ️ Restaurant sync time not updated (no matching record)');
+      }
     } catch (e) {
       _addProgressMessage('⚠️ Failed to update restaurant sync time: $e');
     }

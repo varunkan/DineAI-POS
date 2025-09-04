@@ -292,8 +292,10 @@ class KitchenReceiptPreviewDialog extends StatelessWidget {
         _buildReceiptLine('ORDER #${order.orderNumber}', bold: true, fontSize: 60), // 20*3
         const SizedBox(height: 36), // 12*3
         
-        // Server & Time Info
+        // Server, Table & Time Info
         _buildReceiptRow('Server:', serverName, bold: true, fontSize: 36), // 12*3
+        if (order.tableId != null && order.tableId!.isNotEmpty)
+          _buildReceiptRow('Table:', _getTableNumber(order.tableId!), bold: true, fontSize: 36), // 12*3
         _buildReceiptRow('Date:', dateFormat.format(now), fontSize: 36), // 12*3
         _buildReceiptRow('Time:', timeFormat.format(now), fontSize: 36), // 12*3
         _buildReceiptRow('Ready by:', timeFormat.format(estimatedReadyTime), 
@@ -355,8 +357,10 @@ class KitchenReceiptPreviewDialog extends StatelessWidget {
         _buildMobileReceiptLine('ORDER #${order.orderNumber}', bold: true, fontSize: 20),
         const SizedBox(height: 12),
         
-        // Server & Time Info
+        // Server, Table & Time Info
         _buildMobileReceiptRow('Server:', serverName, bold: true, fontSize: 14),
+        if (order.tableId != null && order.tableId!.isNotEmpty)
+          _buildMobileReceiptRow('Table:', _getTableNumber(order.tableId!), bold: true, fontSize: 14),
         _buildMobileReceiptRow('Date:', dateFormat.format(now), fontSize: 14),
         _buildMobileReceiptRow('Time:', timeFormat.format(now), fontSize: 14),
         _buildMobileReceiptRow('Ready by:', timeFormat.format(estimatedReadyTime), 

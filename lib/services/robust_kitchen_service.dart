@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
@@ -378,6 +379,83 @@ class RobustKitchenService extends ChangeNotifier {
     }
   }
   
+  /// Resolve category names for items using the database; falls back gracefully
+  Future<Map<String, String>> _resolveCategoryNamesFor(List<OrderItem> items) async {
+    final Map<String, String> result = {};
+    try {
+      final Set<String> ids = items.map((it) => it.menuItem.categoryId).toSet();
+      for (final id in ids) {
+        try {
+          final rows = await _databaseService.query(
+            'categories',
+            where: 'id = ?',
+            whereArgs: [id],
+            limit: 1,
+          );
+          if (rows.isNotEmpty) {
+            final name = (rows.first['name'] ?? '').toString();
+            result[id] = name.isNotEmpty ? name : 'Other Items';
+          } else {
+            result[id] = 'Other Items';
+          }
+        } catch (e) {
+          debugPrint('$_logTag ⚠️ Category lookup failed for $id: $e');
+          result[id] = 'Other Items';
+        }
+      }
+    } catch (e) {
+      debugPrint('$_logTag ⚠️ Category name resolution failed: $e');
+    }
+    return result;
+  }
+
+  /// Resolve guests (number of people) for an order from preferences or table metadata/capacity
+  Future<int?> _resolveGuestsForOrder(Order order) async {
+    try {
+      if (order.preferences.containsKey('numberOfPeople')) {
+        final val = order.preferences['numberOfPeople'];
+        if (val is int) return val;
+        final parsed = int.tryParse(val.toString());
+        if (parsed != null) return parsed;
+      }
+      if (order.tableId != null && order.tableId!.isNotEmpty) {
+        final rows = await _databaseService.query(
+          'tables',
+          where: 'id = ?',
+          whereArgs: [order.tableId],
+          limit: 1,
+        );
+        if (rows.isNotEmpty) {
+          final row = rows.first;
+          // metadata may be stored as Map or JSON string
+          dynamic metadata = row['metadata'];
+          Map<String, dynamic>? metaMap;
+          if (metadata is Map<String, dynamic>) {
+            metaMap = metadata;
+          } else if (metadata is String) {
+            try {
+              metaMap = Map<String, dynamic>.from(jsonDecode(metadata));
+            } catch (_) {}
+          }
+          if (metaMap != null) {
+            final metaGuests = metaMap['numberOfPeople'] ?? metaMap['guests'];
+            if (metaGuests != null) {
+              final parsed = int.tryParse(metaGuests.toString());
+              if (parsed != null) return parsed;
+            }
+          }
+          if (row['capacity'] != null) {
+            final cap = int.tryParse(row['capacity'].toString());
+            if (cap != null) return cap;
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('$_logTag ⚠️ Guest resolution failed: $e');
+    }
+    return null;
+  }
+
   /// Send order to specific printer
   Future<bool> _sendToPrinter(Order order, PrinterAssignment assignment, List<OrderItem> items, {String? serverName}) async {
     try {
@@ -391,6 +469,14 @@ class RobustKitchenService extends ChangeNotifier {
         debugPrint('$_logTag ⚠️ Failed to resolve category names: $e');
       }
       
+      // Resolve guests for order (safe fallback)
+      int? guests;
+      try {
+        guests = await _resolveGuestsForOrder(order);
+      } catch (e) {
+        debugPrint('$_logTag ⚠️ Failed to resolve guests: $e');
+      }
+      
       // Generate kitchen ticket content
       final content = _generateKitchenTicket(
         order,
@@ -398,6 +484,7 @@ class RobustKitchenService extends ChangeNotifier {
         assignment,
         serverName: serverName,
         categoryNameById: categoryNameById,
+        guests: guests,
       );
       
       // Determine address and type
@@ -440,38 +527,8 @@ class RobustKitchenService extends ChangeNotifier {
     }
   }
 
-  /// Resolve category names for items using the database; falls back gracefully
-  Future<Map<String, String>> _resolveCategoryNamesFor(List<OrderItem> items) async {
-    final Map<String, String> result = {};
-    try {
-      final Set<String> ids = items.map((it) => it.menuItem.categoryId).toSet();
-      for (final id in ids) {
-        try {
-          final rows = await _databaseService.query(
-            'categories',
-            where: 'id = ?',
-            whereArgs: [id],
-            limit: 1,
-          );
-          if (rows.isNotEmpty) {
-            final name = (rows.first['name'] ?? '').toString();
-            result[id] = name.isNotEmpty ? name : 'Other Items';
-          } else {
-            result[id] = 'Other Items';
-          }
-        } catch (e) {
-          debugPrint('$_logTag ⚠️ Category lookup failed for $id: $e');
-          result[id] = 'Other Items';
-        }
-      }
-    } catch (e) {
-      debugPrint('$_logTag ⚠️ Category name resolution failed: $e');
-    }
-    return result;
-  }
-
   /// Generate kitchen ticket content
-  String _generateKitchenTicket(Order order, List<OrderItem> items, PrinterAssignment assignment, {String? serverName, Map<String, String>? categoryNameById}) {
+  String _generateKitchenTicket(Order order, List<OrderItem> items, PrinterAssignment assignment, {String? serverName, Map<String, String>? categoryNameById, int? guests}) {
     // Preview-aligned formatting toggle (no emojis, same separators and layout as preview)
     const bool _usePreviewAlignedKitchenFormat = true;
 
@@ -519,9 +576,9 @@ class RobustKitchenService extends ChangeNotifier {
         add([0x1D, 0x21, 0x00]);
         final _server = (serverName != null && serverName.trim().isNotEmpty) ? serverName : (order.customerName ?? 'N/A');
         final _table = (order.tableId != null && order.tableId!.isNotEmpty) ? order.tableId! : 'N/A';
-        final _guests = (order.preferences.containsKey('numberOfPeople')) ? order.preferences['numberOfPeople'].toString() : '';
+        final _guestsStr = (guests != null && guests > 0) ? '  •  Guests: ${guests.toString()}' : '';
         line('Server: '+_server);
-        line('Table: '+_table + (_guests.isNotEmpty ? '  •  Guests: '+_guests : ''));
+        line('Table: '+_table + _guestsStr);
         line('Date: $mon/$dd/$yyyy');
         line('Time: $hh:$mm');
         add([0x1B, 0x45, 0x01]); // Bold on for Ready by

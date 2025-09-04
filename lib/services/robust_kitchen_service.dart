@@ -428,62 +428,157 @@ class RobustKitchenService extends ChangeNotifier {
   
   /// Generate kitchen ticket content
   String _generateKitchenTicket(Order order, List<OrderItem> items, PrinterAssignment assignment) {
+    // Preview-aligned formatting toggle (no emojis, same separators and layout as preview)
+    const bool _usePreviewAlignedKitchenFormat = true;
+
+    if (_usePreviewAlignedKitchenFormat) {
+      try {
+        final List<int> cmds = [];
+        void add(List<int> c) => cmds.addAll(c);
+        void text(String s) => cmds.addAll(s.codeUnits);
+        void line([String s = ""]) { if (s.isNotEmpty) text(s); add([0x0A]); }
+
+        // Initialize printer
+        add([0x1B, 0x40]); // ESC @
+        // Smaller base font (Font B) for better scaling, normalized later by printer
+        add([0x1B, 0x4D, 0x00]); // ESC M 0 (Font B)
+
+        // Header separators
+        add([0x1B, 0x61, 0x01]); // Center
+        add([0x1D, 0x21, 0x11]); // Double size
+        line('================================');
+        // Order type line (e.g., DINE IN ORDER)
+        final orderType = order.type.name.toUpperCase().replaceAll('_', ' ');
+        line('$orderType ORDER');
+        line('================================');
+        add([0x1D, 0x21, 0x00]); // Normal size
+        line();
+
+        // Order details
+        add([0x1B, 0x61, 0x00]); // Left
+        add([0x1B, 0x45, 0x01]); // Bold on
+        add([0x1D, 0x21, 0x11]); // Double size
+        line('ORDER #${order.orderNumber}');
+        add([0x1B, 0x45, 0x00]); // Bold off
+
+        final now = DateTime.now();
+        final hh = now.hour.toString().padLeft(2, '0');
+        final mm = now.minute.toString().padLeft(2, '0');
+        final dd = now.day.toString().padLeft(2, '0');
+        final mon = now.month.toString().padLeft(2, '0');
+        final yyyy = now.year.toString();
+        final ready = now.add(const Duration(minutes: 20));
+        final rh = ready.hour.toString().padLeft(2, '0');
+        final rm = ready.minute.toString().padLeft(2, '0');
+
+        // Use normal size for detail rows for better readability
+        add([0x1D, 0x21, 0x00]);
+        line('Server: ${order.customerName ?? 'N/A'}');
+        line('Date: $mon/$dd/$yyyy');
+        line('Time: $hh:$mm');
+        add([0x1B, 0x45, 0x01]); // Bold on for Ready by
+        line('Ready by: $rh:$rm');
+        add([0x1B, 0x45, 0x00]);
+        line();
+
+        // Separator
+        add([0x1B, 0x61, 0x01]); // Center
+        add([0x1D, 0x21, 0x11]); // Double size
+        line('================================');
+        line();
+
+        // Items (no emojis, align with preview)
+        add([0x1B, 0x61, 0x00]); // Left
+        for (final it in items) {
+          // Item line: "qtyx name" in bold
+          add([0x1B, 0x45, 0x01]); // Bold on
+          add([0x1D, 0x21, 0x11]); // Double size
+          line('${it.quantity}x ${it.menuItem.name}');
+          add([0x1B, 0x45, 0x00]); // Bold off
+          add([0x1D, 0x21, 0x00]); // Normal size
+
+          // Special instructions
+          if (it.specialInstructions != null && it.specialInstructions!.isNotEmpty) {
+            add([0x1B, 0x45, 0x01]); // Bold on
+            line('  → ${it.specialInstructions!}');
+            add([0x1B, 0x45, 0x00]); // Bold off
+          }
+
+          // Optional notes/spice
+          if (it.notes != null && it.notes!.isNotEmpty) {
+            line('  → ${it.notes!}');
+          }
+
+          line();
+        }
+
+        // Separator
+        add([0x1B, 0x61, 0x01]);
+        add([0x1D, 0x21, 0x11]);
+        line('================================');
+        add([0x1D, 0x21, 0x00]);
+
+        // Order-level special instructions
+        if (order.specialInstructions != null && order.specialInstructions!.isNotEmpty) {
+          line();
+          add([0x1B, 0x45, 0x01]); // Bold on
+          add([0x1D, 0x21, 0x11]); // Emphasize
+          line('SPECIAL INSTRUCTIONS:');
+          add([0x1B, 0x45, 0x00]);
+          add([0x1D, 0x21, 0x00]);
+          line(order.specialInstructions!);
+          line();
+        }
+
+        // Feed and cut
+        add([0x0A, 0x0A, 0x0A]);
+        add([0x1D, 0x56, 0x00]); // Full cut
+
+        return String.fromCharCodes(cmds);
+      } catch (e) {
+        debugPrint('$_logTag ⚠️ Failed to build preview-aligned ESC/POS: $e');
+        // Fallback continues below
+      }
+    }
+
+    // Fallback: existing simple text version with ESC/POS wrapper
     final buffer = StringBuffer();
-    
-    // Header
     buffer.writeln('=' * 40);
     buffer.writeln('KITCHEN TICKET');
     buffer.writeln('=' * 40);
     buffer.writeln('Order: ${order.orderNumber}');
-         buffer.writeln('Table: ${order.tableId ?? 'N/A'}');
-     buffer.writeln('Time: ${DateTime.now().toString().substring(11, 19)}');
-     buffer.writeln('Type: ${order.type.name.toUpperCase()}');
+    buffer.writeln('Table: ${order.tableId ?? 'N/A'}');
+    buffer.writeln('Time: ${DateTime.now().toString().substring(11, 19)}');
+    buffer.writeln('Type: ${order.type.name.toUpperCase()}');
     buffer.writeln('');
-    
-    // Items
+
     buffer.writeln('ITEMS:');
     buffer.writeln('-' * 20);
-         for (final item in items) {
-       buffer.writeln('${item.quantity}x ${item.menuItem.name}');
-       if (item.notes?.isNotEmpty == true) {
-         buffer.writeln('  Notes: ${item.notes}');
-       }
-     }
+    for (final item in items) {
+      buffer.writeln('${item.quantity}x ${item.menuItem.name}');
+      if (item.notes?.isNotEmpty == true) {
+        buffer.writeln('  Notes: ${item.notes}');
+      }
+    }
     buffer.writeln('');
-    
-    // Footer
+
     buffer.writeln('=' * 40);
     buffer.writeln('Printer: ${assignment.printerId}');
     buffer.writeln('=' * 40);
-    
-    // Feature flag: triple-size all kitchen ticket text via ESC/POS
-    const bool _enableTripleSizedKitchenTicketAll = true; // Emergency toggle
-    final plainText = buffer.toString();
-    
-    if (!_enableTripleSizedKitchenTicketAll) {
-      return plainText;
-    }
-    
+
+    // Wrap fallback in ESC/POS with double-size header
     try {
       final bytes = <int>[];
-      // Initialize printer and set formatting
-      bytes.addAll([0x1B, 0x40]); // ESC @ (Initialize)
-      bytes.addAll([0x1B, 0x61, 0x00]); // ESC a 0 (Left align)
-      bytes.addAll([0x1B, 0x45, 0x01]); // ESC E 1 (Bold on)
-      bytes.addAll([0x1D, 0x21, 0x11]); // GS ! 0x11 (Double width and height)
-      
-      // Ticket content
-      bytes.addAll(plainText.codeUnits);
-      
-      // Restore defaults (do not block if unsupported)
-      bytes.addAll([0x1B, 0x45, 0x00]); // ESC E 0 (Bold off)
-      bytes.addAll([0x1D, 0x21, 0x00]); // GS ! 0x00 (Normal size)
-      
+      bytes.addAll([0x1B, 0x40]);
+      bytes.addAll([0x1B, 0x61, 0x00]);
+      bytes.addAll([0x1B, 0x45, 0x01]);
+      bytes.addAll([0x1D, 0x21, 0x11]);
+      bytes.addAll(buffer.toString().codeUnits);
+      bytes.addAll([0x1B, 0x45, 0x00]);
+      bytes.addAll([0x1D, 0x21, 0x00]);
       return String.fromCharCodes(bytes);
-    } catch (e) {
-      // Fallback to plain text to preserve existing functionality
-      debugPrint('$_logTag ⚠️ Failed to apply triple-size ESC/POS: $e');
-      return plainText;
+    } catch (_) {
+      return buffer.toString();
     }
   }
   

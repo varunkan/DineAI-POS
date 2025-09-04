@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../models/order.dart';
 import '../services/menu_service.dart';
+import '../services/database_service.dart';
 
 class KitchenReceiptPreviewDialog extends StatelessWidget {
   final Order order;
@@ -268,6 +269,38 @@ class KitchenReceiptPreviewDialog extends StatelessWidget {
     }
   }
 
+  Future<int?> _resolveGuests(BuildContext context) async {
+    try {
+      if (order.preferences.containsKey('numberOfPeople')) {
+        final val = order.preferences['numberOfPeople'];
+        if (val is int) return val;
+        final parsed = int.tryParse(val.toString());
+        if (parsed != null) return parsed;
+      }
+      if (order.tableId != null && order.tableId!.isNotEmpty) {
+        final db = Provider.of<DatabaseService>(context, listen: false);
+        final rows = await db.query('tables', where: 'id = ?', whereArgs: [order.tableId], limit: 1);
+        if (rows.isNotEmpty) {
+          final row = rows.first;
+          // Prefer explicit guests metadata if present, else capacity
+          if (row['metadata'] is Map<String, dynamic>) {
+            final meta = Map<String, dynamic>.from(row['metadata']);
+            final metaGuests = meta['numberOfPeople'] ?? meta['guests'];
+            if (metaGuests != null) {
+              final parsed = int.tryParse(metaGuests.toString());
+              if (parsed != null) return parsed;
+            }
+          }
+          if (row['capacity'] != null) {
+            final cap = int.tryParse(row['capacity'].toString());
+            if (cap != null) return cap;
+          }
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
   Widget _buildReceiptContent(BuildContext context) {
     final menuService = Provider.of<MenuService>(context, listen: false);
     final now = DateTime.now();
@@ -296,8 +329,15 @@ class KitchenReceiptPreviewDialog extends StatelessWidget {
         _buildReceiptRow('Server:', serverName, bold: true, fontSize: 36), // 12*3
         if (order.tableId != null && order.tableId!.isNotEmpty)
           _buildReceiptRow('Table:', _getTableNumber(order.tableId!), bold: true, fontSize: 36), // 12*3
-        if (order.preferences.containsKey('numberOfPeople'))
-          _buildReceiptRow('Guests:', order.preferences['numberOfPeople'].toString(), bold: true, fontSize: 36), // 12*3
+        FutureBuilder<int?>(
+          future: _resolveGuests(context),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.done && snapshot.data != null && snapshot.data! > 0) {
+              return _buildReceiptRow('Guests:', snapshot.data!.toString(), bold: true, fontSize: 36);
+            }
+            return const SizedBox.shrink();
+          },
+        ),
         _buildReceiptRow('Date:', dateFormat.format(now), fontSize: 36), // 12*3
         _buildReceiptRow('Time:', timeFormat.format(now), fontSize: 36), // 12*3
         _buildReceiptRow('Ready by:', timeFormat.format(estimatedReadyTime), 
@@ -363,8 +403,15 @@ class KitchenReceiptPreviewDialog extends StatelessWidget {
         _buildMobileReceiptRow('Server:', serverName, bold: true, fontSize: 14),
         if (order.tableId != null && order.tableId!.isNotEmpty)
           _buildMobileReceiptRow('Table:', _getTableNumber(order.tableId!), bold: true, fontSize: 14),
-        if (order.preferences.containsKey('numberOfPeople'))
-          _buildMobileReceiptRow('Guests:', order.preferences['numberOfPeople'].toString(), bold: true, fontSize: 14),
+        FutureBuilder<int?>(
+          future: _resolveGuests(context),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.done && snapshot.data != null && snapshot.data! > 0) {
+              return _buildMobileReceiptRow('Guests:', snapshot.data!.toString(), bold: true, fontSize: 14);
+            }
+            return const SizedBox.shrink();
+          },
+        ),
         _buildMobileReceiptRow('Date:', dateFormat.format(now), fontSize: 14),
         _buildMobileReceiptRow('Time:', timeFormat.format(now), fontSize: 14),
         _buildMobileReceiptRow('Ready by:', timeFormat.format(estimatedReadyTime), 

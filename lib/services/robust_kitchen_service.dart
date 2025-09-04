@@ -519,8 +519,9 @@ class RobustKitchenService extends ChangeNotifier {
         add([0x1D, 0x21, 0x00]);
         final _server = (serverName != null && serverName.trim().isNotEmpty) ? serverName : (order.customerName ?? 'N/A');
         final _table = (order.tableId != null && order.tableId!.isNotEmpty) ? order.tableId! : 'N/A';
+        final _guests = (order.preferences.containsKey('numberOfPeople')) ? order.preferences['numberOfPeople'].toString() : '';
         line('Server: '+_server);
-        line('Table: '+_table);
+        line('Table: '+_table + (_guests.isNotEmpty ? '  •  Guests: '+_guests : ''));
         line('Date: $mon/$dd/$yyyy');
         line('Time: $hh:$mm');
         add([0x1B, 0x45, 0x01]); // Bold on for Ready by

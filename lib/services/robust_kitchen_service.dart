@@ -383,8 +383,22 @@ class RobustKitchenService extends ChangeNotifier {
     try {
       debugPrint('$_logTag 🖨️ Sending to printer: ${assignment.printerId}');
       
+      // Resolve category names for items (safe, with fallbacks)
+      Map<String, String> categoryNameById = {};
+      try {
+        categoryNameById = await _resolveCategoryNamesFor(items);
+      } catch (e) {
+        debugPrint('$_logTag ⚠️ Failed to resolve category names: $e');
+      }
+      
       // Generate kitchen ticket content
-      final content = _generateKitchenTicket(order, items, assignment, serverName: serverName);
+      final content = _generateKitchenTicket(
+        order,
+        items,
+        assignment,
+        serverName: serverName,
+        categoryNameById: categoryNameById,
+      );
       
       // Determine address and type
       final String address = (assignment.printerAddress.isNotEmpty)
@@ -425,9 +439,39 @@ class RobustKitchenService extends ChangeNotifier {
       return false;
     }
   }
-  
+
+  /// Resolve category names for items using the database; falls back gracefully
+  Future<Map<String, String>> _resolveCategoryNamesFor(List<OrderItem> items) async {
+    final Map<String, String> result = {};
+    try {
+      final Set<String> ids = items.map((it) => it.menuItem.categoryId).toSet();
+      for (final id in ids) {
+        try {
+          final rows = await _databaseService.query(
+            'categories',
+            where: 'id = ?',
+            whereArgs: [id],
+            limit: 1,
+          );
+          if (rows.isNotEmpty) {
+            final name = (rows.first['name'] ?? '').toString();
+            result[id] = name.isNotEmpty ? name : 'Other Items';
+          } else {
+            result[id] = 'Other Items';
+          }
+        } catch (e) {
+          debugPrint('$_logTag ⚠️ Category lookup failed for $id: $e');
+          result[id] = 'Other Items';
+        }
+      }
+    } catch (e) {
+      debugPrint('$_logTag ⚠️ Category name resolution failed: $e');
+    }
+    return result;
+  }
+
   /// Generate kitchen ticket content
-  String _generateKitchenTicket(Order order, List<OrderItem> items, PrinterAssignment assignment, {String? serverName}) {
+  String _generateKitchenTicket(Order order, List<OrderItem> items, PrinterAssignment assignment, {String? serverName, Map<String, String>? categoryNameById}) {
     // Preview-aligned formatting toggle (no emojis, same separators and layout as preview)
     const bool _usePreviewAlignedKitchenFormat = true;
 
@@ -490,29 +534,67 @@ class RobustKitchenService extends ChangeNotifier {
         line('================================');
         line();
 
-        // Items (no emojis, align with preview)
-        add([0x1B, 0x61, 0x00]); // Left
-        for (final it in items) {
-          // Item line: "qtyx name" in bold
-          add([0x1B, 0x45, 0x01]); // Bold on
-          add([0x1D, 0x21, 0x11]); // Double size
-          line('${it.quantity}x ${it.menuItem.name}');
-          add([0x1B, 0x45, 0x00]); // Bold off
-          add([0x1D, 0x21, 0x00]); // Normal size
-
-          // Special instructions
-          if (it.specialInstructions != null && it.specialInstructions!.isNotEmpty) {
+        // Items grouped by category (align with preview)
+        const bool _groupByCategory = true;
+        if (_groupByCategory && categoryNameById != null && categoryNameById.isNotEmpty) {
+          // Build grouping map
+          final Map<String, List<OrderItem>> grouped = {};
+          for (final it in items) {
+            final name = categoryNameById[it.menuItem.categoryId] ?? 'Other Items';
+            grouped.putIfAbsent(name, () => []).add(it);
+          }
+          final sortedCategoryNames = grouped.keys.toList()..sort();
+          for (final catName in sortedCategoryNames) {
+            // Category header
+            add([0x1B, 0x61, 0x00]); // Left
             add([0x1B, 0x45, 0x01]); // Bold on
-            line('  → ${it.specialInstructions!}');
-            add([0x1B, 0x45, 0x00]); // Bold off
-          }
+            add([0x1D, 0x21, 0x11]); // Double size
+            line(catName.toUpperCase());
+            add([0x1B, 0x45, 0x00]);
+            add([0x1D, 0x21, 0x00]);
+            line('--------------------------------');
+            line();
 
-          // Optional notes/spice
-          if (it.notes != null && it.notes!.isNotEmpty) {
-            line('  → ${it.notes!}');
-          }
+            // Items in this category
+            for (final it in grouped[catName]!) {
+              add([0x1B, 0x45, 0x01]); // Bold on
+              add([0x1D, 0x21, 0x11]); // Double size
+              line('${it.quantity}x ${it.menuItem.name}');
+              add([0x1B, 0x45, 0x00]);
+              add([0x1D, 0x21, 0x00]);
 
-          line();
+              if (it.specialInstructions != null && it.specialInstructions!.isNotEmpty) {
+                add([0x1B, 0x45, 0x01]);
+                line('  → ${it.specialInstructions!}');
+                add([0x1B, 0x45, 0x00]);
+              }
+              if (it.notes != null && it.notes!.isNotEmpty) {
+                line('  → ${it.notes!}');
+              }
+              line();
+            }
+
+            line();
+          }
+        } else {
+          // Fallback: ungrouped items
+          add([0x1B, 0x61, 0x00]);
+          for (final it in items) {
+            add([0x1B, 0x45, 0x01]);
+            add([0x1D, 0x21, 0x11]);
+            line('${it.quantity}x ${it.menuItem.name}');
+            add([0x1B, 0x45, 0x00]);
+            add([0x1D, 0x21, 0x00]);
+            if (it.specialInstructions != null && it.specialInstructions!.isNotEmpty) {
+              add([0x1B, 0x45, 0x01]);
+              line('  → ${it.specialInstructions!}');
+              add([0x1B, 0x45, 0x00]);
+            }
+            if (it.notes != null && it.notes!.isNotEmpty) {
+              line('  → ${it.notes!}');
+            }
+            line();
+          }
         }
 
         // Separator
@@ -544,7 +626,7 @@ class RobustKitchenService extends ChangeNotifier {
       }
     }
 
-    // Fallback: existing simple text version with ESC/POS wrapper
+    // Fallback remains unchanged below
     final buffer = StringBuffer();
     buffer.writeln('=' * 40);
     buffer.writeln('KITCHEN TICKET');
@@ -554,7 +636,6 @@ class RobustKitchenService extends ChangeNotifier {
     buffer.writeln('Time: ${DateTime.now().toString().substring(11, 19)}');
     buffer.writeln('Type: ${order.type.name.toUpperCase()}');
     buffer.writeln('');
-
     buffer.writeln('ITEMS:');
     buffer.writeln('-' * 20);
     for (final item in items) {
@@ -564,12 +645,10 @@ class RobustKitchenService extends ChangeNotifier {
       }
     }
     buffer.writeln('');
-
     buffer.writeln('=' * 40);
     buffer.writeln('Printer: ${assignment.printerId}');
     buffer.writeln('=' * 40);
 
-    // Wrap fallback in ESC/POS with double-size header
     try {
       final bytes = <int>[];
       bytes.addAll([0x1B, 0x40]);

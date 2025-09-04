@@ -203,7 +203,7 @@ class RobustKitchenService extends ChangeNotifier {
       for (final printerId in uniquePrinterIds) {
         final assignment = printerAssignments.firstWhere((a) => a.printerId == printerId);
         try {
-          final success = await _sendToPrinter(order, assignment, newItems);
+          final success = await _sendToPrinter(order, assignment, newItems, serverName: userName);
           if (success) {
             successfulPrinters++;
             totalItemsSent += newItems.length; // metrics: count items per printer
@@ -379,12 +379,12 @@ class RobustKitchenService extends ChangeNotifier {
   }
   
   /// Send order to specific printer
-  Future<bool> _sendToPrinter(Order order, PrinterAssignment assignment, List<OrderItem> items) async {
+  Future<bool> _sendToPrinter(Order order, PrinterAssignment assignment, List<OrderItem> items, {String? serverName}) async {
     try {
       debugPrint('$_logTag 🖨️ Sending to printer: ${assignment.printerId}');
       
       // Generate kitchen ticket content
-      final content = _generateKitchenTicket(order, items, assignment);
+      final content = _generateKitchenTicket(order, items, assignment, serverName: serverName);
       
       // Determine address and type
       final String address = (assignment.printerAddress.isNotEmpty)
@@ -427,7 +427,7 @@ class RobustKitchenService extends ChangeNotifier {
   }
   
   /// Generate kitchen ticket content
-  String _generateKitchenTicket(Order order, List<OrderItem> items, PrinterAssignment assignment) {
+  String _generateKitchenTicket(Order order, List<OrderItem> items, PrinterAssignment assignment, {String? serverName}) {
     // Preview-aligned formatting toggle (no emojis, same separators and layout as preview)
     const bool _usePreviewAlignedKitchenFormat = true;
 
@@ -473,7 +473,10 @@ class RobustKitchenService extends ChangeNotifier {
 
         // Use normal size for detail rows for better readability
         add([0x1D, 0x21, 0x00]);
-        line('Server: ${order.customerName ?? 'N/A'}');
+        final _server = (serverName != null && serverName.trim().isNotEmpty) ? serverName : (order.customerName ?? 'N/A');
+        final _table = (order.tableId != null && order.tableId!.isNotEmpty) ? order.tableId! : 'N/A';
+        line('Server: '+_server);
+        line('Table: '+_table);
         line('Date: $mon/$dd/$yyyy');
         line('Time: $hh:$mm');
         add([0x1B, 0x45, 0x01]); // Bold on for Ready by

@@ -202,6 +202,10 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
         status: OrderStatus.pending, // Set initial status
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
+        preferences: {
+          ...(_currentOrder?.preferences ?? const {}),
+          if (widget.numberOfPeople != null) 'numberOfPeople': widget.numberOfPeople,
+        },
       );
       
       debugPrint('🆕 Created new order: ${_currentOrder!.orderNumber} for user: ${widget.user.name} (ID: $emailBasedUserId)');
@@ -1181,6 +1185,10 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
         userId: widget.user.id, // Ensure order is assigned to current user
         status: OrderStatus.pending, // Set proper status
         updatedAt: DateTime.now(),
+        preferences: {
+          ..._currentOrder!.preferences,
+          if (widget.numberOfPeople != null) 'numberOfPeople': widget.numberOfPeople,
+        },
       );
       
       debugPrint('💾 Auto-saving order: ${updatedOrder.orderNumber} with ${updatedOrder.items.length} items');

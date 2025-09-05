@@ -156,6 +156,31 @@ class PrinterConfigurationService extends ChangeNotifier {
   Future<bool> addConfiguration(PrinterConfiguration config) async {
     return await _saveConfiguration(config);
   }
+
+  /// Quick helper to add a BAR printer by IP
+  Future<bool> addBarPrinterByIP(String ip, {int port = 9100}) async {
+    try {
+      final config = PrinterConfiguration(
+        id: 'bar_${ip}_$port',
+        name: 'Bar Printer',
+        description: 'Bar station printer',
+        type: PrinterType.wifi,
+        model: PrinterModel.epsonTMGeneric,
+        ipAddress: ip,
+        port: port,
+        isActive: true,
+        connectionStatus: PrinterConnectionStatus.disconnected,
+      );
+      final saved = await _saveConfiguration(config);
+      if (saved) {
+        await _loadSavedConfigurations();
+      }
+      return saved;
+    } catch (e) {
+      debugPrint('$_logTag ❌ Failed to add bar printer $ip:$port → $e');
+      return false;
+    }
+  }
   
   /// Update configuration (legacy method)
   Future<bool> updateConfiguration(PrinterConfiguration config) async {

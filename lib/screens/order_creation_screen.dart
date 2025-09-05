@@ -33,6 +33,8 @@ class OrderCreationScreen extends StatefulWidget {
   final String? orderNumber;
   final String orderType; // 'dine-in' or 'takeout'
   final Order? existingOrder; // For editing existing orders
+  final String? customerName;
+  final String? customerPhone;
 
   const OrderCreationScreen({
     super.key,
@@ -42,6 +44,8 @@ class OrderCreationScreen extends StatefulWidget {
     this.orderNumber,
     required this.orderType,
     this.existingOrder, // Add existing order parameter
+    this.customerName,
+    this.customerPhone,
   });
 
   @override
@@ -194,7 +198,8 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
         id: const Uuid().v4(), // CRITICAL: Generate new ID for each order
         items: [],
         orderNumber: orderNumber,
-        customerName: widget.table?.customerName,
+        customerName: widget.orderType == 'takeout' ? (widget.customerName ?? widget.table?.customerName) : widget.table?.customerName,
+        customerPhone: widget.orderType == 'takeout' ? widget.customerPhone : null,
         tableId: widget.table?.id,
         type: _getOrderTypeFromString(widget.orderType),
         orderTime: DateTime.now(),

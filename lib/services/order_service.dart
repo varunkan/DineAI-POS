@@ -1472,6 +1472,25 @@ class OrderService extends ChangeNotifier {
 
         // Update active/completed lists
         _updateOrderLists(newOrder);
+
+        // If cancelled, set completed_time
+        if (newStatus.toLowerCase() == 'cancelled') {
+          try {
+            final nowIso = DateTime.now().toIso8601String();
+            await db.update(
+              'orders',
+              {'completed_time': nowIso},
+              where: 'id = ?',
+              whereArgs: [orderId],
+            );
+            // Reflect completedTime in-memory as well
+            final updatedOrder = newOrder.copyWith(completedTime: DateTime.parse(nowIso));
+            _allOrders[orderIndex] = updatedOrder;
+            _updateOrderLists(updatedOrder);
+          } catch (e) {
+            debugPrint('⚠️ Failed to set completed_time for cancelled order $orderId: $e');
+          }
+        }
       }
 
       // Log the status change
@@ -1522,6 +1541,20 @@ class OrderService extends ChangeNotifier {
           // Log the error but don't fail the status update
         }
       }
+
+      // Trigger Firebase sync for status change (including cancelled/completed)
+      try {
+        final orderForSync = await getOrderById(orderId) ??
+            _allOrders.firstWhere((o) => o.id == orderId, orElse: () => null as dynamic);
+        if (orderForSync != null) {
+          _triggerFirebaseSync(orderForSync, 'updated');
+        }
+      } catch (e) {
+        debugPrint('⚠️ Failed to trigger Firebase sync after status update: $e');
+      }
+
+      // Notify listeners of state change
+      notifyListeners();
 
       debugPrint('✅ Order status updated successfully');
       return true;

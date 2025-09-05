@@ -181,7 +181,32 @@ class PrinterConfigurationService extends ChangeNotifier {
       return false;
     }
   }
-  
+
+  /// Quick helper to add a Sweet Counter Receipt printer by IP
+  Future<bool> addSweetCounterPrinterByIP(String ip, {int port = 9100}) async {
+    try {
+      final config = PrinterConfiguration(
+        id: 'sweet_${ip}_$port',
+        name: 'Sweet Counter Receipt',
+        description: 'Sweet counter receipt printer',
+        type: PrinterType.wifi,
+        model: PrinterModel.epsonTMGeneric,
+        ipAddress: ip,
+        port: port,
+        isActive: true,
+        connectionStatus: PrinterConnectionStatus.disconnected,
+      );
+      final saved = await _saveConfiguration(config);
+      if (saved) {
+        await _loadSavedConfigurations();
+      }
+      return saved;
+    } catch (e) {
+      debugPrint('$_logTag ❌ Failed to add sweet counter printer $ip:$port → $e');
+      return false;
+    }
+  }
+
   /// Update configuration (legacy method)
   Future<bool> updateConfiguration(PrinterConfiguration config) async {
     try {
@@ -706,6 +731,27 @@ POS System: AI Restaurant
       debugPrint('$_logTag ❌ Error updating connection status: $e');
       return false;
     }
+  }
+
+  /// Validate a single printer configuration by attempting a TCP connection
+  Future<bool> validatePrinterConnection(PrinterConfiguration config, {Duration timeout = const Duration(seconds: 3)}) async {
+    try {
+      final socket = await Socket.connect(config.ipAddress, config.port, timeout: timeout);
+      await socket.close();
+      await updateConnectionStatus(config.id, PrinterConnectionStatus.connected);
+      return true;
+    } catch (_) {
+      await updateConnectionStatus(config.id, PrinterConnectionStatus.disconnected);
+      return false;
+    }
+  }
+
+  /// Validate all configured printers in parallel and update their status
+  Future<void> validateAllConfiguredPrinters() async {
+    if (_configurations.isEmpty) return;
+    final futures = _configurations.map((c) => validatePrinterConnection(c));
+    await Future.wait(futures);
+    await _loadSavedConfigurations();
   }
 }
 

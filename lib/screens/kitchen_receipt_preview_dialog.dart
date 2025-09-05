@@ -329,6 +329,11 @@ class KitchenReceiptPreviewDialog extends StatelessWidget {
         _buildReceiptRow('Server:', serverName, bold: true, fontSize: 36), // 12*3
         if (order.tableId != null && order.tableId!.isNotEmpty)
           _buildReceiptRow('Table:', _getTableNumber(order.tableId!), bold: true, fontSize: 36), // 12*3
+        if (order.type == OrderType.takeaway || order.type == OrderType.delivery)
+          _buildReceiptRow('Customer:', [
+            if ((order.customerName ?? '').isNotEmpty) order.customerName!,
+            if ((order.customerPhone ?? '').isNotEmpty) 'Ph: ${order.customerPhone!}',
+          ].join('  •  '), bold: true, fontSize: 36),
         FutureBuilder<int?>(
           future: _resolveGuests(context),
           builder: (context, snapshot) {
@@ -403,6 +408,11 @@ class KitchenReceiptPreviewDialog extends StatelessWidget {
         _buildMobileReceiptRow('Server:', serverName, bold: true, fontSize: 14),
         if (order.tableId != null && order.tableId!.isNotEmpty)
           _buildMobileReceiptRow('Table:', _getTableNumber(order.tableId!), bold: true, fontSize: 14),
+        if (order.type == OrderType.takeaway || order.type == OrderType.delivery)
+          _buildMobileReceiptRow('Customer:', [
+            if ((order.customerName ?? '').isNotEmpty) order.customerName!,
+            if ((order.customerPhone ?? '').isNotEmpty) 'Ph: ${order.customerPhone!}',
+          ].join('  •  '), bold: true, fontSize: 14),
         FutureBuilder<int?>(
           future: _resolveGuests(context),
           builder: (context, snapshot) {

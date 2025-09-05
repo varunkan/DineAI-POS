@@ -579,6 +579,12 @@ class RobustKitchenService extends ChangeNotifier {
         final _guestsStr = (guests != null && guests > 0) ? '  •  Guests: ${guests.toString()}' : '';
         line('Server: '+_server);
         line('Table: '+_table + _guestsStr);
+        // For takeaway/delivery, print customer details
+        if (order.type == OrderType.takeaway || order.type == OrderType.delivery) {
+          final custName = (order.customerName != null && order.customerName!.trim().isNotEmpty) ? order.customerName! : 'N/A';
+          final custPhone = (order.customerPhone != null && order.customerPhone!.trim().isNotEmpty) ? order.customerPhone! : '';
+          line('Customer: '+custName + (custPhone.isNotEmpty ? '  •  Ph: '+custPhone : ''));
+        }
         line('Date: $mon/$dd/$yyyy');
         line('Time: $hh:$mm');
         add([0x1B, 0x45, 0x01]); // Bold on for Ready by

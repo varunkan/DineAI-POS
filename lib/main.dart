@@ -602,6 +602,36 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           },
         );
         debugPrint('✅ PrinterConfigurationService initialized');
+
+        // Auto-add Bar Printer if missing
+        try {
+          final existing = _printerConfigurationService!.getConfigurationByIP('192.168.0.204', 9100);
+          if (existing == null) {
+            final added = await _printerConfigurationService!.addBarPrinterByIP('192.168.0.204', port: 9100);
+            debugPrint(added
+              ? '✅ Auto-added Bar Printer (192.168.0.204:9100)'
+              : '⚠️ Failed to auto-add Bar Printer');
+          } else {
+            debugPrint('ℹ️ Bar Printer already configured: ${existing.fullAddress}');
+          }
+
+          // Auto-add Sweet Counter printer if missing (same IP:port, different name)
+          final sweetExists = _printerConfigurationService!.configurations.any(
+            (c) => c.ipAddress == '192.168.0.181' && c.port == 9100 && c.name == 'Sweet Counter Receipt',
+          );
+          if (!sweetExists) {
+            final addedSweet = await _printerConfigurationService!.addSweetCounterPrinterByIP('192.168.0.181', port: 9100);
+            debugPrint(addedSweet
+              ? '✅ Auto-added Sweet Counter Receipt (192.168.0.181:9100)'
+              : '⚠️ Failed to auto-add Sweet Counter Receipt');
+          } else {
+            debugPrint('ℹ️ Sweet Counter Receipt already configured at 192.168.0.181:9100');
+          }
+
+          await _printerConfigurationService!.refreshConfigurations();
+        } catch (e) {
+          debugPrint('⚠️ Auto-add Bar/Sweet printers failed: $e');
+        }
       } catch (e) {
         debugPrint('⚠️ PrinterConfigurationService initialization failed, continuing: $e');
       }

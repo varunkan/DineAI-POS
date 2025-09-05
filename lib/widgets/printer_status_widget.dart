@@ -22,25 +22,42 @@ class PrinterStatusWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     return Consumer2<UnifiedPrinterService?, PrinterConfigurationService?>(
       builder: (context, unifiedPrinterService, printerConfigService, child) {
-        // Prioritize UnifiedPrinterService if available
+        // If UnifiedPrinterService is available, MERGE with PrinterConfigurationService so manual entries show up
         if (unifiedPrinterService != null) {
-          final totalPrinters = unifiedPrinterService.printers.length;
-          final onlinePrinters = unifiedPrinterService.printers.where((p) => p.connectionStatus == PrinterConnectionStatus.connected).length;
-          final isDiscovering = unifiedPrinterService.isScanning;
-          const isEnabled = true;
+          final List<PrinterConfiguration> unified = unifiedPrinterService.printers;
+          final List<PrinterConfiguration> configs = printerConfigService?.configurations ?? const <PrinterConfiguration>[];
+
+          // Merge based on unique fullAddress to avoid duplicates
+          final Map<String, PrinterConfiguration> mergedMap = {
+            for (final p in unified) '${p.fullAddress}::${p.name}': p,
+          };
+          for (final c in configs) {
+            mergedMap.putIfAbsent('${c.fullAddress}::${c.name}', () => c);
+          }
+          final List<PrinterConfiguration> merged = mergedMap.values.toList();
+
+          final int totalPrinters = merged.length;
+          final int onlinePrinters = merged.where((p) => p.connectionStatus == PrinterConnectionStatus.connected).length;
+          final bool isDiscovering = unifiedPrinterService.isScanning || (printerConfigService?.isScanning ?? false);
+          const bool isEnabled = true;
 
           return _buildPrinterStatusCard(
-            context, 
-            totalPrinters, 
-            onlinePrinters, 
-            isDiscovering, 
+            context,
+            totalPrinters,
+            onlinePrinters,
+            isDiscovering,
             isEnabled,
-            unifiedPrinterService.printers,
-            () {
-              // 🚨 URGENT: Use UnifiedPrinterService for discovery
-              debugPrint('🚨 URGENT: Using UnifiedPrinterService for Epson printer discovery');
-              unifiedPrinterService.addKnownEpsonPrinters();
-              unifiedPrinterService.scanForPrinters();
+            merged,
+            () async {
+              // Trigger both scans/refresh so lists stay in sync
+              try {
+                unifiedPrinterService.addKnownEpsonPrinters();
+                unifiedPrinterService.scanForPrinters();
+              } catch (_) {}
+              try {
+                await printerConfigService?.refreshConfigurations();
+                await printerConfigService?.validateAllConfiguredPrinters();
+              } catch (_) {}
               if (onRefreshTap != null) onRefreshTap!();
             },
           );
@@ -72,8 +89,9 @@ class PrinterStatusWidget extends StatelessWidget {
           isDiscovering, 
           isEnabled,
           printerConfigService.configurations,
-          () {
-            printerConfigService.manualDiscovery();
+          () async {
+            await printerConfigService.manualDiscovery();
+            await printerConfigService.refreshConfigurations();
             if (onRefreshTap != null) onRefreshTap!();
           },
         );

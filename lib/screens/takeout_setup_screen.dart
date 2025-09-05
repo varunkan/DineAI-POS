@@ -96,6 +96,8 @@ class _TakeoutSetupScreenState extends State<TakeoutSetupScreen> {
             user: widget.user,
             orderNumber: _orderNumber,
             orderType: 'takeout',
+            customerName: _customerNameController.text.trim(),
+            customerPhone: _customerPhoneController.text.trim(),
           ),
         ),
       );

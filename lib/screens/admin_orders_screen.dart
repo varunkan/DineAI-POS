@@ -370,6 +370,7 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
         debugPrint('⚠️ Failed to update completed_time: $e');
         // Don't fail the cancellation if this fails
       }
+      // Reload local orders list only
       await _loadOrders();
       
       if (mounted) {

@@ -40,20 +40,6 @@ class PaymentService with ChangeNotifier {
       
       await orderService.updateOrderStatus(order.id, 'completed');
       
-      // 📦 CRITICAL: Update inventory after successful payment
-      debugPrint('💳 Payment successful - updating inventory for order: ${updatedOrder.orderNumber}');
-      try {
-        final inventoryUpdated = await inventoryService.updateInventoryOnOrderCompletion(updatedOrder);
-        if (inventoryUpdated) {
-          debugPrint('✅ Inventory updated successfully for order: ${updatedOrder.orderNumber}');
-        } else {
-          debugPrint('⚠️ No inventory items were updated for order: ${updatedOrder.orderNumber}');
-        }
-      } catch (e) {
-        debugPrint('❌ Error updating inventory for order ${updatedOrder.orderNumber}: $e');
-        // Don't fail the payment if inventory update fails - log it for manual review
-      }
-      
       // Safely notify listeners
       try {
         SchedulerBinding.instance.addPostFrameCallback((_) {

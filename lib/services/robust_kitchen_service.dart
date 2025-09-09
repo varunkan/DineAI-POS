@@ -196,18 +196,55 @@ class RobustKitchenService extends ChangeNotifier {
         });
       }
       
-      // Step 3: Send to each assigned printer
+      // Step 3: Group items by assigned printer and send only those items to each printer
       int totalItemsSent = 0;
       int successfulPrinters = 0;
-      // UNIQUE printers only: print once per printer
-      final uniquePrinterIds = printerAssignments.map((a) => a.printerId).toSet();
-      for (final printerId in uniquePrinterIds) {
-        final assignment = printerAssignments.firstWhere((a) => a.printerId == printerId);
+
+      // Build mapping: printerId -> items for that printer
+      final Map<String, List<OrderItem>> itemsByPrinter = {};
+      for (final item in newItems) {
         try {
-          final success = await _sendToPrinter(order, assignment, newItems, serverName: userName);
+          final itemAssignments = await _assignmentService!.getAssignmentsForMenuItem(
+            item.menuItem.id,
+            item.menuItem.categoryId ?? '',
+          );
+          if (itemAssignments.isEmpty) {
+            // No explicit assignment; skip default routing to avoid printing on unintended printers
+            continue;
+          }
+          for (final a in itemAssignments) {
+            itemsByPrinter.putIfAbsent(a.printerId, () => []).add(item);
+          }
+        } catch (e) {
+          debugPrint('$_logTag ⚠️ Failed to resolve assignments for item ${item.menuItem.name}: $e');
+        }
+      }
+
+      final uniquePrinterIds = itemsByPrinter.keys.toSet();
+      for (final printerId in uniquePrinterIds) {
+        final itemsForPrinter = List<OrderItem>.from(itemsByPrinter[printerId] ?? const []);
+        if (itemsForPrinter.isEmpty) {
+          continue; // Nothing to print for this printer
+        }
+
+        // Find assignment details for this printerId
+        final assignment = printerAssignments.firstWhere(
+          (a) => a.printerId == printerId,
+          orElse: () => PrinterAssignment(
+            printerId: printerId,
+            printerName: 'Kitchen Printer',
+            printerAddress: '',
+            assignmentType: AssignmentType.menuItem,
+            targetId: '',
+            targetName: '',
+          ),
+        );
+
+        try {
+          final success = await _sendToPrinter(order, assignment, itemsForPrinter, serverName: userName);
           if (success) {
             successfulPrinters++;
-            totalItemsSent += newItems.length; // metrics: count items per printer
+            totalItemsSent += itemsForPrinter.length;
             _printerSuccessCount[printerId] = (_printerSuccessCount[printerId] ?? 0) + 1;
           } else {
             _printerFailureCount[printerId] = (_printerFailureCount[printerId] ?? 0) + 1;
@@ -531,6 +568,8 @@ class RobustKitchenService extends ChangeNotifier {
   String _generateKitchenTicket(Order order, List<OrderItem> items, PrinterAssignment assignment, {String? serverName, Map<String, String>? categoryNameById, int? guests}) {
     // Preview-aligned formatting toggle (no emojis, same separators and layout as preview)
     const bool _usePreviewAlignedKitchenFormat = true;
+    // Feature flag: when true, use the same enlarged font size for categories, items, and instructions
+    const bool _uniformKitchenFontSizing = true;
 
     if (_usePreviewAlignedKitchenFormat) {
       try {
@@ -558,10 +597,9 @@ class RobustKitchenService extends ChangeNotifier {
         // Order details
         add([0x1B, 0x61, 0x00]); // Left
         add([0x1B, 0x45, 0x01]); // Bold on
-        add([0x1D, 0x21, 0x11]); // Double size
-        line('ORDER #${order.orderNumber}');
-        add([0x1B, 0x45, 0x00]); // Bold off
-
+        // Slightly enlarged details (height only) for better readability with reduced width
+        add([0x1D, 0x21, 0x01]);
+        // Time and date variables
         final now = DateTime.now();
         final hh = now.hour.toString().padLeft(2, '0');
         final mm = now.minute.toString().padLeft(2, '0');
@@ -571,9 +609,6 @@ class RobustKitchenService extends ChangeNotifier {
         final ready = now.add(const Duration(minutes: 20));
         final rh = ready.hour.toString().padLeft(2, '0');
         final rm = ready.minute.toString().padLeft(2, '0');
-
-        // Use normal size for detail rows for better readability
-        add([0x1D, 0x21, 0x00]);
         final _server = (serverName != null && serverName.trim().isNotEmpty) ? serverName : (order.customerName ?? 'N/A');
         final _table = (order.tableId != null && order.tableId!.isNotEmpty) ? order.tableId! : 'N/A';
         final _guestsStr = (guests != null && guests > 0) ? '  •  Guests: ${guests.toString()}' : '';
@@ -590,6 +625,8 @@ class RobustKitchenService extends ChangeNotifier {
         add([0x1B, 0x45, 0x01]); // Bold on for Ready by
         line('Ready by: $rh:$rm');
         add([0x1B, 0x45, 0x00]);
+        // Back to normal after details
+        add([0x1D, 0x21, 0x00]);
         line();
 
         // Separator
@@ -612,52 +649,84 @@ class RobustKitchenService extends ChangeNotifier {
             // Category header
             add([0x1B, 0x61, 0x00]); // Left
             add([0x1B, 0x45, 0x01]); // Bold on
-            add([0x1D, 0x21, 0x11]); // Double size
+            // Category header font size
+            if (_uniformKitchenFontSizing) {
+              add([0x1D, 0x21, 0x01]); // Height x2, width x1 (reduced from full double)
+            } else {
+              add([0x1D, 0x21, 0x00]); // Normal size
+            }
             line(catName.toUpperCase());
             add([0x1B, 0x45, 0x00]);
-            add([0x1D, 0x21, 0x00]);
+            // Separator line under category
+            if (_uniformKitchenFontSizing) {
+              add([0x1D, 0x21, 0x01]);
+            } else {
+              add([0x1D, 0x21, 0x00]);
+            }
             line('--------------------------------');
-            line();
+            // Reduced extra blank spacing after category header
 
             // Items in this category
             for (final it in grouped[catName]!) {
               add([0x1B, 0x45, 0x01]); // Bold on
-              add([0x1D, 0x21, 0x11]); // Double size
+              // Item line font size
+              if (_uniformKitchenFontSizing) {
+                add([0x1D, 0x21, 0x01]); // Height x2, width x1
+              } else {
+                add([0x1D, 0x21, 0x00]); // Normal size
+              }
               line('${it.quantity}x ${it.menuItem.name}');
               add([0x1B, 0x45, 0x00]);
-              add([0x1D, 0x21, 0x00]);
+              if (!_uniformKitchenFontSizing) {
+                add([0x1D, 0x21, 0x00]);
+              }
 
               if (it.specialInstructions != null && it.specialInstructions!.isNotEmpty) {
                 add([0x1B, 0x45, 0x01]);
+                if (_uniformKitchenFontSizing) { add([0x1D, 0x21, 0x01]); }
                 line('  → ${it.specialInstructions!}');
                 add([0x1B, 0x45, 0x00]);
               }
               if (it.notes != null && it.notes!.isNotEmpty) {
+                if (_uniformKitchenFontSizing) { add([0x1D, 0x21, 0x01]); }
                 line('  → ${it.notes!}');
               }
+              // Add a blank line between items for spacing
               line();
+              // Reduced extra blank spacing between items
             }
 
-            line();
+            // Reduced extra blank spacing between categories
           }
         } else {
           // Fallback: ungrouped items
           add([0x1B, 0x61, 0x00]);
           for (final it in items) {
             add([0x1B, 0x45, 0x01]);
-            add([0x1D, 0x21, 0x11]);
+            // Item line font size
+            if (_uniformKitchenFontSizing) {
+              add([0x1D, 0x21, 0x01]);
+            } else {
+              add([0x1D, 0x21, 0x00]);
+            }
             line('${it.quantity}x ${it.menuItem.name}');
             add([0x1B, 0x45, 0x00]);
-            add([0x1D, 0x21, 0x00]);
+            if (!_uniformKitchenFontSizing) {
+              add([0x1D, 0x21, 0x00]);
+            }
             if (it.specialInstructions != null && it.specialInstructions!.isNotEmpty) {
               add([0x1B, 0x45, 0x01]);
+              if (_uniformKitchenFontSizing) { add([0x1D, 0x21, 0x01]); }
               line('  → ${it.specialInstructions!}');
               add([0x1B, 0x45, 0x00]);
             }
             if (it.notes != null && it.notes!.isNotEmpty) {
+              if (_uniformKitchenFontSizing) { add([0x1D, 0x21, 0x01]); }
               line('  → ${it.notes!}');
             }
+            // Add a blank line between items for spacing
             line();
+            // Reduced extra blank spacing between items
           }
         }
 
@@ -674,7 +743,7 @@ class RobustKitchenService extends ChangeNotifier {
           add([0x1D, 0x21, 0x11]); // Emphasize
           line('SPECIAL INSTRUCTIONS:');
           add([0x1B, 0x45, 0x00]);
-          add([0x1D, 0x21, 0x00]);
+          if (_uniformKitchenFontSizing) { add([0x1D, 0x21, 0x01]); } else { add([0x1D, 0x21, 0x00]); }
           line(order.specialInstructions!);
           line();
         }

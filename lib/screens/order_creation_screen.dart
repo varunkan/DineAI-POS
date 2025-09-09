@@ -281,6 +281,7 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
   void _showItemConfigurationDialog(MenuItem item) {
     String selectedSpiceLevel = 'Regular';
     String specialInstructions = '';
+    bool isRunning = false;
     int quantity = 1;
 
     showDialog(
@@ -505,90 +506,93 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
                                             'Spice Level',
                                             Icons.local_fire_department,
                                             Colors.orange,
-                                            Wrap(
-                                              spacing: 8,
-                                              runSpacing: 8,
-                                              children: ['Regular', 'Mild', 'Spicy'].map((level) {
-                                                final isSelected = selectedSpiceLevel == level;
-                                                final color = level == 'Spicy' ? Colors.red :
-                                                             level == 'Mild' ? Colors.green :
-                                                             Colors.grey;
-                                                
-                                                return Flexible(
-                                                  child: Container(
-                                                    constraints: BoxConstraints(
-                                                      minWidth: isLandscape ? 100 : 80,
-                                                      maxWidth: isLandscape ? 150 : 120,
+                                            Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Row(
+                                                  mainAxisAlignment: MainAxisAlignment.end,
+                                                  children: [
+                                                    const Text('Running', style: TextStyle(fontWeight: FontWeight.w500)),
+                                                    const SizedBox(width: 8),
+                                                    Switch(
+                                                      value: isRunning,
+                                                      onChanged: (v) { setDialogState(() { isRunning = v; }); },
                                                     ),
-                                                    child: InkWell(
-                                                      onTap: () {
-                                                        setDialogState(() {
-                                                          selectedSpiceLevel = level;
-                                                        });
-                                                      },
-                                                      borderRadius: BorderRadius.circular(12),
-                                                      child: Container(
-                                                        padding: EdgeInsets.symmetric(
-                                                          horizontal: isLandscape ? 8 : 6, 
-                                                          vertical: 10
-                                                        ),
-                                                        decoration: BoxDecoration(
-                                                          color: isSelected ? color.withValues(alpha: 0.1) : Colors.grey.shade50,
-                                                          borderRadius: BorderRadius.circular(12),
-                                                          border: Border.all(
-                                                            color: isSelected ? color : Colors.grey.shade300,
-                                                            width: isSelected ? 2 : 1,
+                                                  ],
+                                                ),
+                                                const SizedBox(height: 8),
+                                                Wrap(
+                                                  spacing: 8,
+                                                  runSpacing: 8,
+                                                  children: ['Regular', 'Mild', 'Spicy'].map((level) {
+                                                    final isSelected = selectedSpiceLevel == level;
+                                                    final color = level == 'Spicy' ? Colors.red :
+                                                                  level == 'Mild' ? Colors.green :
+                                                                  Colors.grey;
+                                                    return Container(
+                                                      constraints: BoxConstraints(
+                                                        minWidth: isLandscape ? 100 : 80,
+                                                        maxWidth: isLandscape ? 150 : 120,
+                                                      ),
+                                                      child: InkWell(
+                                                        onTap: () {
+                                                          setDialogState(() {
+                                                            selectedSpiceLevel = level;
+                                                          });
+                                                        },
+                                                        borderRadius: BorderRadius.circular(12),
+                                                        child: Container(
+                                                          padding: EdgeInsets.symmetric(
+                                                            horizontal: isLandscape ? 8 : 6,
+                                                            vertical: 10,
+                                                          ),
+                                                          decoration: BoxDecoration(
+                                                            color: isSelected ? color.withValues(alpha: 0.1) : Colors.grey.shade50,
+                                                            borderRadius: BorderRadius.circular(12),
+                                                            border: Border.all(
+                                                              color: isSelected ? color : Colors.grey.shade300,
+                                                              width: isSelected ? 2 : 1,
+                                                            ),
+                                                          ),
+                                                          child: Column(
+                                                            mainAxisSize: MainAxisSize.min,
+                                                            children: [
+                                                              Container(
+                                                                width: 18,
+                                                                height: 18,
+                                                                decoration: BoxDecoration(
+                                                                  color: isSelected ? color : Colors.transparent,
+                                                                  shape: BoxShape.circle,
+                                                                  border: Border.all(color: color, width: 2),
+                                                                ),
+                                                                child: isSelected
+                                                                  ? const Icon(Icons.check, color: Colors.white, size: 12)
+                                                                  : null,
+                                                              ),
+                                                              const SizedBox(height: 6),
+                                                              Text(
+                                                                level,
+                                                                style: TextStyle(
+                                                                  fontSize: isLandscape ? 13 : 12,
+                                                                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                                                                  color: isSelected ? color : Colors.grey.shade700,
+                                                                ),
+                                                                textAlign: TextAlign.center,
+                                                                maxLines: 1,
+                                                                overflow: TextOverflow.ellipsis,
+                                                              ),
+                                                              if (level == 'Spicy') ...[
+                                                                const SizedBox(height: 2),
+                                                                Icon(Icons.local_fire_department, color: Colors.red.shade400, size: 14),
+                                                              ],
+                                                            ],
                                                           ),
                                                         ),
-                                                        child: Column(
-                                                          mainAxisSize: MainAxisSize.min,
-                                                          children: [
-                                                            Container(
-                                                              width: 18,
-                                                              height: 18,
-                                                              decoration: BoxDecoration(
-                                                                color: isSelected ? color : Colors.transparent,
-                                                                shape: BoxShape.circle,
-                                                                border: Border.all(
-                                                                  color: color,
-                                                                  width: 2,
-                                                                ),
-                                                              ),
-                                                              child: isSelected
-                                                                  ? const Icon(
-                                                                      Icons.check,
-                                                                      color: Colors.white,
-                                                                      size: 12,
-                                                                    )
-                                                                  : null,
-                                                            ),
-                                                            const SizedBox(height: 6),
-                                                            Text(
-                                                              level,
-                                                              style: TextStyle(
-                                                                fontSize: isLandscape ? 13 : 12,
-                                                                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                                                                color: isSelected ? color : Colors.grey.shade700,
-                                                              ),
-                                                              textAlign: TextAlign.center,
-                                                              maxLines: 1,
-                                                              overflow: TextOverflow.ellipsis,
-                                                            ),
-                                                            if (level == 'Spicy') ...[
-                                                              const SizedBox(height: 2),
-                                                              Icon(
-                                                                Icons.local_fire_department,
-                                                                color: Colors.red.shade400,
-                                                                size: 14,
-                                                              ),
-                                                            ],
-                                                          ],
-                                                        ),
                                                       ),
-                                                    ),
-                                                  ),
-                                                );
-                                              }).toList(),
+                                                    );
+                                                  }).toList(),
+                                                ),
+                                              ],
                                             ),
                                           ),
                                         ),
@@ -651,159 +655,190 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
                                       Icons.local_fire_department,
                                       Colors.orange,
                                       isLandscape 
-                                        ? Wrap(
-                                            spacing: 12,
-                                            runSpacing: 8,
-                                            alignment: WrapAlignment.center,
-                                            children: ['Regular', 'Mild', 'Spicy'].map((level) {
-                                              final isSelected = selectedSpiceLevel == level;
-                                              final color = level == 'Spicy' ? Colors.red :
-                                                           level == 'Mild' ? Colors.green :
-                                                           Colors.grey;
-                                              
-                                              return Container(
-                                                constraints: const BoxConstraints(
-                                                  minWidth: 100,
-                                                  maxWidth: 140,
-                                                ),
-                                                child: InkWell(
-                                                  onTap: () {
-                                                    setDialogState(() {
-                                                      selectedSpiceLevel = level;
-                                                    });
-                                                  },
-                                                  borderRadius: BorderRadius.circular(12),
-                                                  child: Container(
-                                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-                                                    decoration: BoxDecoration(
-                                                      color: isSelected ? color.withValues(alpha: 0.1) : Colors.grey.shade50,
+                                        ? Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Row(
+                                                mainAxisAlignment: MainAxisAlignment.end,
+                                                children: [
+                                                  const Text('Running', style: TextStyle(fontWeight: FontWeight.w500)),
+                                                  const SizedBox(width: 8),
+                                                  Switch(
+                                                    value: isRunning,
+                                                    onChanged: (v) { setDialogState(() { isRunning = v; }); },
+                                                  ),
+                                                ],
+                                              ),
+                                              const SizedBox(height: 8),
+                                              Wrap(
+                                                spacing: 12,
+                                                runSpacing: 8,
+                                                alignment: WrapAlignment.center,
+                                                children: ['Regular', 'Mild', 'Spicy'].map((level) {
+                                                  final isSelected = selectedSpiceLevel == level;
+                                                  final color = level == 'Spicy' ? Colors.red :
+                                                               level == 'Mild' ? Colors.green :
+                                                               Colors.grey;
+                                                  
+                                                  return Container(
+                                                    constraints: const BoxConstraints(
+                                                      minWidth: 100,
+                                                      maxWidth: 140,
+                                                    ),
+                                                    child: InkWell(
+                                                      onTap: () {
+                                                        setDialogState(() {
+                                                          selectedSpiceLevel = level;
+                                                        });
+                                                      },
                                                       borderRadius: BorderRadius.circular(12),
-                                                      border: Border.all(
-                                                        color: isSelected ? color : Colors.grey.shade300,
-                                                        width: isSelected ? 2 : 1,
+                                                      child: Container(
+                                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                                                        decoration: BoxDecoration(
+                                                          color: isSelected ? color.withValues(alpha: 0.1) : Colors.grey.shade50,
+                                                          borderRadius: BorderRadius.circular(12),
+                                                          border: Border.all(
+                                                            color: isSelected ? color : Colors.grey.shade300,
+                                                            width: isSelected ? 2 : 1,
+                                                          ),
+                                                        ),
+                                                        child: Row(
+                                                          mainAxisSize: MainAxisSize.min,
+                                                          children: [
+                                                            Container(
+                                                              width: 16,
+                                                              height: 16,
+                                                              decoration: BoxDecoration(
+                                                                color: isSelected ? color : Colors.transparent,
+                                                                shape: BoxShape.circle,
+                                                                border: Border.all(
+                                                                  color: color,
+                                                                  width: 2,
+                                                                ),
+                                                              ),
+                                                              child: isSelected
+                                                                  ? const Icon(
+                                                                      Icons.check,
+                                                                      color: Colors.white,
+                                                                      size: 10,
+                                                                    )
+                                                                  : null,
+                                                            ),
+                                                            const SizedBox(width: 8),
+                                                            Expanded(
+                                                              child: Text(
+                                                                level,
+                                                                style: TextStyle(
+                                                                  fontSize: 13,
+                                                                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                                                                  color: isSelected ? color : Colors.grey.shade700,
+                                                                ),
+                                                                overflow: TextOverflow.ellipsis,
+                                                              ),
+                                                            ),
+                                                            if (level == 'Spicy') ...[
+                                                              Icon(
+                                                                Icons.local_fire_department,
+                                                                color: Colors.red.shade400,
+                                                                size: 14,
+                                                              ),
+                                                            ],
+                                                          ],
+                                                        ),
                                                       ),
                                                     ),
-                                                    child: Row(
-                                                      mainAxisSize: MainAxisSize.min,
-                                                      children: [
-                                                        Container(
-                                                          width: 16,
-                                                          height: 16,
-                                                          decoration: BoxDecoration(
-                                                            color: isSelected ? color : Colors.transparent,
-                                                            shape: BoxShape.circle,
-                                                            border: Border.all(
-                                                              color: color,
-                                                              width: 2,
-                                                            ),
-                                                          ),
-                                                          child: isSelected
-                                                              ? const Icon(
-                                                                  Icons.check,
-                                                                  color: Colors.white,
-                                                                  size: 10,
-                                                                )
-                                                              : null,
-                                                        ),
-                                                        const SizedBox(width: 8),
-                                                        Expanded(
-                                                          child: Text(
-                                                            level,
-                                                            style: TextStyle(
-                                                              fontSize: 13,
-                                                              fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                                                              color: isSelected ? color : Colors.grey.shade700,
-                                                            ),
-                                                            overflow: TextOverflow.ellipsis,
-                                                          ),
-                                                        ),
-                                                        if (level == 'Spicy') ...[
-                                                          Icon(
-                                                            Icons.local_fire_department,
-                                                            color: Colors.red.shade400,
-                                                            size: 14,
-                                                          ),
-                                                        ],
-                                                      ],
-                                                    ),
-                                                  ),
-                                                ),
-                                              );
-                                            }).toList(),
+                                                  );
+                                                }).toList(),
+                                              ),
+                                            ],
                                           )
                                         : Column(
-                                            children: ['Regular', 'Mild', 'Spicy'].map((level) {
-                                              final isSelected = selectedSpiceLevel == level;
-                                              final color = level == 'Spicy' ? Colors.red :
-                                                           level == 'Mild' ? Colors.green :
-                                                           Colors.grey;
-                                              
-                                              return Container(
-                                                margin: const EdgeInsets.only(bottom: 8),
-                                                child: InkWell(
-                                                  onTap: () {
-                                                    setDialogState(() {
-                                                      selectedSpiceLevel = level;
-                                                    });
-                                                  },
-                                                  borderRadius: BorderRadius.circular(12),
-                                                  child: Container(
-                                                    width: double.infinity,
-                                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                                                    decoration: BoxDecoration(
-                                                      color: isSelected ? color.withValues(alpha: 0.1) : Colors.grey.shade50,
-                                                      borderRadius: BorderRadius.circular(12),
-                                                      border: Border.all(
-                                                        color: isSelected ? color : Colors.grey.shade300,
-                                                        width: isSelected ? 2 : 1,
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Row(
+                                                mainAxisAlignment: MainAxisAlignment.end,
+                                                children: [
+                                                  const Text('Running', style: TextStyle(fontWeight: FontWeight.w500)),
+                                                  const SizedBox(width: 8),
+                                                  Switch(
+                                                    value: isRunning,
+                                                    onChanged: (v) { setDialogState(() { isRunning = v; }); },
+                                                  ),
+                                                ],
+                                              ),
+                                              const SizedBox(height: 8),
+                                              ...['Regular', 'Mild', 'Spicy'].map((level) {
+                                                final isSelected = selectedSpiceLevel == level;
+                                                final color = level == 'Spicy' ? Colors.red :
+                                                             level == 'Mild' ? Colors.green :
+                                                             Colors.grey;
+                                                
+                                                return Container(
+                                                  margin: const EdgeInsets.only(bottom: 8),
+                                                  child: InkWell(
+                                                    onTap: () {
+                                                      setDialogState(() {
+                                                        selectedSpiceLevel = level;
+                                                      });
+                                                    },
+                                                    borderRadius: BorderRadius.circular(12),
+                                                    child: Container(
+                                                      width: double.infinity,
+                                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                                      decoration: BoxDecoration(
+                                                        color: isSelected ? color.withValues(alpha: 0.1) : Colors.grey.shade50,
+                                                        borderRadius: BorderRadius.circular(12),
+                                                        border: Border.all(
+                                                          color: isSelected ? color : Colors.grey.shade300,
+                                                          width: isSelected ? 2 : 1,
+                                                        ),
+                                                      ),
+                                                      child: Row(
+                                                        children: [
+                                                          Container(
+                                                            width: 16,
+                                                            height: 16,
+                                                            decoration: BoxDecoration(
+                                                              color: isSelected ? color : Colors.transparent,
+                                                              shape: BoxShape.circle,
+                                                              border: Border.all(
+                                                                color: color,
+                                                                width: 2,
+                                                              ),
+                                                            ),
+                                                            child: isSelected
+                                                                ? const Icon(
+                                                                    Icons.check,
+                                                                    color: Colors.white,
+                                                                    size: 10,
+                                                                  )
+                                                                : null,
+                                                          ),
+                                                          const SizedBox(width: 8),
+                                                          Expanded(
+                                                            child: Text(
+                                                              level,
+                                                              style: TextStyle(
+                                                                fontSize: 13,
+                                                                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                                                                color: isSelected ? color : Colors.grey.shade700,
+                                                              ),
+                                                            ),
+                                                          ),
+                                                          if (level == 'Spicy') ...[
+                                                            Icon(
+                                                              Icons.local_fire_department,
+                                                              color: Colors.red.shade400,
+                                                              size: 14,
+                                                            ),
+                                                          ],
+                                                        ],
                                                       ),
                                                     ),
-                                                    child: Row(
-                                                      children: [
-                                                        Container(
-                                                          width: 18,
-                                                          height: 18,
-                                                          decoration: BoxDecoration(
-                                                            color: isSelected ? color : Colors.transparent,
-                                                            shape: BoxShape.circle,
-                                                            border: Border.all(
-                                                              color: color,
-                                                              width: 2,
-                                                            ),
-                                                          ),
-                                                          child: isSelected
-                                                              ? const Icon(
-                                                                  Icons.check,
-                                                                  color: Colors.white,
-                                                                  size: 12,
-                                                                )
-                                                              : null,
-                                                        ),
-                                                        const SizedBox(width: 10),
-                                                        Expanded(
-                                                          child: Text(
-                                                            level,
-                                                            style: TextStyle(
-                                                              fontSize: 14,
-                                                              fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                                                              color: isSelected ? color : Colors.grey.shade700,
-                                                            ),
-                                                            overflow: TextOverflow.ellipsis,
-                                                          ),
-                                                        ),
-                                                        if (level == 'Spicy') ...[
-                                                          Icon(
-                                                            Icons.local_fire_department,
-                                                            color: Colors.red.shade400,
-                                                            size: 16,
-                                                          ),
-                                                        ],
-                                                      ],
-                                                    ),
                                                   ),
-                                                ),
-                                              );
-                                            }).toList(),
+                                                );
+                                              }).toList(),
+                                            ],
                                           ),
                                     ),
                                   ],
@@ -891,7 +926,12 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
                                     Theme.of(context).primaryColor,
                                     () {
                                       Navigator.of(dialogContext).pop();
-                                      _addConfiguredItemToOrder(item, quantity, selectedSpiceLevel, specialInstructions);
+                                      _addConfiguredItemToOrder(
+                                        item,
+                                        quantity,
+                                        selectedSpiceLevel,
+                                        isRunning ? (specialInstructions.isEmpty ? 'running' : '$specialInstructions, running') : specialInstructions,
+                                      );
                                     },
                                   ),
                                 ),
@@ -2571,10 +2611,10 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
                 Row(
                   children: [
                     IconButton(
-                                             onPressed: () => _updateItemQuantityInOrder(index, item.quantity - 1),
+                      onPressed: (item.sentToKitchen && !widget.user.isAdmin) ? null : () => _updateItemQuantityInOrder(index, item.quantity - 1),
                       icon: Icon(
                         Icons.remove_circle_outline,
-                        color: Colors.red.shade600,
+                        color: (item.sentToKitchen && !widget.user.isAdmin) ? Colors.grey.shade400 : Colors.red.shade600,
                       ),
                     ),
                     Text(
@@ -2585,10 +2625,10 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
                       ),
                     ),
                     IconButton(
-                                             onPressed: () => _updateItemQuantityInOrder(index, item.quantity + 1),
+                      onPressed: (item.sentToKitchen && !widget.user.isAdmin) ? null : () => _updateItemQuantityInOrder(index, item.quantity + 1),
                       icon: Icon(
                         Icons.add_circle_outline,
-                        color: Colors.green.shade600,
+                        color: (item.sentToKitchen && !widget.user.isAdmin) ? Colors.grey.shade400 : Colors.green.shade600,
                       ),
                     ),
                   ],
@@ -2929,10 +2969,10 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   InkWell(
-                    onTap: () => _updateItemQuantityInOrder(index, item.quantity - 1),
+                    onTap: (item.sentToKitchen && !widget.user.isAdmin) ? null : () => _updateItemQuantityInOrder(index, item.quantity - 1),
                     child: Container(
                       padding: const EdgeInsets.all(4),
-                      child: const Icon(Icons.remove, size: 14),
+                      child: Icon(Icons.remove, size: 14, color: (item.sentToKitchen && !widget.user.isAdmin) ? Colors.grey.shade400 : null),
                     ),
                   ),
                   Container(
@@ -2943,10 +2983,10 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
                     ),
                   ),
                   InkWell(
-                    onTap: () => _updateItemQuantityInOrder(index, item.quantity + 1),
+                    onTap: (item.sentToKitchen && !widget.user.isAdmin) ? null : () => _updateItemQuantityInOrder(index, item.quantity + 1),
                     child: Container(
                       padding: const EdgeInsets.all(4),
-                      child: const Icon(Icons.add, size: 14),
+                      child: Icon(Icons.add, size: 14, color: (item.sentToKitchen && !widget.user.isAdmin) ? Colors.grey.shade400 : null),
                     ),
                   ),
                 ],
@@ -3052,6 +3092,68 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
                 ),
               ),
               const SizedBox(height: 16),
+              
+              // Spice level selector
+              Builder(builder: (_) {
+                                 final current = (item.customProperties['spiceLevel'] ?? 'Regular') as String;
+                 String selected = current;
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Text(
+                          'Spice Level',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        const Spacer(),
+                        Row(
+                          children: [
+                            const Text('Running', style: TextStyle(fontWeight: FontWeight.w500)),
+                            const SizedBox(width: 8),
+                            Switch(
+                              value: ((_currentOrder?.items[index].customProperties['running'] as bool?) ?? false),
+                              onChanged: (v) {
+                                setState(() {
+                                  final newMeta = Map<String, dynamic>.from(_currentOrder!.items[index].customProperties);
+                                  newMeta['running'] = v;
+                                  _currentOrder!.items[index] = _currentOrder!.items[index].copyWith(customProperties: newMeta);
+                                  _currentOrder = _currentOrder!.copyWith(items: _currentOrder!.items);
+                                });
+                                _autoSaveOrder();
+                              },
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      children: [
+                        for (final level in ['Mild', 'Regular', 'Spicy'])
+                          ChoiceChip(
+                            label: Text(level),
+                            selected: selected == level,
+                            onSelected: (v) {
+                              if (!v) return;
+                              selected = level;
+                              // Update immediately in state
+                              setState(() {
+                                final newMeta = Map<String, dynamic>.from(item.customProperties);
+                                newMeta['spiceLevel'] = level;
+                                _currentOrder!.items[index] = _currentOrder!.items[index].copyWith(customProperties: newMeta);
+                                _currentOrder = _currentOrder!.copyWith(items: _currentOrder!.items);
+                              });
+                              _autoSaveOrder();
+                            },
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                );
+              }),
               
               // Current notes display
               if (item.notes?.isNotEmpty == true) ...[

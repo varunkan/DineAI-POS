@@ -35,6 +35,12 @@ import '../screens/bluetooth_printer_management_screen.dart';
 import '../examples/multiple_bluetooth_printers_example.dart';
 import '../services/printer_configuration_service.dart';
 import '../services/printing_service.dart';
+import '../services/loyalty_service.dart';
+import '../models/customer.dart';
+import '../services/sms_service.dart';
+import '../config/sms_config.dart';
+import '../services/database_service.dart';
+import '../services/inventory_service.dart';
 
 enum UserManagementView { addUser, existingUsers }
 
@@ -1441,6 +1447,10 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with TickerProvider
               icon: Icon(Icons.monitor_heart),
               label: 'Activity',
             ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.sms),
+              label: 'SMS',
+            ),
           ],
         ),
       ),
@@ -1490,6 +1500,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with TickerProvider
         return _buildSettingsTab();
       case 10:
         return _buildActivityMonitoringTab();
+      case 11:
+        return _buildSmsTab();
       default:
         return _buildCategoriesTab();
     }
@@ -2786,6 +2798,72 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with TickerProvider
             ),
           ),
           const SizedBox(height: 24),
+          // Data reconciliation quick action
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Data Reconciliation', style: Theme.of(context).textTheme.titleMedium),
+                        const SizedBox(height: 4),
+                        const Text('Fix legacy issues where cancelled orders still appear as completed.'),
+                      ],
+                    ),
+                  ),
+                  ElevatedButton.icon(
+                    icon: const Icon(Icons.rule_folder),
+                    label: const Text('Reconcile'),
+                    onPressed: () async {
+                      try {
+                        final orderService = Provider.of<OrderService?>(context, listen: false);
+                        final updated = await (orderService?.reconcileCancelledOrdersFromLogs() ?? Future.value(0));
+                        await orderService?.loadOrders();
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Reconciled $updated order(s)')),
+                          );
+                        }
+                      } catch (e) {
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Reconcile failed: $e')),
+                          );
+                        }
+                      }
+                    },
+                  ),
+                  const SizedBox(width: 12),
+                  ElevatedButton.icon(
+                    icon: const Icon(Icons.inventory_2),
+                    label: const Text('Align Inventory to Sales'),
+                    onPressed: () async {
+                      try {
+                        final databaseService = Provider.of<DatabaseService>(context, listen: false);
+                        final inventoryService = InventoryService();
+                        final added = await inventoryService.reconcileWithSoldMenuItems(databaseService);
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(added > 0 ? 'Added $added inventory item(s) from sold items' : 'Inventory already aligned with sales')),
+                          );
+                        }
+                      } catch (e) {
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Inventory alignment failed: $e')),
+                          );
+                        }
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
           
           // Database Management Section
           Card(
@@ -3740,4 +3818,165 @@ class _ExistingUsersViewState extends State<_ExistingUsersView> {
       ],
           );
     }
+} 
+
+Widget _buildSmsTab() {
+  return const _SmsTab();
+}
+
+class _SmsTab extends StatefulWidget {
+  const _SmsTab();
+  @override
+  State<_SmsTab> createState() => _SmsTabState();
+}
+
+class _SmsTabState extends State<_SmsTab> {
+  final TextEditingController _controller = TextEditingController();
+  String? _composedMessage;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: _composedMessage == null
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('SMS Broadcast', style: Theme.of(context).textTheme.headlineSmall),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _controller,
+                  maxLines: 5,
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    hintText: 'Type your message to send to customers...',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: ElevatedButton.icon(
+                    icon: const Icon(Icons.arrow_forward),
+                    label: const Text('Next'),
+                    onPressed: () {
+                      final txt = _controller.text.trim();
+                      if (txt.isEmpty) return;
+                      setState(() => _composedMessage = txt);
+                    },
+                  ),
+                ),
+              ],
+            )
+          : _SmsRecipientsSelector(message: _composedMessage!),
+    );
+  }
+}
+
+class _SmsRecipientsSelector extends StatefulWidget {
+  final String message;
+  const _SmsRecipientsSelector({required this.message});
+  @override
+  State<_SmsRecipientsSelector> createState() => _SmsRecipientsSelectorState();
+}
+
+class _SmsRecipientsSelectorState extends State<_SmsRecipientsSelector> {
+  final Set<String> _selectedPhones = {};
+  bool _loading = true;
+  List<Customer> _customers = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCustomers();
+  }
+
+  Future<void> _loadCustomers() async {
+    try {
+      final loyalty = Provider.of<LoyaltyService?>(context, listen: false);
+      List<Customer> customers = loyalty != null ? await loyalty.getAllCustomers() : <Customer>[];
+      // Fallback: derive from previous orders if no customers found
+      if (customers.isEmpty) {
+        final orderService = Provider.of<OrderService?>(context, listen: false);
+        final orders = orderService?.allOrders ?? <Order>[];
+        final Map<String, Customer> dedupByPhone = {};
+        for (final o in orders) {
+          final phone = (o.customerPhone ?? '').trim();
+          if (phone.isEmpty) continue;
+          final name = (o.customerName ?? '').trim();
+          dedupByPhone.putIfAbsent(phone, () => Customer(
+            id: phone,
+            name: name.isNotEmpty ? name : phone,
+            phone: phone,
+            email: null,
+            loyaltyPoints: 0,
+            totalSpent: 0.0,
+            visitCount: 0,
+            lastVisit: null,
+            createdAt: DateTime.now(),
+            updatedAt: DateTime.now(),
+          ));
+        }
+        customers = dedupByPhone.values.toList()
+          ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+      }
+      if (mounted) setState(() { _customers = customers; _loading = false; });
+    } catch (_) {
+      if (mounted) setState(() { _customers = []; _loading = false; });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Select Recipients', style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: 12),
+        Expanded(
+          child: ListView.builder(
+            itemCount: _customers.length,
+            itemBuilder: (context, index) {
+              final c = _customers[index];
+              final phone = c.phone;
+              final selected = _selectedPhones.contains(phone);
+              return CheckboxListTile(
+                value: selected,
+                onChanged: (val) {
+                  setState(() {
+                    if (val == true) {
+                      _selectedPhones.add(phone);
+                    } else {
+                      _selectedPhones.remove(phone);
+                    }
+                  });
+                },
+                title: Text(c.name.isNotEmpty ? c.name : (c.phone.isNotEmpty ? c.phone : 'Unknown')),
+                subtitle: Text(c.phone),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 12),
+        Align(
+          alignment: Alignment.centerRight,
+          child: ElevatedButton.icon(
+            icon: const Icon(Icons.send),
+            label: const Text('Send'),
+            onPressed: _selectedPhones.isEmpty ? null : () async {
+              final phones = _selectedPhones.toList();
+              final sent = await SmsService.sendBulk(phones, widget.message);
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('SMS sent to $sent/${phones.length} recipients')),
+                );
+              }
+            },
+          ),
+        ),
+      ],
+    );
+  }
 } 

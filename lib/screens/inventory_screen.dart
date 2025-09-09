@@ -7,6 +7,10 @@ import 'package:ai_pos_system/widgets/confirmation_dialog.dart';
 import 'package:ai_pos_system/widgets/universal_navigation.dart';
 import 'package:intl/intl.dart';
 import 'dart:async';
+import 'package:provider/provider.dart';
+import '../services/menu_service.dart';
+import '../models/menu_item.dart' as pos_menu;
+import '../models/inventory_mapping.dart';
 
 class InventoryScreen extends StatefulWidget {
   final bool showAppBar;
@@ -642,6 +646,16 @@ class _InventoryScreenState extends State<InventoryScreen>
                   '\$${item.costPerUnit}/${item.unitDisplay}',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
+                const Spacer(),
+                Builder(
+                  builder: (_) {
+                    final ordersLeft = _inventoryService.getEstimatedOrdersLeft(item.id);
+                    return Text(
+                      'Orders left: ${ordersLeft.toStringAsFixed(0)}',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.blueGrey),
+                    );
+                  },
+                ),
               ],
             ),
             const SizedBox(height: 4),
@@ -706,6 +720,16 @@ class _InventoryScreenState extends State<InventoryScreen>
                   Icon(Icons.delete),
                   SizedBox(width: 8),
                   Text('Record Waste'),
+                ],
+              ),
+            ),
+            const PopupMenuItem(
+              value: 'links',
+              child: Row(
+                children: [
+                  Icon(Icons.link),
+                  SizedBox(width: 8),
+                  Text('Manage Links'),
                 ],
               ),
             ),
@@ -1101,6 +1125,9 @@ class _InventoryScreenState extends State<InventoryScreen>
         break;
       case 'waste':
         _showWasteDialog(item);
+        break;
+      case 'links':
+        _showManageLinksDialog(item);
         break;
       case 'transactions':
         _showItemTransactions(item);
@@ -1701,6 +1728,162 @@ class _InventoryScreenState extends State<InventoryScreen>
             child: const Text('Record Waste'),
           ),
         ],
+      ),
+    );
+  }
+
+  void _showManageLinksDialog(InventoryItem inventoryItem) async {
+    final menuService = Provider.of<MenuService?>(context, listen: false);
+    if (menuService == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Menu not available')),
+      );
+      return;
+    }
+    final allMenuItems = menuService.menuItems;
+    final initialLinks = _inventoryService.getLinksForInventoryItem(inventoryItem.id);
+    final Map<String, bool> selected = {
+      for (final mi in allMenuItems)
+        mi.id: initialLinks.any((l) => l.menuItemId == mi.id)
+    };
+    final Map<String, TextEditingController> qtyControllers = {
+      for (final mi in allMenuItems)
+        mi.id: TextEditingController(
+          text: (initialLinks.firstWhere(
+                    (l) => l.menuItemId == mi.id,
+                    orElse: () => InventoryRecipeLink(
+                      inventoryItemId: inventoryItem.id,
+                      menuItemId: mi.id,
+                      consumptionPerOrder: 1,
+                    ),
+                  ).consumptionPerOrder)
+              .toString(),
+        )
+    };
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: Text('Link Menu Items → ${inventoryItem.name}'),
+          content: SizedBox(
+            width: MediaQuery.of(context).size.width * 0.8,
+            height: MediaQuery.of(context).size.height * 0.7,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Select menu items and set consumption per order (in inventory units)'),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.blueGrey.withValues(alpha: 0.05),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Row(
+                    children: const [
+                      Expanded(child: Text('Menu Item')),
+                      SizedBox(width: 120, child: Text('Qty/Order', textAlign: TextAlign.center)),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: ListView.separated(
+                    itemCount: allMenuItems.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (context, index) {
+                      final mi = allMenuItems[index];
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Expanded(
+                              child: CheckboxListTile(
+                                dense: true,
+                                contentPadding: EdgeInsets.zero,
+                                controlAffinity: ListTileControlAffinity.leading,
+                                title: Text(mi.name),
+                                value: selected[mi.id] ?? false,
+                                onChanged: (checked) {
+                                  setState(() {
+                                    selected[mi.id] = checked ?? false;
+                                  });
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            SizedBox(
+                              width: 120,
+                              child: TextField(
+                                controller: qtyControllers[mi.id],
+                                textAlign: TextAlign.center,
+                                decoration: const InputDecoration(
+                                  isDense: true,
+                                  contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                                  border: OutlineInputBorder(),
+                                ),
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton.icon(
+              icon: const Icon(Icons.save),
+              label: const Text('Save'),
+              onPressed: () async {
+                // Apply all selections atomically
+                final existing = _inventoryService.getLinksForInventoryItem(inventoryItem.id);
+                final existingByMenu = {for (final l in existing) l.menuItemId: l};
+
+                // Upserts
+                for (final mi in allMenuItems) {
+                  final isSel = selected[mi.id] ?? false;
+                  final qty = double.tryParse(qtyControllers[mi.id]?.text.trim() ?? '') ?? 0;
+                  final hasExisting = existingByMenu.containsKey(mi.id);
+                  if (isSel && qty > 0) {
+                    final link = hasExisting
+                        ? existingByMenu[mi.id]!.copyWith(consumptionPerOrder: qty, updatedAt: DateTime.now())
+                        : InventoryRecipeLink(
+                            inventoryItemId: inventoryItem.id,
+                            menuItemId: mi.id,
+                            consumptionPerOrder: qty,
+                          );
+                    await _inventoryService.upsertRecipeLink(link);
+                  }
+                }
+
+                // Removals
+                for (final l in existing) {
+                  if (!(selected[l.menuItemId] ?? false)) {
+                    await _inventoryService.removeRecipeLink(l.id);
+                  }
+                }
+
+                if (mounted) {
+                  Navigator.of(context).pop();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Links saved')),
+                  );
+                }
+              },
+            ),
+          ],
+        ),
       ),
     );
   }

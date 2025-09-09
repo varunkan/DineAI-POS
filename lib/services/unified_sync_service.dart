@@ -58,6 +58,7 @@ class UnifiedSyncService extends ChangeNotifier {
   StreamSubscription<fs.QuerySnapshot>? _menuItemsListener;
   StreamSubscription<fs.QuerySnapshot>? _usersListener;
   StreamSubscription<fs.QuerySnapshot>? _inventoryListener;
+  StreamSubscription<fs.QuerySnapshot>? _inventoryRecipeLinksListener;
   StreamSubscription<fs.QuerySnapshot>? _tablesListener;
   StreamSubscription<fs.QuerySnapshot>? _categoriesListener;
   
@@ -74,6 +75,8 @@ class UnifiedSyncService extends ChangeNotifier {
   static const bool _enableEnhancedServerChangeSync = true;
   static const bool _enableAutomaticOrderRefresh = true;
   static const bool _enableServerChangeNotifications = true;
+  // Feature flag: when true, reconcile can purge stale local-only orders (logging-only by default)
+  static const bool _enablePurgeStaleLocalOrders = false;
   
   // Server change sync state
   String? _lastSelectedServerId;
@@ -207,6 +210,7 @@ class UnifiedSyncService extends ChangeNotifier {
       _startMenuItemsListener(tenantId);
       _startUsersListener(tenantId);
       _startInventoryListener(tenantId);
+      _startInventoryRecipeLinksListener(tenantId);
       _startTablesListener(tenantId);
       _startCategoriesListener(tenantId);
       
@@ -221,10 +225,13 @@ class UnifiedSyncService extends ChangeNotifier {
   /// Stop all real-time listeners
   Future<void> _stopRealTimeListeners() async {
     try {
+      debugPrint('🛑 Stopping real-time Firebase listeners...');
+      
       _ordersListener?.cancel();
       _menuItemsListener?.cancel();
       _usersListener?.cancel();
       _inventoryListener?.cancel();
+      _inventoryRecipeLinksListener?.cancel();
       _tablesListener?.cancel();
       _categoriesListener?.cancel();
       
@@ -232,6 +239,7 @@ class UnifiedSyncService extends ChangeNotifier {
       _menuItemsListener = null;
       _usersListener = null;
       _inventoryListener = null;
+      _inventoryRecipeLinksListener = null;
       _tablesListener = null;
       _categoriesListener = null;
       
@@ -445,6 +453,46 @@ class UnifiedSyncService extends ChangeNotifier {
     }
   }
   
+  /// Start real-time listener for inventory recipe links
+  void _startInventoryRecipeLinksListener(String tenantId) {
+    try {
+      _inventoryRecipeLinksListener = _firestore
+          .collection('tenants')
+          .doc(tenantId)
+          .collection('inventory_recipe_links')
+          .snapshots()
+          .listen(
+        (snapshot) async {
+          try {
+            debugPrint('🔴 Real-time inventory recipe links update: ${snapshot.docChanges.length} changes');
+            for (final change in snapshot.docChanges) {
+              final data = change.doc.data();
+              if (data == null) continue;
+              data['id'] = change.doc.id;
+              switch (change.type) {
+                case fs.DocumentChangeType.added:
+                case fs.DocumentChangeType.modified:
+                  await _downloadInventoryRecipeLinkFromFirebase(data);
+                  break;
+                case fs.DocumentChangeType.removed:
+                  await _handleInventoryRecipeLinkDeletionFromFirebase(data['id']);
+                  break;
+              }
+            }
+            _onInventoryUpdated?.call();
+          } catch (e) {
+            debugPrint('❌ Error processing recipe links update: $e');
+          }
+        },
+        onError: (error) {
+          debugPrint('❌ Real-time recipe links listener error: $error');
+        },
+      );
+    } catch (e) {
+      debugPrint('❌ Failed to start recipe links listener: $e');
+    }
+  }
+  
   /// Start real-time listener for tables
   void _startTablesListener(String tenantId) {
     try {
@@ -611,6 +659,13 @@ class UnifiedSyncService extends ChangeNotifier {
       return;
     }
     
+    // First, flush any pending local changes to Firebase to avoid conflicts
+    try {
+      await processPendingChanges();
+    } catch (e) {
+      debugPrint('⚠️ Failed to process pending changes before manual sync: $e');
+    }
+    
     // Prevent multiple simultaneous syncs
     if (_isSyncing) {
       debugPrint('⚠️ Manual sync: Already syncing, skipping duplicate call');
@@ -716,6 +771,7 @@ class UnifiedSyncService extends ChangeNotifier {
         'menuItems': _menuItemsListener != null,
         'users': _usersListener != null,
         'inventory': _inventoryListener != null,
+        'inventoryRecipeLinks': _inventoryRecipeLinksListener != null,
         'tables': _tablesListener != null,
         'categories': _categoriesListener != null,
       },
@@ -1109,6 +1165,15 @@ class UnifiedSyncService extends ChangeNotifier {
     try {
       final tenantId = FirebaseConfig.getCurrentTenantId();
       if (tenantId == null) throw Exception('No tenant ID available');
+      final sent = (itemMap['sent_to_kitchen'] ?? itemMap['sentToKitchen'] ?? 0);
+      if (sent is int && sent != 1) {
+        debugPrint('⏭️ Guard: Not syncing unsent item ${itemMap['id']} to Firebase');
+        return;
+      }
+      if (sent is bool && sent != true) {
+        debugPrint('⏭️ Guard: Not syncing unsent item ${itemMap['id']} to Firebase');
+        return;
+      }
       
       await _firestore
           .collection('tenants')
@@ -1335,9 +1400,17 @@ class UnifiedSyncService extends ChangeNotifier {
         _performTimeBasedSyncForMenuItems(tenantId),
         _performTimeBasedSyncForUsers(tenantId),
         _performTimeBasedSyncForInventory(tenantId),
+        _performTimeBasedSyncForInventoryRecipeLinks(tenantId),
         _performTimeBasedSyncForTables(tenantId),
         _performTimeBasedSyncForCategories(tenantId),
       ]);
+      
+      // Optional: after syncing, reconcile/purge stale local-only orders (logging-only unless flag enabled)
+      try {
+        await _reconcileStaleLocalOrders(tenantId);
+      } catch (e) {
+        debugPrint('⚠️ Reconcile of stale local orders failed: $e');
+      }
       
       _lastSyncTime = DateTime.now();
       _onSyncProgress?.call('✅ Smart time-based sync completed successfully');
@@ -1398,7 +1471,9 @@ class UnifiedSyncService extends ChangeNotifier {
           // Both exist - compare timestamps
           try {
             final localUpdatedAt = localOrder.updatedAt;
-            final firebaseUpdatedAt = DateTime.parse(firebaseOrder['lastModified'] ?? firebaseOrder['orderTime'] ?? '1970-01-01T00:00:00.000Z');
+            final firebaseUpdatedAt = DateTime.parse(
+              (firebaseOrder['updatedAt'] ?? firebaseOrder['lastModified'] ?? firebaseOrder['createdAt'] ?? firebaseOrder['orderTime'] ?? '1970-01-01T00:00:00.000Z') as String,
+            );
             
             if (localUpdatedAt.isAfter(firebaseUpdatedAt)) {
               // Local is newer - upload to Firebase
@@ -1693,6 +1768,25 @@ class UnifiedSyncService extends ChangeNotifier {
     } catch (e) {
       debugPrint('❌ Failed to perform time-based sync for inventory: $e');
       _onSyncError?.call('Inventory sync failed: $e');
+    }
+  }
+  
+  /// Time-based sync for inventory recipe links from Firebase (time-based full sync)
+  Future<void> _performTimeBasedSyncForInventoryRecipeLinks(String tenantId) async {
+    try {
+      final snapshot = await _firestore
+          .collection('tenants')
+          .doc(tenantId)
+          .collection('inventory_recipe_links')
+          .get();
+      for (final doc in snapshot.docs) {
+        if (doc.id == '_persistence_config') continue;
+        final data = doc.data();
+        data['id'] = doc.id;
+        await _downloadInventoryRecipeLinkFromFirebase(data);
+      }
+    } catch (e) {
+      debugPrint('❌ Failed to sync inventory recipe links: $e');
     }
   }
   
@@ -2257,6 +2351,7 @@ class UnifiedSyncService extends ChangeNotifier {
                            _menuItemsListener != null && 
                            _usersListener != null && 
                            _inventoryListener != null && 
+                           _inventoryRecipeLinksListener != null &&
                            _tablesListener != null && 
                            _categoriesListener != null;
       
@@ -2296,6 +2391,7 @@ class UnifiedSyncService extends ChangeNotifier {
       if (_menuItemsListener != null) debugPrint('✅ Menu items listener is active');
       if (_usersListener != null) debugPrint('✅ Users listener is active');
       if (_inventoryListener != null) debugPrint('✅ Inventory listener is active');
+      if (_inventoryRecipeLinksListener != null) debugPrint('✅ Inventory recipe links listener is active');
       if (_tablesListener != null) debugPrint('✅ Tables listener is active');
       if (_categoriesListener != null) debugPrint('✅ Categories listener is active');
       
@@ -2488,7 +2584,7 @@ class UnifiedSyncService extends ChangeNotifier {
         
         // Check if this order is newer than our last refresh
         if (_lastOrderRefreshTime != null) {
-          final orderUpdatedAt = DateTime.parse(orderData['updatedAt'] ?? '1970-01-01T00:00:00.000Z');
+          final orderUpdatedAt = DateTime.parse((orderData['updatedAt'] ?? orderData['lastModified'] ?? orderData['createdAt'] ?? orderData['orderTime'] ?? '1970-01-01T00:00:00.000Z') as String);
           if (orderUpdatedAt.isAfter(_lastOrderRefreshTime!)) {
             try {
               await _downloadOrderFromFirebase(orderData);
@@ -2782,6 +2878,59 @@ class UnifiedSyncService extends ChangeNotifier {
     }
     
     return true;
+  }
+
+  /// Reconcile and optionally purge stale local-only orders
+  Future<void> _reconcileStaleLocalOrders(String tenantId) async {
+    try {
+      if (_orderService == null) return;
+      
+      // Build a set of server order IDs for quick lookup
+      final serverSnapshot = await _firestore
+          .collection('tenants')
+          .doc(tenantId)
+          .collection('orders')
+          .get();
+      final serverIds = serverSnapshot.docs.map((d) => d.id).toSet();
+      
+      final localOrders = _orderService!.allOrders;
+      int staleCount = 0;
+      for (final order in localOrders) {
+        if (!serverIds.contains(order.id)) {
+          staleCount++;
+        }
+      }
+      if (staleCount > 0) {
+        debugPrint('🔎 Reconcile: Found $staleCount local orders missing on server (logging only).');
+      }
+      
+      if (_enablePurgeStaleLocalOrders) {
+        // Zero-risk: currently disabled. Implement purge policy here when enabled.
+        // Intentionally left as a no-op to avoid unintended data loss.
+      }
+    } catch (e) {
+      debugPrint('⚠️ Reconcile stale local orders failed: $e');
+    }
+  }
+
+  Future<void> _downloadInventoryRecipeLinkFromFirebase(Map<String, dynamic> linkData) async {
+    try {
+      if (_inventoryService == null) return;
+      await _inventoryService!.updateRecipeLinkFromFirebase(linkData);
+      debugPrint('✅ Inventory recipe link synced');
+    } catch (e) {
+      debugPrint('❌ Failed to download recipe link: $e');
+    }
+  }
+
+  Future<void> _handleInventoryRecipeLinkDeletionFromFirebase(String linkId) async {
+    try {
+      if (_inventoryService == null) return;
+      await _inventoryService!.removeRecipeLink(linkId);
+      debugPrint('🗑️ Inventory recipe link deleted locally: $linkId');
+    } catch (e) {
+      debugPrint('❌ Failed to handle recipe link deletion: $e');
+    }
   }
 
 } 

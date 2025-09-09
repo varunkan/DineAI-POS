@@ -6,6 +6,8 @@ import '../services/order_service.dart';
 import '../widgets/universal_navigation.dart';
 import '../widgets/loading_overlay.dart';
 import 'total_orders_report_screen.dart';
+import '../services/menu_service.dart';
+import 'cancelled_orders_report_screen.dart';
 
 class ReportsScreen extends StatefulWidget {
   final User user;
@@ -24,6 +26,8 @@ class _ReportsScreenState extends State<ReportsScreen> with TickerProviderStateM
   String _selectedPeriod = 'today';
   DateTime _startDate = DateTime.now().subtract(const Duration(days: 7));
   DateTime _endDate = DateTime.now();
+  Map<String, String> _categoryIdToName = {};
+  List<Order> _filteredCancelledOrders = [];
 
   // Filter options
   static const List<String> periodOptions = [
@@ -55,6 +59,7 @@ class _ReportsScreenState extends State<ReportsScreen> with TickerProviderStateM
 
     try {
       await _updateFilteredOrders();
+      await _loadCategoryNames();
       setState(() {
         _isLoading = false;
       });
@@ -63,6 +68,18 @@ class _ReportsScreenState extends State<ReportsScreen> with TickerProviderStateM
         _isLoading = false;
         _error = 'Failed to load data: $e';
       });
+    }
+  }
+
+  Future<void> _loadCategoryNames() async {
+    final menuService = Provider.of<MenuService>(context, listen: false);
+    try {
+      final categories = await menuService.getCategories();
+      _categoryIdToName = {
+        for (final c in categories) c.id: c.name,
+      };
+    } catch (e) {
+      // Fallback: keep empty map; UI will display 'Uncategorized'
     }
   }
 
@@ -110,6 +127,13 @@ class _ReportsScreenState extends State<ReportsScreen> with TickerProviderStateM
       order.orderTime.isAfter(startDate) && 
       order.orderTime.isBefore(endDate)
     ).toList();
+
+    // Also compute cancelled orders for the same date range
+    _filteredCancelledOrders = allOrders.where((order) => 
+      order.isCancelled &&
+      order.orderTime.isAfter(startDate) &&
+      order.orderTime.isBefore(endDate)
+    ).toList();
   }
 
   // Sales Analytics
@@ -133,7 +157,88 @@ class _ReportsScreenState extends State<ReportsScreen> with TickerProviderStateM
   List<MapEntry<String, int>> get _topSellingItems {
     final items = _popularItems.entries.toList();
     items.sort((a, b) => b.value.compareTo(a.value));
-    return items.take(10).toList();
+    return items;
+  }
+
+  // Grouped Popular Items by Category
+  Map<String, List<MapEntry<String, int>>> get _topSellingItemsByCategory {
+    final Map<String, Map<String, int>> grouped = {};
+    for (final order in _filteredOrders) {
+      for (final orderItem in order.items) {
+        final categoryId = orderItem.menuItem.categoryId;
+        final categoryName = _categoryIdToName[categoryId] ?? 'Uncategorized';
+        grouped.putIfAbsent(categoryName, () => {});
+        final itemName = orderItem.menuItem.name;
+        grouped[categoryName]![itemName] = (grouped[categoryName]![itemName] ?? 0) + orderItem.quantity;
+      }
+    }
+    // Convert inner maps to sorted lists
+    final Map<String, List<MapEntry<String, int>>> result = {};
+    for (final entry in grouped.entries) {
+      final list = entry.value.entries.toList();
+      list.sort((a, b) => b.value.compareTo(a.value));
+      result[entry.key] = list;
+    }
+    return result;
+  }
+
+  // Grouped by Category then by Item Type (Veg, Chicken, Goat, Other)
+  Map<String, Map<String, List<MapEntry<String, int>>>> get _topSellingByCategoryAndType {
+    // Build a lookup of itemName -> detection info to avoid repeated scans
+    final Map<String, Map<String, dynamic>> itemMeta = {};
+    for (final order in _filteredOrders) {
+      for (final orderItem in order.items) {
+        final name = orderItem.menuItem.name;
+        if (!itemMeta.containsKey(name)) {
+          itemMeta[name] = {
+            'isVegetarian': orderItem.menuItem.isVegetarian,
+            'tags': orderItem.menuItem.tags.map((t) => t.toLowerCase()).toList(),
+            'name': name.toLowerCase(),
+          };
+        }
+      }
+    }
+
+    String _detectType(String itemName) {
+      final meta = itemMeta[itemName];
+      if (meta == null) return 'Other';
+      final isVeg = (meta['isVegetarian'] as bool?) ?? false;
+      final tags = (meta['tags'] as List<String>?) ?? const [];
+      final lname = (meta['name'] as String?) ?? '';
+      if (isVeg || tags.contains('veg') || tags.contains('vegetarian') || lname.contains('veg') || lname.contains('paneer')) {
+        return 'Veg';
+      }
+      if (tags.contains('chicken') || lname.contains('chicken')) {
+        return 'Chicken';
+      }
+      if (tags.contains('goat') || lname.contains('goat') || tags.contains('mutton') || lname.contains('mutton')) {
+        return 'Goat';
+      }
+      return 'Other';
+    }
+
+    final Map<String, Map<String, List<MapEntry<String, int>>>> result = {};
+    final byCategory = _topSellingItemsByCategory;
+    for (final categoryEntry in byCategory.entries) {
+      final categoryName = categoryEntry.key;
+      final items = categoryEntry.value;
+      final Map<String, List<MapEntry<String, int>>> typeMap = {
+        'Veg': [],
+        'Chicken': [],
+        'Goat': [],
+        'Other': [],
+      };
+      for (final item in items) {
+        final type = _detectType(item.key);
+        typeMap[type]!.add(item);
+      }
+      // Sort each type group by quantity desc
+      for (final k in typeMap.keys) {
+        typeMap[k]!.sort((a, b) => b.value.compareTo(a.value));
+      }
+      result[categoryName] = typeMap;
+    }
+    return result;
   }
 
   // Peak Hour Analytics
@@ -419,6 +524,12 @@ class _ReportsScreenState extends State<ReportsScreen> with TickerProviderStateM
                 Expanded(child: _buildMetricCard('Total Items', _totalItems.toString(), Colors.purple, Icons.restaurant_menu)),
               ],
             ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(child: _buildMetricCard('Cancelled Orders', _filteredCancelledOrders.length.toString(), Colors.red, Icons.cancel, onTap: _openCancelledOrdersDetail)),
+              ],
+            ),
           ],
           const SizedBox(height: 24),
           // Top selling items
@@ -609,8 +720,21 @@ class _ReportsScreenState extends State<ReportsScreen> with TickerProviderStateM
     }
   }
 
+  void _openCancelledOrdersDetail() {
+    try {
+      if (_filteredCancelledOrders.isEmpty) return;
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (context) => CancelledOrdersReportScreen(orders: _filteredCancelledOrders),
+        ),
+      );
+    } catch (e) {
+      // Non-blocking: ignore navigation errors
+    }
+  }
+
   Widget _buildTopSellingItems() {
-    if (_topSellingItems.isEmpty) {
+    if (_topSellingByCategoryAndType.isEmpty) {
       return _buildEmptyState('No items data available');
     }
 
@@ -628,24 +752,75 @@ class _ReportsScreenState extends State<ReportsScreen> with TickerProviderStateM
               ),
             ),
             const SizedBox(height: 16),
-            ..._topSellingItems.map((item) => ListTile(
-              leading: CircleAvatar(
-                backgroundColor: Colors.blue.shade100,
-                child: Text(
-                  '${_topSellingItems.indexOf(item) + 1}',
-                  style: TextStyle(color: Colors.blue.shade700, fontWeight: FontWeight.bold),
-                ),
-              ),
-              title: Text(item.key),
-              trailing: Text(
-                '${item.value} sold',
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-            )),
+            ..._renderTopSellingItemsByCategoryAndType(),
           ],
         ),
       ),
     );
+  }
+
+  List<Widget> _renderTopSellingItemsByCategoryAndType() {
+    final widgets = <Widget>[];
+    final sortedCategories = _topSellingByCategoryAndType.keys.toList()..sort();
+    for (final category in sortedCategories) {
+      final typeOrder = ['Veg', 'Chicken', 'Goat', 'Other'];
+      final typeMap = _topSellingByCategoryAndType[category] ?? {};
+
+      int categoryTotal = 0;
+      for (final type in typeOrder) {
+        final items = (typeMap[type] ?? []);
+        categoryTotal += _sumCount(items);
+      }
+
+      widgets.add(ExpansionTile(
+        tilePadding: EdgeInsets.zero,
+        title: Text(
+          category,
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+        ),
+        subtitle: Text('Total: $categoryTotal'),
+        children: [
+          ...typeOrder.map((type) {
+            final items = (typeMap[type] ?? []);
+            if (items.isEmpty) return const SizedBox.shrink();
+            final typeTotal = _sumCount(items);
+            return Padding(
+              padding: const EdgeInsets.only(left: 8.0, right: 0.0, bottom: 8.0),
+              child: ExpansionTile(
+                tilePadding: EdgeInsets.zero,
+                title: Text(
+                  '$type ($typeTotal)',
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: Colors.blueGrey,
+                      ),
+                ),
+                children: [
+                  ...items.map((item) => ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(item.key),
+                        trailing: Text(
+                          '${item.value} sold',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      )),
+                ],
+              ),
+            );
+          }).where((w) => w is! SizedBox).toList(),
+        ],
+      ));
+    }
+    return widgets;
+  }
+
+  int _sumCount(List<MapEntry<String, int>> items) {
+    int sum = 0;
+    for (final e in items) {
+      sum += e.value;
+    }
+    return sum;
   }
 
   Widget _buildPeakHoursBreakdown() {
@@ -723,6 +898,7 @@ class _ReportsScreenState extends State<ReportsScreen> with TickerProviderStateM
                 '\$${customer.value.toStringAsFixed(2)}',
                 style: const TextStyle(fontWeight: FontWeight.bold),
               ),
+              onTap: () => _openCustomerOrdersDetail(customer.key),
             )),
           ],
         ),
@@ -751,7 +927,7 @@ class _ReportsScreenState extends State<ReportsScreen> with TickerProviderStateM
             const SizedBox(height: 16),
             Row(
               children: [
-                Expanded(child: _buildMetricCard('Total Customers', totalCustomers.toString(), Colors.green, Icons.people)),
+                Expanded(child: _buildMetricCard('Total Customers', totalCustomers.toString(), Colors.green, Icons.people, onTap: _openAllCustomersList)),
                 const SizedBox(width: 12),
                 Expanded(child: _buildMetricCard('Avg Customer Spend', '\$${avgCustomerSpending.toStringAsFixed(2)}', Colors.blue, Icons.person)),
               ],
@@ -836,5 +1012,46 @@ class _ReportsScreenState extends State<ReportsScreen> with TickerProviderStateM
         ),
       ),
     );
+  }
+
+  void _openCustomerOrdersDetail(String customerName) {
+    try {
+      final orders = _filteredOrders.where((o) => (o.customerName ?? '').trim() == customerName.trim()).toList();
+      if (orders.isEmpty) return;
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (context) => TotalOrdersReportScreen(orders: orders),
+        ),
+      );
+    } catch (_) {}
+  }
+
+  void _openAllCustomersList() {
+    try {
+      final customers = _customerSpending.keys.toList()..sort();
+      if (customers.isEmpty) return;
+      showModalBottomSheet(
+        context: context,
+        builder: (context) {
+          return SafeArea(
+            child: ListView.builder(
+              itemCount: customers.length,
+              itemBuilder: (context, index) {
+                final name = customers[index];
+                final total = _customerSpending[name] ?? 0.0;
+                return ListTile(
+                  title: Text(name),
+                  trailing: Text('\$${total.toStringAsFixed(2)}'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _openCustomerOrdersDetail(name);
+                  },
+                );
+              },
+            ),
+          );
+        },
+      );
+    } catch (_) {}
   }
 } 

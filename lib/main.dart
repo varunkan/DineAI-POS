@@ -35,6 +35,7 @@ import 'services/enhanced_printer_manager.dart';
 import 'services/unified_printer_service.dart';
 import 'services/unified_sync_service.dart';
 import 'services/kitchen_printing_service.dart';
+import 'services/loyalty_service.dart';
 
 // Tenant-specific printer services
 import 'services/tenant_printer_service.dart';
@@ -148,6 +149,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   PrintingService? _printingService;
   OrderLogService? _orderLogService;
   ActivityLogService? _activityLogService;
+  LoyaltyService? _loyaltyService;
   InventoryService? _inventoryService;
   PrinterConfigurationService? _printerConfigurationService;
   UnifiedPrinterService? _unifiedPrinterService;
@@ -290,6 +292,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     _menuService = MenuService(dummyDb);
     _orderLogService = OrderLogService(dummyDb);
     _activityLogService = ActivityLogService(dummyDb);
+    _loyaltyService = LoyaltyService(dummyDb);
     _inventoryService = InventoryService();
     _orderService = OrderService(dummyDb, _orderLogService!, _inventoryService!);
     debugPrint('✅ Core services initialized with dummy instances');
@@ -761,6 +764,11 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         debugPrint('⚠️ Could not initialize KitchenPrintingService - required services not available');
       }
       
+      // Initialize LoyaltyService
+      widget.progressService.addMessage('💰 Setting up loyalty service...');
+      _loyaltyService = LoyaltyService(tenantDatabase);
+      debugPrint('✅ LoyaltyService initialized');
+      
       // Initialize tenant-specific printer services
       widget.progressService.addMessage('🏪 Setting up tenant-specific printer system...');
       if (_printingService != null && _enhancedPrinterAssignmentService != null && _printerConfigurationService != null) {
@@ -872,6 +880,22 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
               debugPrint('❌ Sync error: $error');
             },
           );
+
+          // Non-blocking initial reconcile to align local DB with server state
+          try {
+            unawaited(_unifiedSyncService!.manualSync());
+            unawaited(_unifiedSyncService!.ensureRealTimeSyncActive());
+            // ONE-OFF: Remove a specific problematic order if it exists
+            try {
+              final orderService = _orderService;
+              if (orderService != null) {
+                // Do not await; run in background to avoid blocking UI
+                unawaited(orderService.deleteOrderByOrderNumber('DI-31624-1624'));
+              }
+            } catch (_) {}
+          } catch (e) {
+            debugPrint('⚠️ Initial reconcile trigger failed: $e');
+          }
         } catch (e) {
           debugPrint('❌ Failed to connect unified sync service: $e');
           // Don't fail initialization - continue in offline mode
@@ -1034,6 +1058,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       _printingService = null;
       _orderLogService = null;
       _activityLogService = null;
+      _loyaltyService = null;
       _inventoryService = null;
       _printerConfigurationService = null;
       _unifiedSyncService = null;
@@ -1130,6 +1155,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       ChangeNotifierProvider<OrderService?>.value(value: _orderService),
       ChangeNotifierProvider<OrderLogService?>.value(value: _orderLogService),
       ChangeNotifierProvider<ActivityLogService?>.value(value: _activityLogService),
+      ChangeNotifierProvider<LoyaltyService?>.value(value: _loyaltyService),
       ChangeNotifierProvider<InventoryService?>.value(value: _inventoryService),
     ];
     

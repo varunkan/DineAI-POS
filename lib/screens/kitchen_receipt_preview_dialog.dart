@@ -343,14 +343,14 @@ class KitchenReceiptPreviewDialog extends StatelessWidget {
             return const SizedBox.shrink();
           },
         ),
-        _buildReceiptRow('Date:', dateFormat.format(now), fontSize: 36), // 12*3
-        _buildReceiptRow('Time:', timeFormat.format(now), fontSize: 36), // 12*3
+        _buildReceiptRow('Date:', dateFormat.format(now), fontSize: 31), // reduced ~15%
+        _buildReceiptRow('Time:', timeFormat.format(now), fontSize: 31), // reduced ~15%
         _buildReceiptRow('Ready by:', timeFormat.format(estimatedReadyTime), 
-            valueStyle: TextStyle(fontWeight: FontWeight.bold, color: Colors.red, fontSize: 36, fontFamily: 'monospace')), // 12*3
+            valueStyle: TextStyle(fontWeight: FontWeight.bold, color: Colors.red, fontSize: 31, fontFamily: 'monospace')), // reduced
         
-        const SizedBox(height: 48), // 16*3
-        _buildReceiptLine('================================', bold: true, fontSize: 36), // 12*3
-        const SizedBox(height: 48), // 16*3
+        const SizedBox(height: 40),
+        _buildReceiptLine('================================', bold: true, fontSize: 31),
+        const SizedBox(height: 40),
         
         // Items grouped by category
         FutureBuilder<Widget>(
@@ -363,17 +363,17 @@ class KitchenReceiptPreviewDialog extends StatelessWidget {
           },
         ),
         
-        const SizedBox(height: 48), // 16*3
-        _buildReceiptLine('================================', bold: true, fontSize: 36), // 12*3
+        const SizedBox(height: 40),
+        _buildReceiptLine('================================', bold: true, fontSize: 31),
         
         // Special Instructions
         if (order.specialInstructions != null && order.specialInstructions!.isNotEmpty) ...[
-          const SizedBox(height: 48), // 16*3
-          _buildReceiptLine('SPECIAL INSTRUCTIONS:', bold: true, fontSize: 42), // 14*3
-          const SizedBox(height: 24), // 8*3
-          _buildReceiptLine(order.specialInstructions!, bold: true, fontSize: 36), // 12*3, made bold
-          const SizedBox(height: 48), // 16*3
-          _buildReceiptLine('================================', fontSize: 36), // 12*3
+          const SizedBox(height: 40),
+          _buildReceiptLine('SPECIAL INSTRUCTIONS:', bold: true, fontSize: 31),
+          const SizedBox(height: 20),
+          _buildReceiptLine(order.specialInstructions!, bold: true, fontSize: 31),
+          const SizedBox(height: 40),
+          _buildReceiptLine('================================', fontSize: 31),
         ],
       ],
     );
@@ -501,18 +501,18 @@ class KitchenReceiptPreviewDialog extends StatelessWidget {
       if (items.isEmpty) continue;
       
       // Category header
-      categoryWidgets.add(_buildReceiptLine(categoryName.toUpperCase(), bold: true, fontSize: 42)); // 14*3
-      categoryWidgets.add(const SizedBox(height: 24)); // 8*3
-      categoryWidgets.add(_buildReceiptLine('--------------------------------', bold: true, fontSize: 30)); // 10*3, made bold
-      categoryWidgets.add(const SizedBox(height: 24)); // 8*3
+      categoryWidgets.add(_buildReceiptLine(categoryName.toUpperCase(), bold: true, fontSize: 31));
+      categoryWidgets.add(const SizedBox(height: 20));
+      categoryWidgets.add(_buildReceiptLine('--------------------------------', bold: true, fontSize: 31));
+      categoryWidgets.add(const SizedBox(height: 20));
       
       // Items in this category
       for (final item in items) {
         categoryWidgets.add(_buildItemDetails(item));
-        categoryWidgets.add(const SizedBox(height: 36)); // 12*3
+        categoryWidgets.add(const SizedBox(height: 28)); // spacing between items
       }
       
-      categoryWidgets.add(const SizedBox(height: 24)); // 8*3
+      categoryWidgets.add(const SizedBox(height: 20));
     }
     
     return Column(children: categoryWidgets);
@@ -591,19 +591,19 @@ class KitchenReceiptPreviewDialog extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Item name and quantity
-        _buildReceiptRow('${item.quantity}x', item.menuItem.name, bold: true, fontSize: 36), // 12*3
+        _buildReceiptRow('${item.quantity}x', item.menuItem.name, bold: true, fontSize: 31),
         
         // Special instructions
         if (item.specialInstructions != null && item.specialInstructions!.isNotEmpty) ...[
-          const SizedBox(height: 12), // 4*3
-          _buildReceiptLine('  → ${item.specialInstructions!}', fontSize: 33, bold: true, // 11*3, made bold
+          const SizedBox(height: 10),
+          _buildReceiptLine('  → ${item.specialInstructions!}', fontSize: 31, bold: true,
               color: Colors.blue.shade700),
         ],
         
         // Spice level
         if (item.notes != null && item.notes!.contains('Spice:')) ...[
-          const SizedBox(height: 12), // 4*3
-          _buildReceiptLine('  → ${item.notes!}', fontSize: 33, bold: true, // 11*3, made bold
+          const SizedBox(height: 10),
+          _buildReceiptLine('  → ${item.notes!}', fontSize: 31, bold: true,
               color: Colors.red.shade700),
         ],
       ],

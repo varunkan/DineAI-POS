@@ -438,7 +438,11 @@ class OrderService extends ChangeNotifier {
             // ENHANCEMENT: Sync order item to Firebase
             try {
               final unifiedSyncService = UnifiedSyncService();
-              await unifiedSyncService.syncOrderItemToFirebase(itemMap);
+              if ((itemMap['sent_to_kitchen'] ?? 0) == 1) {
+                await unifiedSyncService.syncOrderItemToFirebase(itemMap);
+              } else {
+                debugPrint('⏭️ Skipping Firebase sync for unsent item: ${itemMap['id']}');
+              }
               debugPrint('✅ Order item synced to Firebase: ${itemMap['id']}');
             } catch (e) {
               debugPrint('⚠️ Failed to sync order item: $e');
@@ -447,10 +451,30 @@ class OrderService extends ChangeNotifier {
           }
           debugPrint('✅ Saved ${order.items.length} order items for: ${order.orderNumber}');
 
+          // After saving, ensure no unsent items exist remotely for this order
+                  try {
+          final tenantId = FirebaseConfig.getCurrentTenantId();
+          if (tenantId != null) {
+            final remoteUnsent = await fs.FirebaseFirestore.instance
+                .collection('tenants')
+                .doc(tenantId)
+                .collection('order_items')
+                .where('order_id', isEqualTo: order.id)
+                .where('sent_to_kitchen', isEqualTo: 0)
+                .get();
+            for (final doc in remoteUnsent.docs) {
+              await doc.reference.delete();
+              debugPrint('🧹 Deleted remote unsent item: ${doc.id}');
+            }
+          }
+        } catch (e) {
+          debugPrint('⚠️ Cleanup of remote unsent items failed: $e');
+        }
+
           return true;
         } catch (e) {
           debugPrint('❌ Transaction failed: $e');
-          rethrow;
+          return false;
         }
       });
 
@@ -1607,6 +1631,42 @@ class OrderService extends ChangeNotifier {
     }
   }
 
+  /// Delete an order by its human-readable order number (e.g., DI-31624-1624)
+  Future<bool> deleteOrderByOrderNumber(String orderNumber) async {
+    try {
+      // Try in-memory first
+      final inMemory = _allOrders.firstWhere(
+        (o) => o.orderNumber == orderNumber,
+        orElse: () => null as dynamic,
+      );
+      if (inMemory != null) {
+        return await deleteOrder(inMemory.id);
+      }
+
+      // Fallback: query database for the order ID
+      final db = await _databaseService.database;
+      if (db == null) return false;
+
+      final rows = await db.query(
+        'orders',
+        columns: ['id'],
+        where: 'order_number = ?',
+        whereArgs: [orderNumber],
+        limit: 1,
+      );
+      if (rows.isEmpty) {
+        debugPrint('ℹ️ No order found with number: $orderNumber');
+        return false;
+      }
+
+      final orderId = rows.first['id'] as String;
+      return await deleteOrder(orderId);
+    } catch (e) {
+      debugPrint('❌ Error deleting order by number $orderNumber: $e');
+      return false;
+    }
+  }
+
   /// Set current order
   void setCurrentOrder(Order? order) {
     _currentOrder = order;
@@ -2272,6 +2332,76 @@ class OrderService extends ChangeNotifier {
     }
   }
 
+  /// Reconcile: force-mark any orders that have a cancellation log as cancelled
+  /// Safe manual operation to fix legacy inconsistencies where a completed order was not flipped
+  Future<int> reconcileCancelledOrdersFromLogs() async {
+    try {
+      final db = await _databaseService.database;
+      if (db == null) return 0;
+
+      // Find all logs with action = cancelled
+      final logs = await db.query(
+        'order_logs',
+        columns: ['order_id'],
+        where: 'action = ?',
+        whereArgs: ['cancelled'],
+      );
+      if (logs.isEmpty) return 0;
+
+      final Set<String> orderIds = logs.map((e) => (e['order_id'] as String)).toSet();
+      int updatedCount = 0;
+
+      for (final orderId in orderIds) {
+        // Check current status
+        final rows = await db.query('orders', columns: ['status'], where: 'id = ?', whereArgs: [orderId]);
+        if (rows.isEmpty) continue;
+        final currentStatus = (rows.first['status'] as String?)?.toLowerCase() ?? '';
+        if (currentStatus != 'cancelled') {
+          // Force update to cancelled
+          final nowIso = DateTime.now().toIso8601String();
+          await db.update(
+            'orders',
+            {
+              'status': 'cancelled',
+              'updated_at': nowIso,
+              'completed_time': nowIso,
+            },
+            where: 'id = ?',
+            whereArgs: [orderId],
+          );
+
+          // Update local cache if present
+          final idx = _allOrders.indexWhere((o) => o.id == orderId);
+          if (idx != -1) {
+            final forced = _allOrders[idx].copyWith(
+              status: OrderStatus.cancelled,
+              updatedAt: DateTime.parse(nowIso),
+              completedTime: DateTime.parse(nowIso),
+            );
+            _allOrders[idx] = forced;
+            _updateOrderLists(forced);
+          }
+
+          // Trigger sync
+          try {
+            final orderForSync = await getOrderById(orderId) ?? (_allOrders.firstWhere((o) => o.id == orderId, orElse: () => null as dynamic));
+            if (orderForSync != null) {
+              _triggerFirebaseSync(orderForSync, 'updated');
+            }
+          } catch (_) {}
+
+          updatedCount++;
+        }
+      }
+
+      // Notify listeners once
+      notifyListeners();
+      return updatedCount;
+    } catch (e) {
+      debugPrint('❌ Reconcile cancelled orders failed: $e');
+      return 0;
+    }
+  }
 
   @override
   void dispose() {

@@ -232,28 +232,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         throw Exception('Failed to save order to database');
       }
 
-      // 📦 CRITICAL: Update inventory after successful payment (additional safety check)
-      debugPrint('💳 Checkout process - ensuring inventory is updated for order: ${updatedOrder.orderNumber}');
-      try {
-        final inventoryUpdated = await inventoryService.updateInventoryOnOrderCompletion(updatedOrder);
-        if (inventoryUpdated) {
-          debugPrint('✅ Checkout: Inventory updated successfully for order: ${updatedOrder.orderNumber}');
-        } else {
-          debugPrint('⚠️ Checkout: No inventory items were updated for order: ${updatedOrder.orderNumber}');
-        }
-      } catch (e) {
-        debugPrint('❌ Checkout: Error updating inventory for order ${updatedOrder.orderNumber}: $e');
-        // Show warning to user but don't fail the checkout
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('⚠️ Payment successful but inventory update failed. Please check inventory manually.'),
-              backgroundColor: Colors.orange,
-              duration: Duration(seconds: 5),
-            ),
-          );
-        }
-      }
+
 
       // Log order completion
       _logOrderCompleted(updatedOrder);

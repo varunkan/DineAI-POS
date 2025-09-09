@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 import '../models/order.dart';
+import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
+import '../services/user_service.dart';
+import '../models/user.dart';
 
 class TotalOrdersReportScreen extends StatelessWidget {
   final List<Order> orders;
@@ -39,9 +43,35 @@ class TotalOrdersReportScreen extends StatelessWidget {
                         ),
                       ],
                     ),
-                    subtitle: Text(
-                      'HST: \$${order.hstAmount.toStringAsFixed(2)}   Discount: \$${order.discountAmount.toStringAsFixed(2)}   Tips/Gratuity: \$${(order.tipAmount + order.gratuityAmount).toStringAsFixed(2)}',
-                      style: Theme.of(context).textTheme.bodySmall,
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Date: ${_formatDateTime(order.completedTime ?? order.orderTime)}',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                        if (order.type == OrderType.dineIn)
+                          FutureBuilder<String>(
+                            future: _resolveServerName(context, order),
+                            builder: (context, snapshot) {
+                              final server = snapshot.data;
+                              if (server == null || server.isEmpty) return const SizedBox.shrink();
+                              return Text(
+                                'Server: $server',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              );
+                            },
+                          ),
+                        if (((order.customerName ?? '').isNotEmpty) || ((order.customerPhone ?? '').isNotEmpty))
+                          Text(
+                            'Customer: ${[order.customerName, order.customerPhone].where((e) => (e ?? '').isNotEmpty).join('  •  ')}',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        Text(
+                          'HST: \$${order.hstAmount.toStringAsFixed(2)}   Discount: \$${order.discountAmount.toStringAsFixed(2)}   Tips/Gratuity: \$${(order.tipAmount + order.gratuityAmount).toStringAsFixed(2)}',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
                     ),
                     children: [
                       Padding(
@@ -104,5 +134,28 @@ class TotalOrdersReportScreen extends StatelessWidget {
     if ((it.notes ?? '').isNotEmpty) parts.add('Notes: ${it.notes}');
     if (parts.isEmpty) return null;
     return Text(parts.join('  •  '));
+  }
+
+  String _formatDateTime(DateTime dt) {
+    return DateFormat('yyyy-MM-dd h:mm a').format(dt);
+  }
+
+  Future<String> _resolveServerName(BuildContext context, Order order) async {
+    try {
+      final userService = Provider.of<UserService?>(context, listen: false);
+      if (userService == null) return '';
+      final users = await userService.getUsers();
+      final primaryId = order.userId ?? order.assignedTo;
+      if (primaryId != null && primaryId.isNotEmpty) {
+        final found = users.firstWhere(
+          (u) => u.id == primaryId,
+          orElse: () => users.firstWhere((u) => u.id == (order.assignedTo ?? ''), orElse: () => User(id: '', name: '', role: UserRole.server, pin: '0000')),
+        );
+        if (found.id.isNotEmpty) return found.name;
+      }
+      return '';
+    } catch (_) {
+      return '';
+    }
   }
 } 

@@ -539,6 +539,24 @@ class LoyaltyService extends ChangeNotifier {
     }
   }
 
+  /// Get all customers (for bulk selection like SMS)
+  Future<List<Customer>> getAllCustomers() async {
+    try {
+      final db = await _databaseService.database;
+      if (db != null) {
+        final List<Map<String, dynamic>> maps = await db.query(
+          'customers',
+          orderBy: 'name ASC',
+        );
+        return maps.map((map) => Customer.fromJson(map)).toList();
+      }
+      return [];
+    } catch (e) {
+      debugPrint('Error getting all customers: $e');
+      return [];
+    }
+  }
+
   Future<void> addLoyaltyPoints(String customerId, double points, String reason) async {
     try {
       final db = await _databaseService.database;

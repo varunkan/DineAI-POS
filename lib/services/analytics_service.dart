@@ -748,7 +748,6 @@ class AnalyticsService extends ChangeNotifier {
           WHERE o.payment_status = 'completed'
           GROUP BY oi.menu_item_id, mi.name
           ORDER BY total_quantity DESC
-          LIMIT 10
         ''');
         return result;
       }

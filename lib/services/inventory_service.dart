@@ -7,11 +7,17 @@ import '../models/order.dart';
 import '../models/menu_item.dart';
 import 'unified_sync_service.dart';
 import 'unified_sync_service.dart';
+import 'database_service.dart';
+import 'package:sqflite/sqflite.dart';
+import '../models/inventory_mapping.dart';
+import 'package:cloud_firestore/cloud_firestore.dart' as fs;
+import '../config/firebase_config.dart';
 
 /// Service for managing inventory items and transactions.
 class InventoryService with ChangeNotifier {
   static const String _inventoryItemsKey = 'inventory_items';
   static const String _inventoryTransactionsKey = 'inventory_transactions';
+  static const String _inventoryRecipeLinksKey = 'inventory_recipe_links';
   
   static final InventoryService _instance = InventoryService._internal();
   factory InventoryService() => _instance;
@@ -19,10 +25,12 @@ class InventoryService with ChangeNotifier {
 
   List<InventoryItem> _items = [];
   List<InventoryTransaction> _transactions = [];
+  List<InventoryRecipeLink> _recipeLinks = [];
   bool _isInitialized = false;
   bool _isLoading = false;
 
   List<InventoryItem> get items => List.unmodifiable(_items);
+  List<InventoryRecipeLink> get recipeLinks => List.unmodifiable(_recipeLinks);
   bool get isLoading => _isLoading;
 
   /// Initialize the service and load data from storage.
@@ -44,6 +52,12 @@ class InventoryService with ChangeNotifier {
       _transactions = transactionsJson
           .map((json) => InventoryTransaction.fromJson(jsonDecode(json)))
           .where((transaction) => transaction.inventoryItemId != 'error')
+          .toList();
+
+      // Load recipe links
+      final linksJson = prefs.getStringList(_inventoryRecipeLinksKey) ?? [];
+      _recipeLinks = linksJson
+          .map((json) => InventoryRecipeLink.fromJson(jsonDecode(json)))
           .toList();
       
       _isInitialized = true;
@@ -70,6 +84,12 @@ class InventoryService with ChangeNotifier {
           .map((transaction) => jsonEncode(transaction.toJson()))
           .toList();
       await prefs.setStringList(_inventoryTransactionsKey, transactionsJson);
+
+      // Save recipe links
+      final linksJson = _recipeLinks
+          .map((link) => jsonEncode(link.toJson()))
+          .toList();
+      await prefs.setStringList(_inventoryRecipeLinksKey, linksJson);
     } catch (e) {
       debugPrint('Error saving inventory data: $e');
     }
@@ -82,11 +102,160 @@ class InventoryService with ChangeNotifier {
     return List.unmodifiable(_items);
   }
 
+  /// Get orders-left estimate for an inventory item based on recipe links
+  double getEstimatedOrdersLeft(String inventoryItemId) {
+    final item = getItemById(inventoryItemId);
+    if (item == null || item.currentStock <= 0) return 0;
+    // Find minimal consumption across linked menu items; if none, return stock as-is
+    final linked = _recipeLinks.where((l) => l.inventoryItemId == inventoryItemId).toList();
+    if (linked.isEmpty) return item.currentStock;
+    // Use smallest consumption to estimate conservative orders-left
+    final minConsumption = linked.map((l) => l.consumptionPerOrder).where((c) => c > 0).fold<double>(double.infinity, (p, c) => c < p ? c : p);
+    if (minConsumption == double.infinity || minConsumption <= 0) return item.currentStock;
+    return item.currentStock / minConsumption;
+  }
+
+  /// Add or update a recipe link
+  Future<void> upsertRecipeLink(InventoryRecipeLink link) async {
+    await initialize();
+    final idx = _recipeLinks.indexWhere((l) => l.id == link.id);
+    if (idx >= 0) {
+      _recipeLinks[idx] = link.copyWith(updatedAt: DateTime.now());
+    } else {
+      _recipeLinks.add(link);
+    }
+    await _saveData();
+
+    // Sync to Firebase
+    try {
+      final tenantId = FirebaseConfig.getCurrentTenantId();
+      if (tenantId != null) {
+        await fs.FirebaseFirestore.instance
+            .collection('tenants')
+            .doc(tenantId)
+            .collection('inventory_recipe_links')
+            .doc(link.id)
+            .set(link.toJson(), fs.SetOptions(merge: true));
+      }
+    } catch (e) {
+      debugPrint('⚠️ Failed to sync recipe link: $e');
+    }
+    notifyListeners();
+  }
+
+  /// Remove a recipe link
+  Future<void> removeRecipeLink(String linkId) async {
+    _recipeLinks.removeWhere((l) => l.id == linkId);
+    await _saveData();
+
+    // Sync deletion to Firebase
+    try {
+      final tenantId = FirebaseConfig.getCurrentTenantId();
+      if (tenantId != null) {
+        await fs.FirebaseFirestore.instance
+            .collection('tenants')
+            .doc(tenantId)
+            .collection('inventory_recipe_links')
+            .doc(linkId)
+            .delete();
+      }
+    } catch (e) {
+      debugPrint('⚠️ Failed to sync recipe link deletion: $e');
+    }
+    notifyListeners();
+  }
+
+  /// Get all links for an inventory item
+  List<InventoryRecipeLink> getLinksForInventoryItem(String inventoryItemId) {
+    return _recipeLinks.where((l) => l.inventoryItemId == inventoryItemId).toList();
+  }
+
+  /// Get all links for a menu item
+  List<InventoryRecipeLink> getLinksForMenuItem(String menuItemId) {
+    return _recipeLinks.where((l) => l.menuItemId == menuItemId).toList();
+  }
+
+  /// Download link from Firebase
+  Future<void> updateRecipeLinkFromFirebase(Map<String, dynamic> data) async {
+    try {
+      final link = InventoryRecipeLink.fromJson(data);
+      final idx = _recipeLinks.indexWhere((l) => l.id == link.id);
+      if (idx >= 0) {
+        _recipeLinks[idx] = link;
+      } else {
+        _recipeLinks.add(link);
+      }
+      await _saveData();
+      notifyListeners();
+    } catch (e) {
+      debugPrint('❌ Failed to update recipe link from Firebase: $e');
+    }
+  }
+
   /// Get inventory items by category.
   List<InventoryItem> getItemsByCategory(InventoryCategory category) {
     return _items
         .where((item) => item.category == category)
         .toList();
+  }
+
+  /// Reconcile inventory items with historically sold menu items.
+  /// Adds inventory entries for any sold menu item that does not yet exist in inventory.
+  /// Returns the number of items added.
+  Future<int> reconcileWithSoldMenuItems(DatabaseService databaseService) async {
+    try {
+      await initialize();
+      final Database? db = await databaseService.database;
+      if (db == null) return 0;
+
+      // Get distinct sold menu items (completed orders only)
+      final List<Map<String, dynamic>> sold = await db.rawQuery('''
+        SELECT DISTINCT mi.id as menu_item_id, mi.name as item_name
+        FROM order_items oi
+        JOIN menu_items mi ON oi.menu_item_id = mi.id
+        JOIN orders o ON oi.order_id = o.id
+        WHERE o.payment_status = 'completed' AND mi.name IS NOT NULL AND TRIM(mi.name) != ''
+      ''');
+
+      if (sold.isEmpty) return 0;
+
+      final Set<String> existingLowerNames = _items
+          .map((i) => i.name.trim().toLowerCase())
+          .toSet();
+
+      int added = 0;
+      for (final row in sold) {
+        final String name = (row['item_name'] as String).trim();
+        if (name.isEmpty) continue;
+        if (existingLowerNames.contains(name.toLowerCase())) continue;
+
+        // Create a minimal inventory item entry (non-destructive, defaults safe)
+        final item = InventoryItem(
+          name: name,
+          description: 'Auto-added from sales history',
+          category: InventoryCategory.other,
+          unit: InventoryUnit.units,
+          currentStock: 0,
+          minimumStock: 0,
+          maximumStock: 0,
+          costPerUnit: 0,
+          isActive: true,
+        );
+        _items.add(item);
+        existingLowerNames.add(name.toLowerCase());
+        added++;
+      }
+
+      if (added > 0) {
+        await _saveData();
+        notifyListeners();
+      }
+
+      return added;
+    } catch (e) {
+      debugPrint('Error reconciling inventory with sold items: $e');
+      return 0;
+    }
   }
 
   /// Get inventory items with low stock.
@@ -608,6 +777,7 @@ class InventoryService with ChangeNotifier {
   /// Update inventory after order completion - Critical Feature Implementation
   Future<bool> updateInventoryOnOrderCompletion(Order order) async {
     try {
+      await initialize();
       debugPrint('📦 Starting inventory update for completed order: ${order.orderNumber}');
       
       if (order.status != OrderStatus.completed) {
@@ -626,52 +796,56 @@ class InventoryService with ChangeNotifier {
           continue;
         }
 
-        // Find corresponding inventory item by menu item name or ID
-        final inventoryItem = _findInventoryItemForMenuItem(orderItem.menuItem);
-        
-        if (inventoryItem != null) {
-          final quantityToDeduct = orderItem.quantity.toDouble();
-          
-          // Check if we have sufficient stock
-          if (inventoryItem.currentStock >= quantityToDeduct) {
-            // Update stock
-            final success = await _deductStock(
-              inventoryItem.id,
-              quantityToDeduct,
-              orderItem.menuItem.name,
-              order.orderNumber,
-              order.userId ?? 'system',
-            );
-            
-            if (success) {
-              anyUpdates = true;
-              stockUpdates.add(
-                '${orderItem.menuItem.name}: -${quantityToDeduct} ${inventoryItem.unitDisplay}'
-              );
-              debugPrint('✅ Deducted ${quantityToDeduct} ${inventoryItem.unitDisplay} from ${inventoryItem.name}');
-            } else {
-              debugPrint('❌ Failed to deduct stock for ${inventoryItem.name}');
-            }
-          } else {
-            // Log insufficient stock but continue with other items
-            debugPrint('⚠️ Insufficient stock for ${inventoryItem.name}: Available ${inventoryItem.currentStock}, Required ${quantityToDeduct}');
-            
-            // Still deduct what we can and log the shortage
-            if (inventoryItem.currentStock > 0) {
-              await _deductStock(
-                inventoryItem.id,
-                inventoryItem.currentStock,
+        // Use recipe links if present; otherwise fallback to name matching
+        final links = getLinksForMenuItem(orderItem.menuItem.id);
+        if (links.isNotEmpty) {
+          for (final link in links) {
+            final inv = getItemById(link.inventoryItemId);
+            if (inv == null) continue;
+            final quantityToDeduct = (orderItem.quantity.toDouble()) * link.consumptionPerOrder;
+            if (quantityToDeduct <= 0) continue;
+            final available = inv.currentStock;
+            final toDeduct = available >= quantityToDeduct ? quantityToDeduct : available;
+            if (toDeduct > 0) {
+              final success = await _deductStock(
+                inv.id,
+                toDeduct,
                 orderItem.menuItem.name,
                 order.orderNumber,
                 order.userId ?? 'system',
               );
-              stockUpdates.add(
-                '${orderItem.menuItem.name}: -${inventoryItem.currentStock} ${inventoryItem.unitDisplay} (PARTIAL - Stock shortage)'
-              );
+              if (success) {
+                anyUpdates = true;
+                stockUpdates.add('${orderItem.menuItem.name} → ${inv.name}: -$toDeduct ${inv.unitDisplay}');
+              }
             }
           }
         } else {
-          debugPrint('⚠️ No inventory item found for menu item: ${orderItem.menuItem.name}');
+          // Fallback to simple 1:1 deduction by name
+          final inventoryItem = _findInventoryItemForMenuItem(orderItem.menuItem);
+          if (inventoryItem != null) {
+            if (getLinksForInventoryItem(inventoryItem.id).isEmpty) {
+              debugPrint('ℹ️ No recipe link for ${inventoryItem.name}; using 1:1 deduction for ${orderItem.menuItem.name}');
+            }
+            final quantityToDeduct = orderItem.quantity.toDouble();
+            final available = inventoryItem.currentStock;
+            final toDeduct = available >= quantityToDeduct ? quantityToDeduct : available;
+            if (toDeduct > 0) {
+              final success = await _deductStock(
+                inventoryItem.id,
+                toDeduct,
+                orderItem.menuItem.name,
+                order.orderNumber,
+                order.userId ?? 'system',
+              );
+              if (success) {
+                anyUpdates = true;
+                stockUpdates.add('${orderItem.menuItem.name}: -$toDeduct ${inventoryItem.unitDisplay}');
+              }
+            }
+          } else {
+            debugPrint('⚠️ No inventory item found for menu item: ${orderItem.menuItem.name}');
+          }
         }
       }
 
@@ -763,6 +937,10 @@ class InventoryService with ChangeNotifier {
         reason: 'Order completion',
         notes: 'Deducted for order $orderNumber - Menu item: $menuItemName',
         userId: userId,
+        metadata: {
+          'menu_item_name': menuItemName,
+          'order_number': orderNumber,
+        },
       );
       _transactions.add(transaction);
 
@@ -825,6 +1003,9 @@ class InventoryService with ChangeNotifier {
       }
       if (prefs.containsKey(_inventoryTransactionsKey)) {
         await prefs.remove(_inventoryTransactionsKey);
+      }
+      if (prefs.containsKey(_inventoryRecipeLinksKey)) {
+        await prefs.remove(_inventoryRecipeLinksKey);
       }
       
       debugPrint('✅ All inventory items cleared');

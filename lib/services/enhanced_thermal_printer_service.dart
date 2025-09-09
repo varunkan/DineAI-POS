@@ -358,10 +358,17 @@ class EnhancedThermalPrinterService extends ChangeNotifier {
     // Helper functions for ESC/POS commands
     void addCommand(List<int> command) => commands.addAll(command);
     void addText(String text) => commands.addAll(utf8.encode(text));
-    void addLine(String text) {
-      addText(text);
+    void addLine([String text = ""]) {
+      if (text.isNotEmpty) addText(text);
       addCommand([10]); // Line feed
     }
+    void alignCenter() => addCommand([27, 97, 1]); // ESC a 1
+    void alignLeft() => addCommand([27, 97, 0]); // ESC a 0
+    void boldOn() => addCommand([27, 69, 1]); // ESC E 1
+    void boldOff() => addCommand([27, 69, 0]); // ESC E 0
+    void sizeNormal() => addCommand([29, 33, 0]); // GS ! 0
+    void sizeDouble() => addCommand([29, 33, 17]); // GS ! 0x11 (double width & height)
+    void rule() => addLine('================================');
     
     // Initialize printer
     addCommand([27, 64]); // ESC @ - Initialize printer
@@ -375,66 +382,131 @@ class EnhancedThermalPrinterService extends ChangeNotifier {
       addCommand([29, 87, 1, 128, 1, 128]); // GS W - Set print area width
     }
     
-    // Set print density
+    // Set print density and speed (unchanged)
     addCommand([29, 33, _activePrinter!.printDensityValue]); // GS ! - Set print density
-    
-    // Set print speed
     addCommand([27, 115, _printSpeed]); // ESC s - Set print speed
     
-    // Header with restaurant info
-    addCommand([27, 97, 1]); // ESC a 1 - Center alignment
+    // Elegant style flag (formatting only; same data)
+    const bool _elegantReceiptStyle = true;
+    if (_elegantReceiptStyle) {
+      // Header
+      alignCenter();
+      sizeDouble();
+      boldOn();
+      addLine('RESTAURANT POS'); // same header text
+      boldOff();
+      sizeNormal();
+      rule();
+      addLine();
+      
+      // Order details (labels left-aligned, consistent spacing)
+      alignLeft();
+      boldOn();
+      sizeDouble(); // slightly larger details for elegance
+      addLine('Order: ${order.orderNumber}');
+      sizeNormal();
+      addLine('Date: ${_formatDateTime(order.orderTime)}');
+      addLine('Type: ${order.type.toString().split('.').last}');
+      if (order.tableId != null) {
+        addLine('Table: ${order.tableId}');
+      }
+      boldOff();
+      addLine();
+      rule();
+      addLine();
+      
+      // Items section (same content; improved emphasis and spacing)
+      if (items != null && items.isNotEmpty) {
+        boldOn();
+        addLine('ITEMS:');
+        boldOff();
+        // minimal spacing per item, with clear separators
+        for (final item in items) {
+          boldOn();
+          addLine('${item.quantity}x ${item.menuItem.name}');
+          boldOff();
+          if (item.notes != null && item.notes!.isNotEmpty) {
+            addLine('  Notes: ${item.notes}');
+          }
+          addLine('  \$${item.totalPrice.toStringAsFixed(2)}');
+          addLine(); // reduced consistent spacing
+        }
+      }
+      
+      // Totals (same data; emphasized)
+      rule();
+      boldOn();
+      sizeDouble();
+      addLine('TOTAL: \$${order.totalAmount.toStringAsFixed(2)}');
+      sizeNormal();
+      boldOff();
+      rule();
+      addLine();
+      
+      // Footer (unchanged text)
+      alignCenter();
+      addLine('Thank you for dining with us!');
+      addLine();
+      
+      // Auto-feed and cut
+      if (_autoFeed) {
+        for (int i = 0; i < _feedLines; i++) {
+          addCommand([10]);
+        }
+      }
+      if (_autoCut) {
+        addCommand([29, 86, 65, 3]); // GS V A 3 - Full cut
+      }
+      return commands;
+    }
+
+    // Fallback (original simple layout)
+    alignCenter();
     addCommand([27, 33, 48]); // ESC ! 0x30 - Double width and height
     addLine('RESTAURANT POS');
     addCommand([27, 33, 0]); // ESC ! 0 - Normal size
-    addLine(''); // Empty line
+    addLine('');
     
-    // Order details
-    addCommand([27, 97, 0]); // ESC a 0 - Left alignment
-    addCommand([27, 69, 1]); // ESC E 1 - Bold on
+    alignLeft();
+    boldOn();
     addLine('Order: ${order.orderNumber}');
     addLine('Date: ${_formatDateTime(order.orderTime)}');
     addLine('Type: ${order.type.toString().split('.').last}');
     if (order.tableId != null) {
       addLine('Table: ${order.tableId}');
     }
-    addCommand([27, 69, 0]); // ESC E 0 - Bold off
-    addLine(''); // Empty line
+    boldOff();
+    addLine('');
     
-    // Items
     if (items != null && items.isNotEmpty) {
       addLine('ITEMS:');
-      addLine(''); // Empty line
-      
+      addLine('');
       for (final item in items) {
         addLine('${item.quantity}x ${item.menuItem.name}');
         if (item.notes != null && item.notes!.isNotEmpty) {
           addLine('  Notes: ${item.notes}');
         }
         addLine('  \$${item.totalPrice.toStringAsFixed(2)}');
-        addLine(''); // Empty line
+        addLine('');
       }
     }
     
-    // Total
-    addCommand([27, 69, 1]); // ESC E 1 - Bold on
+    boldOn();
     addLine('TOTAL: \$${order.totalAmount.toStringAsFixed(2)}');
-    addCommand([27, 69, 0]); // ESC E 0 - Bold off
-    addLine(''); // Empty line
+    boldOff();
+    addLine('');
     
-    // Footer
-    addCommand([27, 97, 1]); // ESC a 1 - Center alignment
+    alignCenter();
     addLine('Thank you for dining with us!');
-    addLine(''); // Empty line
+    addLine('');
     
-    // Auto-feed and cut
     if (_autoFeed) {
       for (int i = 0; i < _feedLines; i++) {
-        addCommand([10]); // Line feed
+        addCommand([10]);
       }
     }
-    
     if (_autoCut) {
-      addCommand([29, 86, 65, 3]); // GS V A 3 - Full cut
+      addCommand([29, 86, 65, 3]);
     }
     
     return commands;

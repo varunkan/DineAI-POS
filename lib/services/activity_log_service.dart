@@ -5,7 +5,6 @@ import 'package:flutter/services.dart';
 
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ai_pos_system/models/activity_log.dart';
-import 'package:ai_pos_system/models/user.dart';
 import 'package:ai_pos_system/services/database_service.dart';
 
 /// Service for comprehensive system-wide activity logging and monitoring

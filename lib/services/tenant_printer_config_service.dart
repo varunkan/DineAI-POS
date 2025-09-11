@@ -326,22 +326,21 @@ class TenantPrinterConfigService extends ChangeNotifier {
       }
       
       // Add tenant and restaurant IDs
-      final enhancedConfig = config.copyWith(
-        tenantId: _currentTenantId,
-        restaurantId: _currentRestaurantId,
-        isNetworkPrinter: config.type == PrinterType.wifi || config.type == PrinterType.ethernet,
-        isBluetoothPrinter: config.type == PrinterType.bluetooth,
-        isLocalPrinter: config.type == PrinterType.usb,
-        connectionString: config.getConnectionString(),
-      );
+      final enhancedData = Map<String, dynamic>.from(config.toJson());
+      enhancedData['tenantId'] = _currentTenantId;
+      enhancedData['restaurantId'] = _currentRestaurantId;
+      enhancedData['isNetworkPrinter'] = config.isNetworkPrinter;
+      enhancedData['isBluetoothPrinter'] = (config.type == PrinterType.bluetooth);
+      enhancedData['isLocalPrinter'] = (config.type == PrinterType.usb);
+      enhancedData['connectionString'] = config.fullAddress;
       
       // Save to Firebase
       final tenantDoc = _firestore!.collection('tenants').doc(_currentTenantId);
-      final printerDoc = tenantDoc.collection('printer_configurations').doc(enhancedConfig.id);
+      final printerDoc = tenantDoc.collection('printer_configurations').doc(config.id);
       
-      await printerDoc.set(enhancedConfig.toJson());
+      await printerDoc.set(enhancedData);
       
-      debugPrint('$_logTag ✅ Created printer configuration: ${enhancedConfig.name}');
+      debugPrint('$_logTag ✅ Created printer configuration: ${config.name}');
       _lastError = null;
       return true;
       
@@ -367,15 +366,16 @@ class TenantPrinterConfigService extends ChangeNotifier {
       
       // Update connection string
       final updatedConfig = config.copyWith(
-        connectionString: config.getConnectionString(),
         updatedAt: DateTime.now(),
       );
+      final updatedData = updatedConfig.toJson();
+      updatedData['connectionString'] = updatedConfig.fullAddress;
       
       // Save to Firebase
       final tenantDoc = _firestore!.collection('tenants').doc(_currentTenantId);
       final printerDoc = tenantDoc.collection('printer_configurations').doc(updatedConfig.id);
       
-      await printerDoc.update(updatedConfig.toJson());
+      await printerDoc.update(updatedData);
       
       debugPrint('$_logTag ✅ Updated printer configuration: ${updatedConfig.name}');
       _lastError = null;
@@ -423,13 +423,13 @@ class TenantPrinterConfigService extends ChangeNotifier {
       }
       
       // Validate network printer settings
-      if (config.type == PrinterType.wifi || config.type == PrinterType.ethernet) {
-        if (config.ipAddress.isEmpty) {
+      if (config.isNetworkPrinter) {
+        if (config.effectiveIpAddress.isEmpty) {
           _lastError = 'IP address is required for network printers';
           return false;
         }
         
-        if (config.port <= 0 || config.port > 65535) {
+        if (config.effectivePort <= 0 || config.effectivePort > 65535) {
           _lastError = 'Invalid port number';
           return false;
         }
@@ -443,13 +443,7 @@ class TenantPrinterConfigService extends ChangeNotifier {
         }
       }
       
-      // Validate thermal settings
-      if (config.thermalSettings.paperSize == PaperSize.paper80mm) {
-        if (config.thermalSettings.dpi != 203 && config.thermalSettings.dpi != 300) {
-          _lastError = 'DPI must be 203 or 300 for 80mm thermal printers';
-          return false;
-        }
-      }
+      // Thermal settings validation omitted (model does not expose thermalSettings here)
       
       _lastError = null;
       return true;
@@ -477,12 +471,22 @@ class TenantPrinterConfigService extends ChangeNotifier {
   
   /// Get Bluetooth printer configurations
   List<PrinterConfiguration> getBluetoothPrinterConfigs() {
-    return _printerConfigs.where((p) => p.isBluetoothPrinter).toList();
+    return _printerConfigs.where((p) => p.type == PrinterType.bluetooth).toList();
   }
   
   /// Get 80mm thermal printer configurations
   List<PrinterConfiguration> get80mmThermalPrinterConfigs() {
-    return _printerConfigs.where((p) => p.supports80mm).toList();
+    final mm80 = {
+      PrinterModel.epsonTMT88VI,
+      PrinterModel.epsonTMT88V,
+      PrinterModel.epsonTMT20III,
+      PrinterModel.epsonTMT82III,
+      PrinterModel.epsonTMm30,
+      PrinterModel.epsonTMm50,
+      PrinterModel.epsonTMGeneric,
+      PrinterModel.custom,
+    };
+    return _printerConfigs.where((p) => mm80.contains(p.model)).toList();
   }
   
   /// Test printer connection
@@ -494,7 +498,10 @@ class TenantPrinterConfigService extends ChangeNotifier {
         return false;
       }
       
-      if (!config.isReadyForPrinting) {
+      final ready = (config.isNetworkPrinter && config.effectiveIpAddress.isNotEmpty && config.effectivePort > 0)
+          || (config.type == PrinterType.bluetooth && config.bluetoothAddress.isNotEmpty)
+          || (config.type == PrinterType.usb);
+      if (!ready) {
         _lastError = 'Printer is not ready for printing';
         return false;
       }

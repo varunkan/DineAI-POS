@@ -365,7 +365,7 @@ your TM-M30 series printer is working correctly!
                 ),
                 ElevatedButton.icon(
                   onPressed: _isConnecting ? null : _step3ConnectToPrinter,
-                  icon: const Icon(Icons.bluetooth_connect),
+                  icon: const Icon(Icons.bluetooth),
                   label: const Text('Connect'),
                 ),
                 ElevatedButton.icon(

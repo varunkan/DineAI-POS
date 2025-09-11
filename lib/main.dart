@@ -30,7 +30,7 @@ import 'services/enhanced_printer_assignment_service.dart';
 import 'services/cross_platform_printer_sync_service.dart';
 import 'services/printer_validation_service.dart';
 import 'services/robust_kitchen_service.dart';
-import 'services/free_cloud_printing_service.dart';
+
 import 'services/enhanced_printer_manager.dart';
 import 'services/unified_printer_service.dart';
 import 'services/unified_sync_service.dart';
@@ -39,7 +39,7 @@ import 'services/loyalty_service.dart';
 
 // Tenant-specific printer services
 import 'services/tenant_printer_service.dart';
-import 'services/tenant_cloud_printing_service.dart';
+
 import 'services/tenant_printer_integration_service.dart';
 
 import 'config/firebase_config.dart';
@@ -159,12 +159,12 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   EnhancedPrinterManager? _enhancedPrinterManager;
   PrinterValidationService? _printerValidationService;
   RobustKitchenService? _robustKitchenService;
-  FreeCloudPrintingService? _freeCloudPrintingService;
+  // FreeCloudPrintingService removed
   KitchenPrintingService? _kitchenPrintingService;
   
   // Tenant-specific printer services
   TenantPrinterService? _tenantPrinterService;
-  TenantCloudPrintingService? _tenantCloudPrintingService;
+  // TenantCloudPrintingService removed
   TenantPrinterIntegrationService? _tenantPrinterIntegrationService;
   
   // Debounced refresh to prevent infinite loops
@@ -734,18 +734,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         debugPrint('⚠️ Could not initialize RobustKitchenService - required services not available');
       }
       
-      // Initialize free cloud printing service
-      widget.progressService.addMessage('🆓 Setting up free cloud printing service...');
-      if (_printingService != null && _enhancedPrinterAssignmentService != null) {
-        _freeCloudPrintingService = FreeCloudPrintingService(
-          printingService: _printingService!,
-          assignmentService: _enhancedPrinterAssignmentService!,
-        );
-        debugPrint('✅ FreeCloudPrintingService initialized - free cloud printing ready');
-      } else {
-        debugPrint('⚠️ Could not initialize FreeCloudPrintingService - required services not available');
-      }
-
+      // Free cloud printing service removed
       // Initialize KitchenPrintingService
       widget.progressService.addMessage('🍳 Setting up kitchen printing service...');
       if (_printingService != null && _enhancedPrinterAssignmentService != null && _printerConfigurationService != null) {
@@ -795,7 +784,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           _tenantPrinterIntegrationService = TenantPrinterIntegrationService(
             databaseService: tenantDatabase,
             tenantPrinterService: _tenantPrinterService!,
-            cloudPrintingService: null, // CRITICAL FIX: Pass null since service is disabled
+            // cloudPrintingService removed
             assignmentService: _enhancedPrinterAssignmentService!,
             printingService: _printingService!,
             authService: widget.authService,
@@ -1067,10 +1056,10 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       _enhancedPrinterManager = null;
       _printerValidationService = null;
       _robustKitchenService = null;
-      _freeCloudPrintingService = null;
+      // _freeCloudPrintingService removed
       _kitchenPrintingService = null;
       _tenantPrinterService = null;
-      _tenantCloudPrintingService = null;
+      // _tenantCloudPrintingService removed
       _tenantPrinterIntegrationService = null;
       
       // Reset initialization flags
@@ -1172,10 +1161,10 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     providers.add(ChangeNotifierProvider<EnhancedPrinterManager?>.value(value: _enhancedPrinterManager));
     providers.add(ChangeNotifierProvider<PrinterValidationService?>.value(value: _printerValidationService));
     providers.add(ChangeNotifierProvider<RobustKitchenService?>.value(value: _robustKitchenService));
-    providers.add(ChangeNotifierProvider<FreeCloudPrintingService?>.value(value: _freeCloudPrintingService));
+    // FreeCloudPrintingService provider removed
     providers.add(ChangeNotifierProvider<UnifiedSyncService?>.value(value: _unifiedSyncService));
     providers.add(ChangeNotifierProvider<TenantPrinterService?>.value(value: _tenantPrinterService));
-    providers.add(ChangeNotifierProvider<TenantCloudPrintingService?>.value(value: _tenantCloudPrintingService));
+    // Cloud printing provider removed
     providers.add(ChangeNotifierProvider<TenantPrinterIntegrationService?>.value(value: _tenantPrinterIntegrationService));
     providers.add(ChangeNotifierProvider<KitchenPrintingService?>.value(value: _kitchenPrintingService));
     

@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
 import '../models/printer_assignment.dart';
-import '../models/printer_configuration.dart';
 import '../services/database_service.dart';
 import '../services/enhanced_printer_assignment_service.dart';
 

@@ -507,6 +507,8 @@ class OrderLogService extends ChangeNotifier {
         'quantity': item.quantity,
         'unit_price': item.unitPrice,
         'total_price': item.totalPrice,
+        'sent_to_kitchen': item.sentToKitchen,
+        'was_pre_kitchen_deletion': false,
       },
     );
   }
@@ -525,6 +527,8 @@ class OrderLogService extends ChangeNotifier {
         'quantity': item.quantity,
         'unit_price': item.unitPrice,
         'total_price': item.totalPrice,
+        'sent_to_kitchen': item.sentToKitchen,
+        'was_pre_kitchen_deletion': !item.sentToKitchen,
       },
     );
   }

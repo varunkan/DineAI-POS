@@ -6,6 +6,10 @@ import 'lib/services/multi_tenant_auth_service.dart';
 import 'lib/config/firebase_config.dart';
 import 'lib/models/restaurant.dart';
 import 'lib/models/user.dart' as app_user;
+import 'package:ai_pos_system/services/database_service.dart';
+import 'package:ai_pos_system/services/order_log_service.dart';
+import 'package:ai_pos_system/services/inventory_service.dart';
+import 'package:ai_pos_system/models/order.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -13,6 +17,7 @@ void main() async {
   print('🚀 Starting comprehensive sync operations...');
   
   try {
+    await FirebaseConfig.initialize();
     // Get the current tenant ID
     final tenantId = FirebaseConfig.getCurrentTenantId();
     if (tenantId == null) {
@@ -33,7 +38,10 @@ void main() async {
     }
     
     // Initialize services
-    final orderService = OrderService();
+    final databaseService = DatabaseService();
+    final orderLogService = OrderLogService(databaseService);
+    final inventoryService = InventoryService();
+    final orderService = OrderService(databaseService, orderLogService, inventoryService);
     final unifiedSyncService = UnifiedSyncService();
     
     print('📊 Current local orders: ${orderService.allOrders.length}');
@@ -131,6 +139,10 @@ Future<void> _performSmartTimeBasedSync(
       id: tenantId,
       name: 'Temp Restaurant',
       email: tenantId,
+      address: 'sync-agent',
+      businessType: 'pos',
+      databaseName: 'sync_agent',
+      phone: '0000000000',
       adminUserId: 'temp_admin',
       adminPassword: 'temp_password',
       createdAt: DateTime.now(),

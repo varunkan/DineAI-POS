@@ -12,6 +12,7 @@ import '../models/printer_configuration.dart';
 import 'printer_configuration_service.dart';
 import 'database_service.dart';
 import 'enhanced_printer_assignment_service.dart';
+import 'package:ai_pos_system/utils/kitchen_ticket_formatter.dart';
 
 // Using PrinterType from printer_configuration.dart model
 // enum PrinterType {
@@ -1285,7 +1286,15 @@ class PrintingService with ChangeNotifier {
 
   /// Generate kitchen ticket content
   String _generateKitchenTicket(Order order) {
-    // Use generic ESC/POS kitchen ticket generation for better printing
+    // Feature flag: strict preview-match for kitchen ticket
+    const bool _strictPreviewMatch = true;
+    if (_strictPreviewMatch) {
+      try {
+        return _generatePreviewMatchedKitchenTicket(order);
+      } catch (e) {
+        debugPrint('⚠️ Preview-matched kitchen generator failed, using fallback: $e');
+      }
+    }
     return _generateGenericESCPOSKitchenTicket(order, 'Kitchen Printer');
   }
 
@@ -2778,6 +2787,12 @@ ${customMessage ?? 'Test print successful!\nPrinter is ready for use.'}
       commands.addAll([0x0A]); // LF
     }
     
+    if (order.customerPhone != null && order.customerPhone!.isNotEmpty) {
+      final phoneInfo = "Phone: ${order.customerPhone}";
+      commands.addAll(phoneInfo.codeUnits);
+      commands.addAll([0x0A]); // LF
+    }
+    
     // Separator line
     commands.addAll([0x0A]); // LF
     final separator = "=" * 42;
@@ -2939,14 +2954,11 @@ ${customMessage ?? 'Test print successful!\nPrinter is ready for use.'}
     commands.addAll([0x1B, 0x4D, 0x00]); // ESC M (Select character font B - smaller base size)
     commands.addAll([0x1D, 0x61, 0x01]); // GS a (Enable automatic status back)
     
-    // STEP 2: Kitchen ticket header with maximum emphasis
-    commands.addAll([0x1B, 0x61, 0x01]); // ESC a (Center alignment)
+    // STEP 2: Kitchen ticket header (left-aligned to match preview)
+    commands.addAll([0x1B, 0x61, 0x00]); // ESC a (Left alignment)
     commands.addAll([0x1D, 0x21, 0x22]); // GS ! (Triple width and height)
     commands.addAll([0x1B, 0x45, 0x01]); // ESC E (Bold on)
-    
-    commands.addAll("🍽️ KITCHEN 🍽️".codeUnits);
-    commands.addAll([0x0A]); // LF
-    commands.addAll("   TICKET".codeUnits);
+    commands.addAll("KITCHEN RECEIPT".codeUnits);
     commands.addAll([0x1B, 0x45, 0x00]); // ESC E (Bold off)
     commands.addAll([0x1D, 0x21, 0x00]); // GS ! (Normal size)
     commands.addAll([0x0A, 0x0A]); // LF LF
@@ -3024,16 +3036,16 @@ ${customMessage ?? 'Test print successful!\nPrinter is ready for use.'}
       commands.addAll([0x0A, 0x0A]); // LF LF
     }
     
-    // Enhanced separator
+    // Separator (left-aligned plain line to match preview)
     commands.addAll([0x0A]); // LF
-    final separator = "═" * 42;
+    final separator = "─────────────────────────────────────────";
     commands.addAll(separator.codeUnits);
     commands.addAll([0x0A]); // LF
     
     // STEP 4: Items section with enhanced formatting
     commands.addAll([0x1B, 0x45, 0x01]); // ESC E (Bold on)
     commands.addAll([0x1D, 0x21, 0x11]); // GS ! (Double width and height)
-    commands.addAll("🍽️ ITEMS TO PREPARE:".codeUnits);
+    commands.addAll("ITEMS TO PREPARE:".codeUnits);
     commands.addAll([0x1B, 0x45, 0x00]); // ESC E (Bold off)
     commands.addAll([0x1D, 0x21, 0x00]); // GS ! (Normal size)
     commands.addAll([0x0A, 0x0A]); // LF LF
@@ -3714,6 +3726,37 @@ ${customMessage ?? 'Test print successful!\nPrinter is ready for use.'}
       debugPrint('❌ Epson printer at $ip:$port failed test: $e');
       return false;
     }
+  }
+
+  /// Generate kitchen ticket content using shared formatter (exact preview match)
+  String _generatePreviewMatchedKitchenTicket(Order order) {
+    // Build lines using shared formatter
+    // For strict match we always include all items currently in order
+    final lines = KitchenTicketFormatter.buildLines(
+      order: order,
+      items: order.items,
+      showAllItems: true,
+      tableDisplay: order.tableId,
+    );
+
+    final List<int> commands = [];
+    // Initialize printer and enforce left alignment, normal size, ASCII text
+    commands.addAll([0x1B, 0x40]); // ESC @
+    commands.addAll([0x1B, 0x61, 0x00]); // ESC a 0 (left)
+    commands.addAll([0x1B, 0x45, 0x00]); // Bold off
+    commands.addAll([0x1D, 0x21, 0x00]); // Normal size
+
+    for (final line in lines) {
+      // Ensure ASCII (strip non-ASCII)
+      final asciiLine = line.replaceAll(RegExp(r'[^\x20-\x7E]'), '');
+      commands.addAll(asciiLine.codeUnits);
+      commands.add(0x0A); // LF
+    }
+
+    // Cut
+    commands.addAll([0x1D, 0x56, 0x41, 0x10]);
+
+    return String.fromCharCodes(commands);
   }
 
 }

@@ -3,11 +3,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/printer_type_mapping.dart';
-import '../models/printer_configuration.dart';
-import '../models/category.dart';
-import '../models/menu_item.dart';
+// Removed unused imports
 import 'database_service.dart';
 import 'firebase_auth_service.dart';
+import '../services/multi_tenant_auth_service.dart';
 
 /// Service for managing printer type configurations and assignments
 class PrinterTypeManagementService extends ChangeNotifier {
@@ -62,8 +61,7 @@ class PrinterTypeManagementService extends ChangeNotifier {
       if (configsJson != null) {
         final List<dynamic> configsList = jsonDecode(configsJson);
         _printerTypeConfigs = configsList
-            .map((json) => PrinterTypeConfiguration.fromFirestore(
-                _createMockDocument(json)))
+            .map((json) => PrinterTypeConfiguration.fromJson(Map<String, dynamic>.from(json)))
             .toList();
       }
       
@@ -72,8 +70,7 @@ class PrinterTypeManagementService extends ChangeNotifier {
       if (assignmentsJson != null) {
         final List<dynamic> assignmentsList = jsonDecode(assignmentsJson);
         _printerTypeAssignments = assignmentsList
-            .map((json) => PrinterTypeAssignment.fromFirestore(
-                _createMockDocument(json)))
+            .map((json) => PrinterTypeAssignment.fromJson(Map<String, dynamic>.from(json)))
             .toList();
       }
       
@@ -82,8 +79,7 @@ class PrinterTypeManagementService extends ChangeNotifier {
       if (mappingsJson != null) {
         final List<dynamic> mappingsList = jsonDecode(mappingsJson);
         _itemPrinterTypeMappings = mappingsList
-            .map((json) => ItemPrinterTypeMapping.fromFirestore(
-                _createMockDocument(json)))
+            .map((json) => ItemPrinterTypeMapping.fromJson(Map<String, dynamic>.from(json)))
             .toList();
       }
       
@@ -93,10 +89,7 @@ class PrinterTypeManagementService extends ChangeNotifier {
     }
   }
 
-  /// Create a mock document for local storage parsing
-  DocumentSnapshot _createMockDocument(Map<String, dynamic> data) {
-    return MockDocumentSnapshot(data);
-  }
+  // Local JSON parsing is handled via model fromJson methods
 
   /// Save data to local storage
   Future<void> _saveToLocalStorage() async {
@@ -104,15 +97,15 @@ class PrinterTypeManagementService extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       
       // Save printer type configurations
-      final configsJson = jsonEncode(_printerTypeConfigs.map((c) => c.toFirestore()).toList());
+      final configsJson = jsonEncode(_printerTypeConfigs.map((c) => c.toJson()).toList());
       await prefs.setString(_printerTypeConfigsKey, configsJson);
       
       // Save printer type assignments
-      final assignmentsJson = jsonEncode(_printerTypeAssignments.map((a) => a.toFirestore()).toList());
+      final assignmentsJson = jsonEncode(_printerTypeAssignments.map((a) => a.toJson()).toList());
       await prefs.setString(_printerTypeAssignmentsKey, assignmentsJson);
       
       // Save item printer type mappings
-      final mappingsJson = jsonEncode(_itemPrinterTypeMappings.map((m) => m.toFirestore()).toList());
+      final mappingsJson = jsonEncode(_itemPrinterTypeMappings.map((m) => m.toJson()).toList());
       await prefs.setString(_itemPrinterTypeMappingsKey, mappingsJson);
       
       debugPrint('💾 Saved data to local storage');
@@ -124,8 +117,8 @@ class PrinterTypeManagementService extends ChangeNotifier {
   /// Sync data from Firebase
   Future<void> _syncFromFirebase() async {
     try {
-      final restaurantId = await _firebaseService.getCurrentRestaurantId();
-      if (restaurantId == null) {
+      final restaurantId = MultiTenantAuthService().currentRestaurant?.id ?? '';
+      if (restaurantId.isEmpty) {
         debugPrint('⚠️ No restaurant ID available for Firebase sync');
         return;
       }
@@ -620,20 +613,4 @@ class PrinterTypeManagementService extends ChangeNotifier {
     
     return stats;
   }
-}
-
-/// Mock document snapshot for local storage parsing
-class MockDocumentSnapshot implements DocumentSnapshot {
-  final Map<String, dynamic> _data;
-  
-  MockDocumentSnapshot(this._data);
-  
-  @override
-  Map<String, dynamic> data() => _data;
-  
-  @override
-  String get id => _data['id'] ?? '';
-  
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 } 

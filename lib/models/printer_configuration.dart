@@ -36,6 +36,14 @@ enum PrinterModel {
   final String displayName;
 }
 
+/// Print density levels used by thermal printers
+enum PrintDensity {
+  low,
+  normal,
+  high,
+  max,
+}
+
 /// Remote access configuration for internet-based printing
 class RemoteAccessConfig {
   final String publicIpOrDomain;
@@ -323,6 +331,54 @@ class PrinterConfiguration {
   /// Check if printer requires remote access
   bool get isRemoteAccess {
     return type == PrinterType.remote || type == PrinterType.vpn;
+  }
+
+  /// Convenience: Bluetooth type check
+  bool get isBluetoothPrinter => type == PrinterType.bluetooth;
+
+  /// Convenience: whether configuration suggests 80mm capability
+  bool get supports80mm {
+    final width = customSettings['paper_width_mm'];
+    if (width is int) return width >= 80;
+    if (width is String) {
+      final parsed = int.tryParse(width);
+      if (parsed != null) return parsed >= 80;
+    }
+    // Default to true for common Epson models; conservative fallback
+    return model != PrinterModel.epsonTMP20 && model != PrinterModel.epsonTMP60II;
+  }
+
+  /// Minimal readiness check for printing
+  bool get isReadyForPrinting {
+    if (!isActive) return false;
+    if (isNetworkPrinter) {
+      return ipAddress.isNotEmpty && port > 0;
+    }
+    if (isBluetoothPrinter) {
+      return bluetoothAddress.isNotEmpty;
+    }
+    // USB/other
+    return true;
+  }
+
+  /// Map density to ESC/POS value if present in custom settings, else default
+  int get printDensityValue {
+    final explicit = customSettings['print_density'];
+    if (explicit is int) return explicit;
+    final density = customSettings['density'];
+    if (density is String) {
+      switch (density.toLowerCase()) {
+        case 'low':
+          return 0x00;
+        case 'normal':
+          return 0x00;
+        case 'high':
+          return 0x11;
+        case 'max':
+          return 0x33;
+      }
+    }
+    return 0x00; // safe default
   }
 
   /// Get effective IP address for connection

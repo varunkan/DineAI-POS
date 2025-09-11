@@ -1,14 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import '../models/printer_type_mapping.dart';
 import '../models/printer_configuration.dart';
 import '../models/category.dart';
 import '../models/menu_item.dart';
 import '../services/printer_type_management_service.dart';
-import '../services/printing_service.dart';
 import '../services/database_service.dart';
-import '../services/firebase_auth_service.dart';
-import '../widgets/action_card.dart';
+import '../services/multi_tenant_auth_service.dart';
 import '../widgets/confirmation_dialog.dart';
 
 /// Screen for managing printer type configurations and assignments
@@ -24,7 +21,7 @@ class _PrinterTypeManagementScreenState extends State<PrinterTypeManagementScree
   late TabController _tabController;
   final PrinterTypeManagementService _printerTypeService = PrinterTypeManagementService.instance;
   final DatabaseService _databaseService = DatabaseService();
-  final FirebaseAuthService _firebaseService = FirebaseAuthService.instance;
+  // FirebaseAuthService no longer needed here; use MultiTenantAuthService
 
   List<PrinterConfiguration> _availablePrinters = [];
   List<Category> _availableCategories = [];
@@ -71,15 +68,15 @@ class _PrinterTypeManagementScreenState extends State<PrinterTypeManagementScree
   Future<void> _loadAvailableData() async {
     try {
       // Load printers
-      final printerData = await _databaseService.getAllPrinterConfigurations();
+      final printerData = await _databaseService.getAllData('printer_configurations');
       _availablePrinters = printerData.map((data) => PrinterConfiguration.fromJson(data)).toList();
       
       // Load categories
-      final categoryData = await _databaseService.getAllCategories();
+      final categoryData = await _databaseService.getAllData('categories');
       _availableCategories = categoryData.map((data) => Category.fromJson(data)).toList();
       
       // Load menu items
-      final itemData = await _databaseService.getAllMenuItems();
+      final itemData = await _databaseService.getAllData('menu_items');
       _availableItems = itemData.map((data) => MenuItem.fromJson(data)).toList();
       
       debugPrint('📊 Loaded ${_availablePrinters.length} printers, ${_availableCategories.length} categories, ${_availableItems.length} items');
@@ -91,8 +88,8 @@ class _PrinterTypeManagementScreenState extends State<PrinterTypeManagementScree
   /// Create default printer type configurations
   Future<void> _createDefaultConfigurations() async {
     try {
-      final restaurantId = await _firebaseService.getCurrentRestaurantId();
-      final userId = await _firebaseService.getCurrentUserId();
+      final restaurantId = MultiTenantAuthService().currentRestaurant?.id;
+      final userId = MultiTenantAuthService().currentSession?.userId;
       
       if (restaurantId != null && userId != null) {
         await _printerTypeService.createDefaultConfigurations(restaurantId, userId);
@@ -326,7 +323,7 @@ class _PrinterTypeManagementScreenState extends State<PrinterTypeManagementScree
         child: const Icon(Icons.print, color: Colors.white),
       ),
       title: Text(printer.name),
-      subtitle: Text('${printer.type.displayName} • ${printer.address}'),
+      subtitle: Text('${printer.type.toString().split('.').last} • ${printer.fullAddress}'),
       trailing: IconButton(
         icon: const Icon(Icons.remove_circle_outline, color: Colors.red),
         onPressed: () => _removePrinterAssignment(printer.id, printerType),
@@ -398,7 +395,7 @@ class _PrinterTypeManagementScreenState extends State<PrinterTypeManagementScree
         child: const Icon(Icons.category, color: Colors.white),
       ),
       title: Text(category.name),
-      subtitle: Text('${category.itemCount} items'),
+      // itemCount not available; omit subtitle for safety
       trailing: IconButton(
         icon: const Icon(Icons.remove_circle_outline, color: Colors.red),
         onPressed: () => _removeCategoryAssignment(category.id, printerType),
@@ -470,7 +467,7 @@ class _PrinterTypeManagementScreenState extends State<PrinterTypeManagementScree
         child: const Icon(Icons.restaurant_menu, color: Colors.white),
       ),
       title: Text(item.name),
-      subtitle: Text('₹${item.price.toStringAsFixed(2)} • ${item.categoryName}'),
+      subtitle: Text('₹${item.price.toStringAsFixed(2)}'),
       trailing: IconButton(
         icon: const Icon(Icons.remove_circle_outline, color: Colors.red),
         onPressed: () => _removeItemAssignment(item.id, printerType),
@@ -492,7 +489,7 @@ class _PrinterTypeManagementScreenState extends State<PrinterTypeManagementScree
     final selectedPrinter = await showDialog<PrinterConfiguration>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Assign Printer to ${printerType.displayName}'),
+        title: Text('Assign Printer to ${printerType.toString().split('.').last}'),
         content: SizedBox(
           width: double.maxFinite,
           child: ListView.builder(
@@ -502,7 +499,7 @@ class _PrinterTypeManagementScreenState extends State<PrinterTypeManagementScree
               final printer = availablePrinters[index];
               return ListTile(
                 title: Text(printer.name),
-                subtitle: Text('${printer.type.displayName} • ${printer.address}'),
+                subtitle: Text('${printer.type.toString().split('.').last} • ${printer.fullAddress}'),
                 onTap: () => Navigator.of(context).pop(printer),
               );
             },
@@ -519,7 +516,7 @@ class _PrinterTypeManagementScreenState extends State<PrinterTypeManagementScree
 
     if (selectedPrinter != null) {
       try {
-        final userId = await _firebaseService.getCurrentUserId();
+        final userId = MultiTenantAuthService().currentSession?.userId;
         if (userId != null) {
           await _printerTypeService.assignPrinterToType(
             printerId: selectedPrinter.id,
@@ -549,7 +546,7 @@ class _PrinterTypeManagementScreenState extends State<PrinterTypeManagementScree
     final selectedCategory = await showDialog<Category>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Assign Category to ${printerType.displayName}'),
+        title: Text('Assign Category to ${printerType.toString().split('.').last}'),
         content: SizedBox(
           width: double.maxFinite,
           child: ListView.builder(
@@ -559,7 +556,7 @@ class _PrinterTypeManagementScreenState extends State<PrinterTypeManagementScree
               final category = availableCategories[index];
               return ListTile(
                 title: Text(category.name),
-                subtitle: Text('${category.itemCount} items'),
+                // itemCount not available; omit subtitle for safety
                 onTap: () => Navigator.of(context).pop(category),
               );
             },
@@ -576,7 +573,7 @@ class _PrinterTypeManagementScreenState extends State<PrinterTypeManagementScree
 
     if (selectedCategory != null) {
       try {
-        final userId = await _firebaseService.getCurrentUserId();
+        final userId = MultiTenantAuthService().currentSession?.userId;
         if (userId != null) {
           await _printerTypeService.assignCategoryToType(
             categoryId: selectedCategory.id,
@@ -605,7 +602,7 @@ class _PrinterTypeManagementScreenState extends State<PrinterTypeManagementScree
     final selectedItem = await showDialog<MenuItem>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Assign Item to ${printerType.displayName}'),
+        title: Text('Assign Item to ${printerType.toString().split('.').last}'),
         content: SizedBox(
           width: double.maxFinite,
           child: ListView.builder(
@@ -615,7 +612,7 @@ class _PrinterTypeManagementScreenState extends State<PrinterTypeManagementScree
               final item = availableItems[index];
               return ListTile(
                 title: Text(item.name),
-                subtitle: Text('₹${item.price.toStringAsFixed(2)} • ${item.categoryName}'),
+                subtitle: Text('₹${item.price.toStringAsFixed(2)}'),
                 onTap: () => Navigator.of(context).pop(item),
               );
             },
@@ -632,15 +629,15 @@ class _PrinterTypeManagementScreenState extends State<PrinterTypeManagementScree
 
     if (selectedItem != null) {
       try {
-        final userId = await _firebaseService.getCurrentUserId();
-        final restaurantId = await _firebaseService.getCurrentRestaurantId();
+        final userId = MultiTenantAuthService().currentSession?.userId;
+        final restaurantId = MultiTenantAuthService().currentRestaurant?.id;
         
         if (userId != null && restaurantId != null) {
           await _printerTypeService.assignItemToType(
             itemId: selectedItem.id,
             itemName: selectedItem.name,
             categoryId: selectedItem.categoryId,
-            categoryName: selectedItem.categoryName,
+            categoryName: '',
             printerType: printerType,
             userId: userId,
             restaurantId: restaurantId,

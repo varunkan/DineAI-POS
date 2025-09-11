@@ -7,7 +7,6 @@ import 'package:ai_pos_system/models/category.dart' as pos_category;
 import 'package:ai_pos_system/services/database_service.dart';
 import 'package:ai_pos_system/services/web_menu_loader.dart';
 import 'package:ai_pos_system/services/unified_sync_service.dart';
-import 'unified_sync_service.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
 import 'package:shared_preferences/shared_preferences.dart';

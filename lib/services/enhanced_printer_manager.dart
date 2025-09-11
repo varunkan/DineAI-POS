@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import '../models/printer_configuration.dart';
 import '../models/order.dart';
 import '../services/database_service.dart';

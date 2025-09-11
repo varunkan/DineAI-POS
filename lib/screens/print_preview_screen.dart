@@ -194,6 +194,13 @@ class PrintPreviewScreen extends StatelessWidget {
             style: const TextStyle(fontSize: 11),
           ),
         ],
+        if (order.customerPhone != null && order.customerPhone!.isNotEmpty) ...[
+          SizedBox(height: 2),
+          Text(
+            'Phone: ${order.customerPhone}',
+            style: const TextStyle(fontSize: 11),
+          ),
+        ],
         SizedBox(height: 8),
         Divider(),
       ],

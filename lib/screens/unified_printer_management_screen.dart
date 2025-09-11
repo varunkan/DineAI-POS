@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+// import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:network_info_plus/network_info_plus.dart';
 import '../models/user.dart';
@@ -7,6 +7,7 @@ import '../models/printer_type_mapping.dart';
 import '../models/printer_configuration.dart';
 import '../services/printer_type_management_service.dart';
 import '../services/printing_service.dart';
+import '../services/multi_tenant_auth_service.dart';
 import '../widgets/loading_overlay.dart';
 import '../widgets/confirmation_dialog.dart';
 
@@ -516,14 +517,14 @@ class _UnifiedPrinterManagementScreenState extends State<UnifiedPrinterManagemen
           backgroundColor: Colors.blue.shade100,
           child: Icon(Icons.print, color: Colors.blue.shade700),
         ),
-        title: Text(printer.name ?? 'Unknown Printer'),
+        title: Text(printer.name),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Type: ${printer.type?.name ?? 'Unknown'}'),
-            Text('Connection: ${printer.connectionType?.name ?? 'Unknown'}'),
-            if (printer.ipAddress != null) Text('IP: ${printer.ipAddress}'),
-            if (printer.port != null) Text('Port: ${printer.port}'),
+            Text('Type: ${printer.type.name}'),
+            Text('Connection: ${printer.isNetworkPrinter ? 'Network' : (printer.isBluetoothPrinter ? 'Bluetooth' : 'Local')}'),
+            if (printer.ipAddress.isNotEmpty) Text('IP: ${printer.ipAddress}'),
+            Text('Port: ${printer.port}'),
           ],
         ),
         trailing: PopupMenuButton<String>(
@@ -737,8 +738,9 @@ class _UnifiedPrinterManagementScreenState extends State<UnifiedPrinterManagemen
 
   Future<void> _createDefaultTypes() async {
     try {
+      final restaurantId = MultiTenantAuthService().currentRestaurant?.id ?? 'default';
       await _printerTypeService.createDefaultConfigurations(
-        widget.user.restaurantId ?? 'default',
+        restaurantId,
         widget.user.id,
       );
       await _refreshData();

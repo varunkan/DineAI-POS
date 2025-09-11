@@ -15,7 +15,6 @@ import 'package:flutter/widgets.dart'; // Added for WidgetsBinding
 import 'package:shared_preferences/shared_preferences.dart'; // Added for SharedPreferences
 import 'package:ai_pos_system/services/multi_tenant_auth_service.dart'; // Added for MultiTenantAuthService
 import 'package:ai_pos_system/services/user_service.dart'; // Added for UserService
-import 'unified_sync_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' as fs; // Added for Firebase sync
 import 'package:ai_pos_system/config/firebase_config.dart'; // Added for FirebaseConfig
 
@@ -553,10 +552,50 @@ class OrderService extends ChangeNotifier {
       // Save to local database
       final db = await _databaseService.database;
       if (db != null) {
-        final orderData = firebaseOrder.toJson();
+        final Map<String, dynamic> orderRow = {
+          'id': firebaseOrder.id,
+          'order_number': firebaseOrder.orderNumber,
+          'status': firebaseOrder.status.toString().split('.').last,
+          'type': firebaseOrder.type.toString().split('.').last,
+          'table_id': firebaseOrder.tableId,
+          'user_id': firebaseOrder.userId,
+          'customer_name': firebaseOrder.customerName,
+          'customer_phone': firebaseOrder.customerPhone,
+          'customer_email': firebaseOrder.customerEmail,
+          'customer_address': firebaseOrder.customerAddress,
+          'special_instructions': firebaseOrder.specialInstructions,
+          'subtotal': firebaseOrder.subtotal,
+          'tax_amount': firebaseOrder.taxAmount,
+          'tip_amount': firebaseOrder.tipAmount,
+          'hst_amount': firebaseOrder.hstAmount,
+          'discount_amount': firebaseOrder.discountAmount,
+          'gratuity_amount': firebaseOrder.gratuityAmount,
+          'total_amount': firebaseOrder.totalAmount,
+          'payment_method': firebaseOrder.paymentMethod,
+          'payment_status': firebaseOrder.paymentStatus.toString().split('.').last,
+          'payment_transaction_id': firebaseOrder.paymentTransactionId,
+          'order_time': firebaseOrder.orderTime.toIso8601String(),
+          'estimated_ready_time': firebaseOrder.estimatedReadyTime?.toIso8601String(),
+          'actual_ready_time': firebaseOrder.actualReadyTime?.toIso8601String(),
+          'served_time': firebaseOrder.servedTime?.toIso8601String(),
+          'completed_time': firebaseOrder.completedTime?.toIso8601String(),
+          'is_urgent': firebaseOrder.isUrgent ? 1 : 0,
+          'priority': firebaseOrder.priority,
+          'assigned_to': firebaseOrder.assignedTo,
+          'custom_fields': jsonEncode(firebaseOrder.customFields),
+          'metadata': jsonEncode(firebaseOrder.metadata),
+          'notes': jsonEncode(firebaseOrder.notes.map((n) => n.toJson()).toList()),
+          'preferences': jsonEncode(firebaseOrder.preferences),
+          'history': jsonEncode(firebaseOrder.history.map((h) => h.toJson()).toList()),
+          'items': jsonEncode(firebaseOrder.items.map((i) => i.toJson()).toList()),
+          'completed_at': firebaseOrder.completedAt?.toIso8601String(),
+          'created_at': firebaseOrder.createdAt.toIso8601String(),
+          'updated_at': firebaseOrder.updatedAt.toIso8601String(),
+        };
+
         await db.insert(
           'orders',
-          orderData,
+          orderRow,
           conflictAlgorithm: ConflictAlgorithm.replace,
         );
         

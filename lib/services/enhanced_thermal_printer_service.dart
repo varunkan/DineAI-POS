@@ -132,9 +132,8 @@ class EnhancedThermalPrinterService extends ChangeNotifier {
           
           final printer = PrinterConfiguration.fromJson(data);
           
-          // Only add thermal printers
-          if (printer.type == PrinterType.thermal || 
-              printer.model.displayName.toLowerCase().contains('epson')) {
+          // Only add Epson or network-capable printers for this service
+          if (printer.model.displayName.toLowerCase().contains('epson')) {
             _availablePrinters.add(printer);
             debugPrint('$_logTag ✅ Loaded thermal printer: ${printer.name}');
           }

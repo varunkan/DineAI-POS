@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
+// import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../models/order.dart';
 import '../services/table_service.dart';
+import '../utils/kitchen_ticket_formatter.dart';
 
 class KitchenReceiptPreview extends StatelessWidget {
   final Order order;
@@ -18,6 +19,25 @@ class KitchenReceiptPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Compute table name safely for dine-in
+    String? tableDisplay;
+    if (order.type == OrderType.dineIn && order.tableId != null) {
+      try {
+        final tableService = Provider.of<TableService>(context, listen: false);
+        final table = tableService.getTableById(order.tableId!);
+        tableDisplay = table?.number.toString() ?? order.tableId!;
+      } catch (_) {
+        tableDisplay = order.tableId!;
+      }
+    }
+
+    final lines = KitchenTicketFormatter.buildLines(
+      order: order,
+      items: newItems,
+      showAllItems: showAllItems,
+      tableDisplay: tableDisplay,
+    );
+
     return Container(
       width: 340, // Approximate width for 80mm thermal printer (80mm ≈ 340px)
       decoration: BoxDecoration(
@@ -25,116 +45,23 @@ class KitchenReceiptPreview extends StatelessWidget {
         border: Border.all(color: Colors.grey.shade400),
         borderRadius: BorderRadius.circular(8),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade100,
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(8),
-                topRight: Radius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (final line in lines)
+              Text(
+                line,
+                textAlign: TextAlign.left,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontFamily: 'Courier New',
+                  height: 1.2,
+                ),
               ),
-            ),
-            child: Column(
-              children: [
-                Text(
-                  '🍽️ KITCHEN RECEIPT',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w900,
-                    color: Colors.grey.shade800,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '80mm Thermal Printer Preview',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey.shade600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          
-          // Receipt content
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Restaurant header
-                _buildCenteredText('═══════════════════════════════════════'),
-                const SizedBox(height: 8),
-                _buildCenteredText('🏪 RESTAURANT KITCHEN', fontSize: 14, bold: true),
-                _buildCenteredText('Kitchen Order Receipt', fontSize: 12),
-                const SizedBox(height: 8),
-                _buildCenteredText('═══════════════════════════════════════'),
-                
-                const SizedBox(height: 16),
-                
-                // Order information
-                _buildBoldText('ORDER #${order.orderNumber}'),
-                const SizedBox(height: 4),
-                _buildText('Date: ${DateFormat('MMM dd, yyyy').format(order.createdAt)}'),
-                _buildText('Time: ${DateFormat('HH:mm').format(order.createdAt)}'),
-                _buildText('Type: ${order.type.toString().split('.').last.toUpperCase()}'),
-                
-                if (order.type == OrderType.dineIn && order.tableId != null)
-                  Consumer<TableService>(
-                    builder: (context, tableService, child) {
-                      final table = tableService.getTableById(order.tableId!);
-                      final tableDisplay = table?.number.toString() ?? order.tableId!;
-                      return _buildText('Table: $tableDisplay');
-                    },
-                  ),
-                
-                _buildText('Server: ${order.userId ?? 'N/A'}'),
-                
-                const SizedBox(height: 16),
-                
-                // Items separator
-                _buildText('─────────────────────────────────────────'),
-                _buildBoldText('ITEMS TO PREPARE:'),
-                _buildText('─────────────────────────────────────────'),
-                
-                const SizedBox(height: 8),
-                
-                // Items list
-                ...(!showAllItems ? newItems : order.items).map((item) => _buildItemSection(item)).toList(),
-                
-                const SizedBox(height: 16),
-                
-                // Footer
-                _buildText('─────────────────────────────────────────'),
-                _buildBoldText('TOTAL ITEMS: ${(!showAllItems ? newItems : order.items).length}'),
-                
-                if (order.notes.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  _buildBoldText('📝 SPECIAL NOTES:'),
-                  ...order.notes.map((note) => _buildText('• ${note.note}', indent: 2)).toList(),
-                ],
-                
-                const SizedBox(height: 16),
-                
-                // Time stamps
-                _buildText('Sent to Kitchen: ${DateFormat('HH:mm:ss').format(DateTime.now())}'),
-                _buildText('Status: ${order.status.toString().split('.').last.toUpperCase()}'),
-                
-                const SizedBox(height: 16),
-                
-                // Bottom separator
-                _buildCenteredText('═══════════════════════════════════════'),
-                _buildCenteredText('⏰ PREPARE WITH PRIORITY ⏰', fontSize: 12, bold: true),
-                _buildCenteredText('═══════════════════════════════════════'),
-              ],
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -260,14 +187,13 @@ class KitchenReceiptPreview extends StatelessWidget {
   }
 
   Widget _buildCenteredText(String text, {double fontSize = 12, bool bold = false}) {
-    return Center(
-      child: Text(
-        text,
-        style: TextStyle(
-          fontSize: fontSize,
-          fontWeight: bold ? FontWeight.w900 : FontWeight.normal,
-          fontFamily: 'Courier New', // Monospace font for thermal printer feel
-        ),
+    return Text(
+      text,
+      textAlign: TextAlign.left,
+      style: TextStyle(
+        fontSize: fontSize,
+        fontWeight: bold ? FontWeight.w900 : FontWeight.normal,
+        fontFamily: 'Courier New',
       ),
     );
   }

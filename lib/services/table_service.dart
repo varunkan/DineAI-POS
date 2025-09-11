@@ -6,7 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/table.dart' as restaurant_table;
 import 'package:uuid/uuid.dart';
 import 'package:ai_pos_system/models/menu_item.dart';
-import 'unified_sync_service.dart';
+import 'package:ai_pos_system/services/unified_sync_service.dart';
 
 class TableService with ChangeNotifier {
   final SharedPreferences _prefs;

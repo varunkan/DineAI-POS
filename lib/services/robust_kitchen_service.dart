@@ -618,7 +618,10 @@ class RobustKitchenService extends ChangeNotifier {
         if (order.type == OrderType.takeaway || order.type == OrderType.delivery) {
           final custName = (order.customerName != null && order.customerName!.trim().isNotEmpty) ? order.customerName! : 'N/A';
           final custPhone = (order.customerPhone != null && order.customerPhone!.trim().isNotEmpty) ? order.customerPhone! : '';
-          line('Customer: '+custName + (custPhone.isNotEmpty ? '  •  Ph: '+custPhone : ''));
+          line('Customer: '+custName);
+          if (custPhone.isNotEmpty) {
+            line('Ph: '+custPhone);
+          }
         }
         line('Date: $mon/$dd/$yyyy');
         line('Time: $hh:$mm');

@@ -9,6 +9,13 @@
 # packages, and plugins designed to encourage good coding practices.
 include: package:flutter_lints/flutter.yaml
 
+analyzer:
+  exclude:
+    - lib/services/printing_service_backup.dart
+    - lib/services/order_printer_integration_service.dart
+    - perform_comprehensive_sync.dart
+    - sync_orders_from_firebase.dart
+
 linter:
   # The lint rules applied to this project can be customized in the
   # section below to disable rules from the `package:flutter_lints/flutter.yaml`

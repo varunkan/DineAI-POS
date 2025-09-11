@@ -1,11 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import '../services/multi_tenant_auth_service.dart';
 import '../services/unified_sync_service.dart';
 import '../services/tenant_service.dart';
-import '../widgets/loading_overlay.dart';
-import '../widgets/error_dialog.dart';
-import '../widgets/confirmation_dialog.dart';
 
 class TenantSetupScreen extends StatefulWidget {
   const TenantSetupScreen({Key? key}) : super(key: key);

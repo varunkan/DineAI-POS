@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:ai_pos_system/models/activity_log.dart';
 import '../models/order.dart';
 import '../models/menu_item.dart';
 import '../models/category.dart' as pos_category;
@@ -15,6 +16,7 @@ import '../services/order_log_service.dart';
 import '../services/multi_tenant_auth_service.dart';
 import '../services/unified_sync_service.dart';
 import '../services/robust_kitchen_service.dart';
+import '../services/activity_log_service.dart';
 
 import '../widgets/loading_overlay.dart';
 import '../widgets/error_dialog.dart';
@@ -4521,11 +4523,29 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
         try {
           if (mounted) {
             final orderLogService = Provider.of<OrderLogService>(context, listen: false);
+            final activityLogService = Provider.of<ActivityLogService?>(context, listen: false);
             if (orderLogService != null) {
               orderLogService.logItemAdded(
                 _currentOrder!,
                 item,
                 widget.user.id,
+              );
+              // Also log to ActivityLog for audit
+              activityLogService?.logActivity(
+                action: ActivityAction.orderItemAdded,
+                targetId: _currentOrder!.id,
+                targetType: 'order',
+                targetName: _currentOrder!.orderNumber,
+                notes: 'Added ${item.menuItem.name} x${item.quantity}',
+                beforeData: {},
+                afterData: {
+                  'item_id': item.id,
+                  'item_name': item.menuItem.name,
+                  'quantity': item.quantity,
+                  'unit_price': item.unitPrice,
+                  'total_price': item.totalPrice,
+                },
+                screenName: 'Order Creation',
               );
             } else {
               debugPrint('⚠️ OrderLogService not available for item addition logging');
@@ -4558,6 +4578,7 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
         try {
           if (mounted) {
             final orderLogService = Provider.of<OrderLogService>(context, listen: false);
+            final activityLogService = Provider.of<ActivityLogService?>(context, listen: false);
             if (orderLogService != null) {
               orderLogService.logItemRemoved(
                 _currentOrder!,
@@ -4565,6 +4586,24 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
                 widget.user.id,
               );
               debugPrint('✅ Item removal logged successfully');
+              // Also log to ActivityLog for audit
+              activityLogService?.logActivity(
+                action: ActivityAction.orderItemRemoved,
+                targetId: _currentOrder!.id,
+                targetType: 'order',
+                targetName: _currentOrder!.orderNumber,
+                notes: 'Removed ${item.menuItem.name} x${item.quantity}',
+                beforeData: {
+                  'item_id': item.id,
+                  'item_name': item.menuItem.name,
+                  'quantity': item.quantity,
+                  'unit_price': item.unitPrice,
+                  'total_price': item.totalPrice,
+                  'sent_to_kitchen': item.sentToKitchen,
+                },
+                afterData: {},
+                screenName: 'Order Creation',
+              );
             } else {
               debugPrint('⚠️ OrderLogService not available for item removal logging');
             }

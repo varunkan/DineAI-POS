@@ -167,14 +167,55 @@ class Order {
   /// Creates an [Order] from JSON, with null safety and defaults.
   factory Order.fromJson(Map<String, dynamic> json) {
     try {
+      OrderStatus _parseOrderStatus(dynamic raw) {
+        final value = (raw ?? '').toString().trim().toLowerCase();
+        switch (value) {
+          case 'pending':
+            return OrderStatus.pending;
+          case 'confirmed':
+            return OrderStatus.confirmed;
+          case 'preparing':
+            return OrderStatus.preparing;
+          case 'ready':
+            return OrderStatus.ready;
+          case 'served':
+            return OrderStatus.served;
+          case 'completed':
+          case 'complete':
+          case 'closed':
+          case 'close':
+            return OrderStatus.completed;
+          case 'cancelled':
+          case 'canceled':
+            return OrderStatus.cancelled;
+          case 'refunded':
+            return OrderStatus.refunded;
+          default:
+            return OrderStatus.pending;
+        }
+      }
+
+      PaymentStatus _parsePaymentStatus(dynamic raw) {
+        final value = (raw ?? '').toString().trim().toLowerCase();
+        switch (value) {
+          case 'pending':
+            return PaymentStatus.pending;
+          case 'paid':
+            return PaymentStatus.paid;
+          case 'failed':
+            return PaymentStatus.failed;
+          case 'refunded':
+            return PaymentStatus.refunded;
+          default:
+            return PaymentStatus.pending;
+        }
+      }
+
       return Order(
         id: json['id'] as String? ?? '',
         orderNumber: json['orderNumber'] as String? ?? '',
         items: (json['items'] as List?)?.map((item) => OrderItem.fromJson(item)).toList() ?? [],
-        status: OrderStatus.values.firstWhere(
-          (e) => e.toString().split('.').last == (json['status'] ?? '').toString(),
-          orElse: () => OrderStatus.pending,
-        ),
+        status: _parseOrderStatus(json['status']),
         type: OrderType.values.firstWhere(
           (e) => e.toString().split('.').last == (json['type'] ?? '').toString(),
           orElse: () => OrderType.dineIn,
@@ -194,10 +235,7 @@ class Order {
         gratuityAmount: (json['gratuityAmount'] ?? 0.0).toDouble(),
         totalAmount: json['totalAmount'] != null ? (json['totalAmount'] as num).toDouble() : null,
         paymentMethod: json['paymentMethod'] as String?,
-        paymentStatus: PaymentStatus.values.firstWhere(
-          (e) => e.toString().split('.').last == (json['paymentStatus'] ?? '').toString(),
-          orElse: () => PaymentStatus.pending,
-        ),
+        paymentStatus: _parsePaymentStatus(json['paymentStatus']),
         paymentTransactionId: json['paymentTransactionId'] as String?,
         orderTime: json['orderTime'] != null ? DateTime.tryParse(json['orderTime']) ?? DateTime.now() : DateTime.now(),
         estimatedReadyTime: json['estimatedReadyTime'] != null ? DateTime.tryParse(json['estimatedReadyTime']) : null,

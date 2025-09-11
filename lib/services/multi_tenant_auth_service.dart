@@ -18,7 +18,7 @@ import '../models/restaurant.dart';
 import '../models/user.dart' as app_user;
 import 'database_service.dart';
 import 'initialization_progress_service.dart';
-import 'unified_sync_service.dart'; // Added for UnifiedSyncService
+import 'package:ai_pos_system/services/unified_sync_service.dart'; // Added for UnifiedSyncService
 import '../config/firebase_config.dart'; // Added for FirebaseConfig
 import 'order_service.dart'; // Added for OrderService
 import 'order_log_service.dart'; // Added for OrderLogService
@@ -2421,11 +2421,11 @@ class MultiTenantAuthService extends ChangeNotifier {
               // Local is newer - upload to Firebase
               await _firestore!.collection('tenants').doc(restaurant.email).collection('orders').doc(orderId).set(localOrder);
               uploadedCount++;
-            } else if (firebaseUpdatedAt.isAfter(localUpdatedAt)) {
-              // Firebase is newer - update local
-              await db.insert('orders', firebaseOrder);
-              updatedCount++;
-            } else {
+                      } else if (firebaseUpdatedAt.isAfter(localUpdatedAt)) {
+            // Firebase is newer - update local
+            await db.insert('orders', _sanitizeOrderData(firebaseOrder));
+            updatedCount++;
+          } else {
               // Timestamps are equal - no update needed
               skippedCount++;
             }
@@ -2440,7 +2440,7 @@ class MultiTenantAuthService extends ChangeNotifier {
           uploadedCount++;
         } else if (firebaseOrder != null) {
           // Only Firebase exists - download to local
-          await db.insert('orders', firebaseOrder);
+          await db.insert('orders', _sanitizeOrderData(firebaseOrder));
           updatedCount++;
         }
       }
@@ -2753,7 +2753,7 @@ class MultiTenantAuthService extends ChangeNotifier {
           final sanitizedOrderItem = _sanitizeOrderItemData(orderItemData);
           
           // Insert with conflict resolution
-          await db.insert('order_items', sanitizedOrderItem);
+          await db.insert('order_items', sanitizedOrderItem, conflictAlgorithm: ConflictAlgorithm.replace);
           syncedCount++;
           
         } catch (e) {
@@ -4341,8 +4341,8 @@ class MultiTenantAuthService extends ChangeNotifier {
               );
               
               if (existingResult.isEmpty) {
-                // Insert new order item
-                await db.insert('order_items', orderItemData);
+                // Insert new order item (upsert to avoid UNIQUE conflicts)
+                await db.insert('order_items', orderItemData, conflictAlgorithm: ConflictAlgorithm.replace);
                 extractedCount++;
                 _addProgressMessage('✅ Extracted order item: ${orderItemData['id']}');
               } else {

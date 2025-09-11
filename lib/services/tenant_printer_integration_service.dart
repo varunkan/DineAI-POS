@@ -8,7 +8,7 @@ import '../models/order.dart';
 import '../models/menu_item.dart';
 import '../services/database_service.dart';
 import '../services/tenant_printer_service.dart';
-import '../services/tenant_cloud_printing_service.dart';
+
 import '../services/enhanced_printer_assignment_service.dart';
 import '../services/printing_service.dart';
 import '../services/multi_tenant_auth_service.dart';
@@ -18,7 +18,6 @@ import '../services/multi_tenant_auth_service.dart';
 /// This service integrates all tenant-specific printer functionality:
 /// - WiFi printer discovery and public IP identification
 /// - Tenant-specific printer assignments for categories and items
-/// - Cloud-based print job routing to restaurant printers
 /// - Real-time printer status monitoring
 /// - Automatic fallback to local printing
 class TenantPrinterIntegrationService extends ChangeNotifier {
@@ -26,7 +25,6 @@ class TenantPrinterIntegrationService extends ChangeNotifier {
   
   final DatabaseService _databaseService;
   final TenantPrinterService _tenantPrinterService;
-  final TenantCloudPrintingService? _cloudPrintingService;
   final EnhancedPrinterAssignmentService _assignmentService;
   final PrintingService _printingService;
   final MultiTenantAuthService _authService;
@@ -35,7 +33,6 @@ class TenantPrinterIntegrationService extends ChangeNotifier {
   String _currentTenantId = '';
   String _currentRestaurantId = '';
   bool _isInitialized = false;
-  bool _isCloudEnabled = false;
   
   // Service state
   bool _isDiscovering = false;
@@ -45,26 +42,22 @@ class TenantPrinterIntegrationService extends ChangeNotifier {
   int _totalPrintJobs = 0;
   int _successfulPrintJobs = 0;
   int _failedPrintJobs = 0;
-  int _cloudPrintJobs = 0;
   int _localPrintJobs = 0;
   
   TenantPrinterIntegrationService({
     required DatabaseService databaseService,
     required TenantPrinterService tenantPrinterService,
-    TenantCloudPrintingService? cloudPrintingService,
     required EnhancedPrinterAssignmentService assignmentService,
     required PrintingService printingService,
     required MultiTenantAuthService authService,
   }) : _databaseService = databaseService,
        _tenantPrinterService = tenantPrinterService,
-       _cloudPrintingService = cloudPrintingService,
        _assignmentService = assignmentService,
        _printingService = printingService,
        _authService = authService;
   
   // Getters
   bool get isInitialized => _isInitialized;
-  bool get isCloudEnabled => _isCloudEnabled;
   bool get isDiscovering => _isDiscovering;
   bool get isProcessing => _isProcessing;
   String get currentTenantId => _currentTenantId;
@@ -82,7 +75,6 @@ class TenantPrinterIntegrationService extends ChangeNotifier {
   int get totalPrintJobs => _totalPrintJobs;
   int get successfulPrintJobs => _successfulPrintJobs;
   int get failedPrintJobs => _failedPrintJobs;
-  int get cloudPrintJobs => _cloudPrintJobs;
   int get localPrintJobs => _localPrintJobs;
   
   /// Initialize the integration service
@@ -102,25 +94,6 @@ class TenantPrinterIntegrationService extends ChangeNotifier {
       if (!tenantInitialized) {
         debugPrint('$_logTag ❌ Failed to initialize tenant printer service');
         return false;
-      }
-      
-      // Initialize cloud printing service (if available)
-      bool cloudInitialized = false;
-      if (_cloudPrintingService != null) {
-        cloudInitialized = await _cloudPrintingService!.initialize(
-          tenantId: tenantId,
-          restaurantId: restaurantId,
-        );
-      } else {
-        debugPrint('$_logTag ⚠️ Cloud printing service not available - skipping initialization');
-        cloudInitialized = true; // Consider it successful if not available
-      }
-      
-      if (cloudInitialized) {
-        _isCloudEnabled = true;
-        debugPrint('$_logTag ✅ Cloud printing enabled for tenant: $tenantId');
-      } else {
-        debugPrint('$_logTag ⚠️ Cloud printing not available, using local printing only');
       }
       
       _isInitialized = true;
@@ -299,23 +272,6 @@ class TenantPrinterIntegrationService extends ChangeNotifier {
       
       Map<String, bool> results = {};
       
-      // Try cloud printing first if enabled
-      if (_isCloudEnabled) {
-        try {
-          final cloudResult = await _printOrderToCloud(order);
-          if (cloudResult['success'] == true) {
-            _cloudPrintJobs++;
-            _successfulPrintJobs++;
-            debugPrint('$_logTag ✅ Cloud printing successful for order: ${order.orderNumber}');
-            return cloudResult['results'] as Map<String, bool>? ?? {};
-          } else {
-            debugPrint('$_logTag ⚠️ Cloud printing failed, falling back to local printing');
-          }
-        } catch (e) {
-          debugPrint('$_logTag ❌ Cloud printing error, falling back to local printing: $e');
-        }
-      }
-      
       // Fallback to local printing
       try {
         results = await _tenantPrinterService.printOrderToTenantPrinters(order);
@@ -346,34 +302,6 @@ class TenantPrinterIntegrationService extends ChangeNotifier {
     } finally {
       _isProcessing = false;
       notifyListeners();
-    }
-  }
-  
-  /// Print order to cloud
-  Future<Map<String, dynamic>> _printOrderToCloud(Order order) async {
-    try {
-      final currentUser = _authService.currentSession;
-      if (currentUser == null) {
-        throw Exception('No current user session');
-      }
-      
-      Map<String, dynamic> result;
-      if (_cloudPrintingService != null) {
-        result = await _cloudPrintingService!.sendOrderToCloud(
-          order: order,
-          userId: currentUser.userId,
-          userName: currentUser.userName,
-        );
-      } else {
-        debugPrint('$_logTag ⚠️ Cloud printing service not available - skipping cloud print');
-        result = {'success': false, 'error': 'Cloud printing service not available'};
-      }
-      
-      return result;
-      
-    } catch (e) {
-      debugPrint('$_logTag ❌ Error printing to cloud: $e');
-      return {'success': false, 'error': e.toString()};
     }
   }
   
@@ -440,12 +368,10 @@ class TenantPrinterIntegrationService extends ChangeNotifier {
       'totalPrintJobs': _totalPrintJobs,
       'successfulPrintJobs': _successfulPrintJobs,
       'failedPrintJobs': _failedPrintJobs,
-      'cloudPrintJobs': _cloudPrintJobs,
       'localPrintJobs': _localPrintJobs,
       'successRate': _totalPrintJobs > 0 ? (_successfulPrintJobs / _totalPrintJobs * 100).toStringAsFixed(1) : '0.0',
       'printersOnline': _tenantPrinterService.activeTenantPrinters.length,
       'totalAssignments': _tenantPrinterService.tenantAssignments.length,
-      'cloudEnabled': _isCloudEnabled,
     };
   }
   

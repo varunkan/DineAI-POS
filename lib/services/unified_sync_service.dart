@@ -77,6 +77,8 @@ class UnifiedSyncService extends ChangeNotifier {
   static const bool _enableServerChangeNotifications = true;
   // Feature flag: when true, reconcile can purge stale local-only orders (logging-only by default)
   static const bool _enablePurgeStaleLocalOrders = false;
+  // Feature flag: prefer server status for terminal states (cancelled/completed)
+  static const bool _enableServerAuthoritativeTerminalStatuses = true;
   
   // Server change sync state
   String? _lastSelectedServerId;
@@ -1410,6 +1412,15 @@ class UnifiedSyncService extends ChangeNotifier {
         await _reconcileStaleLocalOrders(tenantId);
       } catch (e) {
         debugPrint('⚠️ Reconcile of stale local orders failed: $e');
+      }
+      
+      // CRITICAL: Apply server-authoritative statuses for terminal states
+      try {
+        if (_enableServerAuthoritativeTerminalStatuses) {
+          await _applyServerAuthoritativeTerminalStatuses(tenantId);
+        }
+      } catch (e) {
+        debugPrint('⚠️ Server authoritative status reconcile failed: $e');
       }
       
       _lastSyncTime = DateTime.now();
@@ -2930,6 +2941,47 @@ class UnifiedSyncService extends ChangeNotifier {
       debugPrint('🗑️ Inventory recipe link deleted locally: $linkId');
     } catch (e) {
       debugPrint('❌ Failed to handle recipe link deletion: $e');
+    }
+  }
+
+  /// Ensure local orders reflect Firebase terminal statuses (cancelled/completed)
+  Future<void> _applyServerAuthoritativeTerminalStatuses(String tenantId) async {
+    try {
+      if (_orderService == null) return;
+      final List<pos_order.Order> localOrders = List<pos_order.Order>.from(_orderService!.allOrders);
+
+      for (final local in localOrders) {
+        try {
+          final doc = await _firestore
+              .collection('tenants')
+              .doc(tenantId)
+              .collection('orders')
+              .doc(local.id)
+              .get();
+          if (!doc.exists) {
+            // If order does not exist on server, skip altering local (no purge by default)
+            continue;
+          }
+          final remote = doc.data();
+          if (remote == null) continue;
+          remote['id'] = doc.id;
+          final remoteStatus = (remote['status'] ?? '').toString().toLowerCase();
+          final isTerminal = remoteStatus == 'cancelled' || remoteStatus == 'completed';
+          if (!isTerminal) continue;
+
+          // If local status differs from remote terminal status, prefer server copy
+          if (local.status.toString().split('.').last.toLowerCase() != remoteStatus) {
+            debugPrint('🛡️ Server-authoritative override for order ${local.orderNumber}: $remoteStatus');
+            await _downloadOrderFromFirebase(remote);
+          }
+        } catch (e) {
+          debugPrint('⚠️ Failed server-authoritative check for order ${local.id}: $e');
+        }
+      }
+      // Notify UI
+      _onOrdersUpdated?.call();
+    } catch (e) {
+      debugPrint('❌ Server authoritative terminal status reconcile error: $e');
     }
   }
 

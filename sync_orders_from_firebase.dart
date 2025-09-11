@@ -3,6 +3,10 @@ import 'package:cloud_firestore/cloud_firestore.dart' as fs;
 import 'lib/services/order_service.dart';
 import 'lib/services/multi_tenant_auth_service.dart';
 import 'lib/config/firebase_config.dart';
+import 'package:ai_pos_system/services/database_service.dart';
+import 'package:ai_pos_system/services/order_log_service.dart';
+import 'package:ai_pos_system/services/inventory_service.dart';
+import 'package:ai_pos_system/models/order.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -10,6 +14,7 @@ void main() async {
   print('🔄 Starting manual order sync from Firebase...');
   
   try {
+    await FirebaseConfig.initialize();
     // Get the current tenant ID
     final tenantId = FirebaseConfig.getCurrentTenantId();
     if (tenantId == null) {
@@ -44,7 +49,10 @@ void main() async {
     }
     
     // Initialize order service
-    final orderService = OrderService();
+    final databaseService = DatabaseService();
+    final orderLogService = OrderLogService(databaseService);
+    final inventoryService = InventoryService();
+    final orderService = OrderService(databaseService, orderLogService, inventoryService);
     
     int syncedCount = 0;
     int errorCount = 0;

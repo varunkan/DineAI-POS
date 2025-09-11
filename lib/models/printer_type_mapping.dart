@@ -133,6 +133,45 @@ class PrinterTypeConfiguration {
     };
   }
 
+  /// Convert to JSON for local storage
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'type': type.toString(),
+      'name': name,
+      'description': description,
+      'assignedPrinterIds': assignedPrinterIds,
+      'assignedCategoryIds': assignedCategoryIds,
+      'assignedItemIds': assignedItemIds,
+      'isActive': isActive,
+      'createdAt': createdAt.toIso8601String(),
+      'updatedAt': updatedAt.toIso8601String(),
+      'createdBy': createdBy,
+      'restaurantId': restaurantId,
+    };
+  }
+
+  /// Create from JSON for local storage
+  factory PrinterTypeConfiguration.fromJson(Map<String, dynamic> json) {
+    return PrinterTypeConfiguration(
+      id: (json['id'] ?? '') as String,
+      type: PrinterTypeCategory.values.firstWhere(
+        (e) => e.toString() == (json['type'] ?? ''),
+        orElse: () => PrinterTypeCategory.receipt,
+      ),
+      name: (json['name'] ?? '') as String,
+      description: (json['description'] ?? '') as String,
+      assignedPrinterIds: List<String>.from(json['assignedPrinterIds'] ?? const []),
+      assignedCategoryIds: List<String>.from(json['assignedCategoryIds'] ?? const []),
+      assignedItemIds: List<String>.from(json['assignedItemIds'] ?? const []),
+      isActive: (json['isActive'] ?? true) as bool,
+      createdAt: DateTime.tryParse(json['createdAt'] ?? '') ?? DateTime.now(),
+      updatedAt: DateTime.tryParse(json['updatedAt'] ?? '') ?? DateTime.now(),
+      createdBy: (json['createdBy'] ?? '') as String,
+      restaurantId: (json['restaurantId'] ?? '') as String,
+    );
+  }
+
   /// Create a copy with updated fields
   PrinterTypeConfiguration copyWith({
     String? id,
@@ -242,6 +281,35 @@ class PrinterTypeAssignment {
       'assignedBy': assignedBy,
     };
   }
+
+  /// Convert to JSON for local storage
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'printerTypeConfigId': printerTypeConfigId,
+      'printerId': printerId,
+      'printerType': printerType.toString(),
+      'isPrimary': isPrimary,
+      'assignedAt': assignedAt.toIso8601String(),
+      'assignedBy': assignedBy,
+    };
+  }
+
+  /// Create from JSON for local storage
+  factory PrinterTypeAssignment.fromJson(Map<String, dynamic> json) {
+    return PrinterTypeAssignment(
+      id: (json['id'] ?? '') as String,
+      printerTypeConfigId: (json['printerTypeConfigId'] ?? '') as String,
+      printerId: (json['printerId'] ?? '') as String,
+      printerType: PrinterTypeCategory.values.firstWhere(
+        (e) => e.toString() == (json['printerType'] ?? ''),
+        orElse: () => PrinterTypeCategory.receipt,
+      ),
+      isPrimary: (json['isPrimary'] ?? false) as bool,
+      assignedAt: DateTime.tryParse(json['assignedAt'] ?? '') ?? DateTime.now(),
+      assignedBy: (json['assignedBy'] ?? '') as String,
+    );
+  }
 }
 
 /// Model for item/category to printer type mapping
@@ -312,5 +380,44 @@ class ItemPrinterTypeMapping {
       'createdBy': createdBy,
       'restaurantId': restaurantId,
     };
+  }
+
+  /// Convert to JSON for local storage
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'itemId': itemId,
+      'itemName': itemName,
+      'categoryId': categoryId,
+      'categoryName': categoryName,
+      'printerType': printerType.toString(),
+      'printerTypeConfigId': printerTypeConfigId,
+      'isActive': isActive,
+      'createdAt': createdAt.toIso8601String(),
+      'updatedAt': updatedAt.toIso8601String(),
+      'createdBy': createdBy,
+      'restaurantId': restaurantId,
+    };
+  }
+
+  /// Create from JSON for local storage
+  factory ItemPrinterTypeMapping.fromJson(Map<String, dynamic> json) {
+    return ItemPrinterTypeMapping(
+      id: (json['id'] ?? '') as String,
+      itemId: (json['itemId'] ?? '') as String,
+      itemName: (json['itemName'] ?? '') as String,
+      categoryId: (json['categoryId'] ?? '') as String,
+      categoryName: (json['categoryName'] ?? '') as String,
+      printerType: PrinterTypeCategory.values.firstWhere(
+        (e) => e.toString() == (json['printerType'] ?? ''),
+        orElse: () => PrinterTypeCategory.receipt,
+      ),
+      printerTypeConfigId: (json['printerTypeConfigId'] ?? '') as String,
+      isActive: (json['isActive'] ?? true) as bool,
+      createdAt: DateTime.tryParse(json['createdAt'] ?? '') ?? DateTime.now(),
+      updatedAt: DateTime.tryParse(json['updatedAt'] ?? '') ?? DateTime.now(),
+      createdBy: (json['createdBy'] ?? '') as String,
+      restaurantId: (json['restaurantId'] ?? '') as String,
+    );
   }
 } 

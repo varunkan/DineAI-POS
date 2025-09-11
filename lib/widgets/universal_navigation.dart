@@ -20,6 +20,7 @@ import '../screens/unified_printer_dashboard.dart';
 import '../screens/restaurant_auth_screen.dart';
 import '../screens/bluetooth_printer_management_screen.dart';
 import '../services/unified_sync_service.dart';
+import '../services/multi_tenant_auth_service.dart';
 
 /// Universal navigation widget that provides consistent navigation across all screens
 class UniversalNavigation extends StatelessWidget implements PreferredSizeWidget {
@@ -835,8 +836,14 @@ class UniversalNavigation extends StatelessWidget implements PreferredSizeWidget
             child: const Text('Cancel'),
           ),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(context);
+              try {
+                final authService = Provider.of<MultiTenantAuthService>(context, listen: false);
+                await authService.logout();
+              } catch (_) {
+                // Safely ignore errors during logout and continue navigation
+              }
               Navigator.pushAndRemoveUntil(
                 context,
                 MaterialPageRoute(

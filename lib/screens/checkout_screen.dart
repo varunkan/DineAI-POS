@@ -253,11 +253,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
       // Print receipt
       try {
-        await printingService.printReceipt(updatedOrder);
-        debugPrint('✅ Receipt printed successfully');
+        await _showReceiptPreview();
+        debugPrint('✅ Receipt preview shown (and printed if confirmed)');
       } catch (e) {
-        debugPrint('⚠️ Failed to print receipt: $e');
-        // Continue with checkout even if printing fails
+        debugPrint('⚠️ Failed to show receipt preview: $e');
+        // Continue with checkout even if preview/printing fails
       }
 
       // CRITICAL FIX: Maintain printer connections during order completion

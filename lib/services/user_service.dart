@@ -13,7 +13,6 @@ import '../config/security_config.dart';
 import '../services/database_service.dart';
 import '../services/unified_sync_service.dart';
 import '../utils/user_restoration_utility.dart';
-import 'unified_sync_service.dart';
 
 class UserService with ChangeNotifier {
   final SharedPreferences _prefs;

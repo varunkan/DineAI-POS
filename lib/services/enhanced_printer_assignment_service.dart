@@ -9,7 +9,6 @@ import '../models/menu_item.dart';
 import '../services/database_service.dart';
 import '../services/printer_configuration_service.dart';
 import '../services/unified_printer_service.dart';
-import '../services/enhanced_printer_manager.dart';
 
 /// Enhanced Printer Assignment Service
 /// Fixes all issues with persistence, multi-printer assignments, and order item uniqueness

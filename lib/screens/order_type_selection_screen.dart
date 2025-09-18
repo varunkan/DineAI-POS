@@ -227,15 +227,26 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
     try {
       debugPrint('🧠 SMART FILTERING: Starting intelligent order processing...');
       
+      // 🎯 CORRECT IMPLEMENTATION: Server-based filtering with cross-server management
+      // - Each server sees only their own orders by default
+      // - Any user can select any server to manage orders from that server
+      
       if (_selectedServerId == null) {
-        // No server filter - return all active orders
-        debugPrint('🧠 SMART FILTERING: No server filter - returning all ${activeOrders.length} active orders');
+        // No server filter - return all active orders (admin view)
+        debugPrint('🧠 SMART FILTERING: No server selected - returning all ${activeOrders.length} active orders (admin view)');
+        
+        // Log each order for debugging
+        for (final order in activeOrders) {
+          debugPrint('✅ SMART FILTERING: Order ${order.orderNumber} visible (userId: ${order.userId}) - admin view');
+        }
+        
+        debugPrint('🧠 SMART FILTERING: Processed ${activeOrders.length} orders, showing all ${activeOrders.length} orders');
         return activeOrders;
       }
       
-      // Server-specific filtering with enhanced logic
+      // Server-specific filtering - show orders for the selected server
       final filtered = activeOrders.where((order) {
-        // INNOVATIVE FIX: Enhanced user ID matching with multiple format support
+        // Enhanced user ID matching with multiple format support
         if (order.userId == null) {
           debugPrint('⚠️ SMART FILTERING: Order ${order.orderNumber} has null userId - excluding');
           return false;
@@ -269,7 +280,7 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
         }
         
         if (isMatch) {
-          debugPrint('✅ SMART FILTERING: Order ${order.orderNumber} matches server $_selectedServerId');
+          debugPrint('✅ SMART FILTERING: Order ${order.orderNumber} matches server $_selectedServerId (userId: ${order.userId})');
         } else {
           debugPrint('❌ SMART FILTERING: Order ${order.orderNumber} does not match server $_selectedServerId (userId: ${order.userId})');
         }
@@ -277,15 +288,13 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
         return isMatch;
       }).toList();
       
-      debugPrint('🧠 SMART FILTERING: Processed ${activeOrders.length} orders, filtered to ${filtered.length} orders');
+      debugPrint('🧠 SMART FILTERING: Processed ${activeOrders.length} orders, filtered to ${filtered.length} orders for server $_selectedServerId');
       return filtered;
       
     } catch (e) {
       debugPrint('❌ SMART FILTERING: Error during filtering - $e');
-      // Fallback to original filtering
-      return _selectedServerId != null
-          ? activeOrders.where((order) => order.userId == _selectedServerId).toList()
-          : activeOrders;
+      // Fallback to showing all orders (no filtering)
+      return activeOrders;
     }
   }
   

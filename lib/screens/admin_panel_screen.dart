@@ -40,6 +40,7 @@ import '../services/sms_service.dart';
 import '../config/sms_config.dart';
 import '../services/database_service.dart';
 import '../services/inventory_service.dart';
+import '../services/order_reconstruction_service.dart';
 
 enum UserManagementView { addUser, existingUsers }
 
@@ -173,6 +174,210 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with TickerProvider
     // } catch (e) {
     //   debugPrint('⚠️ Failed to trigger sync on admin panel access: $e');
     // }
+  }
+
+  /// 🧪 TEST DATA: Add test orphaned items for demonstration
+  Future<void> _addTestOrphanedItems() async {
+    setState(() { _isLoading = true; });
+    
+    try {
+      debugPrint('🧪 Admin Panel: Adding test orphaned items...');
+      
+      final dbService = DatabaseService();
+      final db = await dbService.database;
+      
+      if (db == null) {
+        throw Exception('Database not available');
+      }
+      
+      // First, get some existing menu items to use real IDs
+      final menuItems = await db.query('menu_items', limit: 3);
+      
+      if (menuItems.isEmpty) {
+        throw Exception('No menu items found. Please add menu items first.');
+      }
+      
+      // Create test orphaned order_items using existing menu items
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final testOrderIds = [
+        'test_order_${timestamp}_1',
+        'test_order_${timestamp}_2',
+        'test_order_${timestamp}_3',
+      ];
+      
+      int totalItemsCreated = 0;
+      double totalValue = 0.0;
+      
+      for (int orderIndex = 0; orderIndex < testOrderIds.length; orderIndex++) {
+        final orderId = testOrderIds[orderIndex];
+        
+        // Create 2-3 items per order using real menu items
+        final itemsPerOrder = 2 + (orderIndex % 2); // 2 or 3 items
+        
+        for (int itemIndex = 0; itemIndex < itemsPerOrder; itemIndex++) {
+          final menuItem = menuItems[itemIndex % menuItems.length];
+          final quantity = 1 + (itemIndex % 3); // 1, 2, or 3 quantity
+          final unitPrice = (menuItem['price'] as num).toDouble();
+          final totalPrice = quantity * unitPrice;
+          
+          await db.insert('order_items', {
+            'id': '${orderId}_item_${itemIndex + 1}',
+            'order_id': orderId,
+            'menu_item_id': menuItem['id'],
+            'quantity': quantity,
+            'unit_price': unitPrice,
+            'total_price': totalPrice,
+            'is_available': 1,
+            'sent_to_kitchen': 0,
+            'kitchen_status': 'pending',
+            'created_at': DateTime.now().toIso8601String(),
+            'updated_at': DateTime.now().toIso8601String(),
+          });
+          
+          totalItemsCreated++;
+          totalValue += totalPrice;
+          
+          debugPrint('✅ Created orphaned item: ${menuItem['name']} x$quantity = \$${totalPrice.toStringAsFixed(2)}');
+        }
+      }
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '🧪 Test Data Created!\n'
+              '📦 ${testOrderIds.length} orphaned orders\n'
+              '🍽️ $totalItemsCreated orphaned items\n'
+              '💰 Total value: \$${totalValue.toStringAsFixed(2)}\n\n'
+              'Now tap "Generate Orders from Items" to see the magic!'
+            ),
+            backgroundColor: Colors.blue,
+            duration: const Duration(seconds: 6),
+          ),
+        );
+      }
+      
+    } catch (e) {
+      debugPrint('❌ Error adding test orphaned items: $e');
+      if (mounted) {
+        await ErrorDialogHelper.showError(
+          context,
+          title: 'Test Data Creation Failed',
+          message: 'Failed to create test orphaned items: $e',
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() { _isLoading = false; });
+      }
+    }
+  }
+
+  /// 🚀 ORDER GENERATION: Run order generation from order_items
+  Future<void> _runOrderGeneration() async {
+    setState(() { _isLoading = true; });
+    
+    try {
+      debugPrint('🚀 Admin Panel: Starting order generation from order_items...');
+      
+      // Method 1: Use OrderService (recommended)
+      final orderService = Provider.of<OrderService>(context, listen: false);
+      final result = await orderService.generateOrdersFromItems();
+      
+      debugPrint('🚀 Order generation result: ${result['success']}');
+      debugPrint('📊 Generated orders: ${result['generated']}');
+      debugPrint('💬 Message: ${result['message']}');
+      
+      if (mounted) {
+        if (result['success'] == true) {
+          final generatedCount = result['generated'] as int? ?? 0;
+          
+          // Show success message with details
+          String message = '✅ Order generation completed!\n\n';
+          message += 'Generated: $generatedCount orders\n';
+          
+          if (result['analysis'] != null) {
+            final analysis = result['analysis'] as Map<String, dynamic>;
+            message += 'Orphaned items processed: ${analysis['orphanedItems']}\n';
+            message += 'Total items in database: ${analysis['totalOrderItems']}\n';
+          }
+          
+          if (generatedCount > 0) {
+            message += '\nNew orders are now visible in the orders list with "REC-" prefix.';
+          } else {
+            message += '\nNo orphaned items found - all items already have orders.';
+          }
+          
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(message),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 6),
+            ),
+          );
+          
+          // Show detailed dialog for significant results
+          if (generatedCount > 0) {
+            await showDialog(
+              context: context,
+              builder: (context) => AlertDialog(
+                title: const Row(
+                  children: [
+                    Icon(Icons.auto_fix_high, color: Colors.green),
+                    SizedBox(width: 8),
+                    Text('Order Generation Complete'),
+                  ],
+                ),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Successfully generated $generatedCount orders from orphaned order items.'),
+                    const SizedBox(height: 16),
+                    const Text('What happened:', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    const Text('• Scanned order_items table for orphaned items'),
+                    const Text('• Grouped items by their order_id'),
+                    const Text('• Created complete orders with proper calculations'),
+                    const Text('• Added orders to database with "REC-" prefix'),
+                    const SizedBox(height: 16),
+                    const Text('The new orders are now available in your orders list and can be managed like any other order.'),
+                  ],
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('OK'),
+                  ),
+                ],
+              ),
+            );
+          }
+          
+        } else {
+          // Show error message
+          await ErrorDialogHelper.showError(
+            context,
+            title: 'Order Generation Failed',
+            message: result['message'] ?? 'Unknown error occurred during order generation.',
+          );
+        }
+      }
+      
+    } catch (e) {
+      debugPrint('❌ Error during order generation: $e');
+      if (mounted) {
+        await ErrorDialogHelper.showError(
+          context,
+          title: 'Order Generation Error',
+          message: 'An error occurred while generating orders: $e',
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() { _isLoading = false; });
+      }
+    }
   }
 
   Future<void> _addCategory() async {
@@ -1338,6 +1543,58 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with TickerProvider
                         }
                       }
                     },
+                  ),
+                ),
+              ),
+            if (_selectedIndex == 4) // Order generation button on orders tab
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Row(
+                    children: [
+                      ElevatedButton.icon(
+                        icon: const Icon(Icons.science),
+                        label: const Text('Add Test Data'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.orange.shade700,
+                          foregroundColor: Colors.white,
+                        ),
+                        onPressed: () async {
+                          final confirmed = await ConfirmationDialogHelper.showConfirmation(
+                            context,
+                            title: 'Add Test Orphaned Items',
+                            message: 'This will create test orphaned order_items (items without orders) to demonstrate the order generation feature. Continue?',
+                            confirmText: 'Add Test Data',
+                            cancelText: 'Cancel',
+                          );
+                          if (confirmed == true) {
+                            await _addTestOrphanedItems();
+                          }
+                        },
+                      ),
+                      const SizedBox(width: 16),
+                      ElevatedButton.icon(
+                        icon: const Icon(Icons.auto_fix_high),
+                        label: const Text('Generate Orders from Items'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blue.shade700,
+                          foregroundColor: Colors.white,
+                        ),
+                        onPressed: () async {
+                          final confirmed = await ConfirmationDialogHelper.showConfirmation(
+                            context,
+                            title: 'Generate Orders from Order Items',
+                            message: 'This will analyze the order_items table and create complete orders from orphaned items (items without corresponding orders). This is safe and will not affect existing data. Continue?',
+                            confirmText: 'Generate Orders',
+                            cancelText: 'Cancel',
+                          );
+                          if (confirmed == true) {
+                            await _runOrderGeneration();
+                          }
+                        },
+                      ),
+                    ],
                   ),
                 ),
               ),

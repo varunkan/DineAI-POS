@@ -68,10 +68,18 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
         debugPrint('⚠️ Admin Orders Screen: No current restaurant - using default database');
       }
       
-      await orderService.loadOrders();
-      final orders = orderService.allOrders;
+      // 🚫 CRITICAL FIX: Use existing orders if available to avoid ghost order cleanup interference
+      List<Order> orders;
+      if (orderService.allOrders.isNotEmpty) {
+        debugPrint('📋 Admin Orders Screen: Using existing loaded orders (${orderService.allOrders.length}) to avoid reload interference');
+        orders = orderService.allOrders;
+      } else {
+        debugPrint('📋 Admin Orders Screen: Loading orders from database (first time)');
+        await orderService.loadOrders();
+        orders = orderService.allOrders;
+      }
       
-      debugPrint('📋 Admin Orders Screen: Loaded ${orders.length} orders from tenant database');
+      debugPrint('📋 Admin Orders Screen: Using ${orders.length} orders for admin panel');
       
       if (mounted) {
         setState(() {

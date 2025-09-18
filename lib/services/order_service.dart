@@ -17,6 +17,7 @@ import 'package:ai_pos_system/services/multi_tenant_auth_service.dart'; // Added
 import 'package:ai_pos_system/services/user_service.dart'; // Added for UserService
 import 'package:cloud_firestore/cloud_firestore.dart' as fs; // Added for Firebase sync
 import 'package:ai_pos_system/config/firebase_config.dart'; // Added for FirebaseConfig
+import 'package:ai_pos_system/services/order_reconstruction_service.dart'; // Added for order reconstruction
 
 
 /// Custom exception for order operations
@@ -74,16 +75,15 @@ class OrderService extends ChangeNotifier {
 
   // Getters
   List<Order> get activeOrders {
-    debugPrint('📋 activeOrders getter called - returning ${_activeOrders.length} orders');
-    debugPrint('📋 Active orders: ${_activeOrders.map((o) => '${o.orderNumber}(${o.status})').join(', ')}');
+    // Remove excessive logging that slows down the app
     return List.unmodifiable(_activeOrders);
   }
   List<Order> get completedOrders {
-    debugPrint('📋 completedOrders getter called - returning ${_completedOrders.length} orders');
+    // Remove excessive logging that slows down the app  
     return List.unmodifiable(_completedOrders);
   }
   List<Order> get allOrders {
-    debugPrint('📋 allOrders getter called - returning ${_allOrders.length} orders');
+    // Remove excessive logging that slows down the app
     return List.unmodifiable(_allOrders);
   }
   Order? get currentOrder => _currentOrder;
@@ -344,6 +344,12 @@ class OrderService extends ChangeNotifier {
         return false;
       }
       
+      // 🚫 CRITICAL FIX: NEVER save orders with no items (prevents ghost orders)
+      if (order.items.isEmpty) {
+        debugPrint('🚫 GHOST ORDER PREVENTION: Refusing to save order with 0 items: ${order.orderNumber}');
+        return false;
+      }
+      
       final db = await _databaseService.database;
       if (db == null) {
         debugPrint('❌ Database not available');
@@ -436,7 +442,7 @@ class OrderService extends ChangeNotifier {
             
             // ENHANCEMENT: Sync order item to Firebase
             try {
-              final unifiedSyncService = UnifiedSyncService();
+              final unifiedSyncService = UnifiedSyncService.instance;
               if ((itemMap['sent_to_kitchen'] ?? 0) == 1) {
                 await unifiedSyncService.syncOrderItemToFirebase(itemMap);
               } else {
@@ -508,7 +514,7 @@ class OrderService extends ChangeNotifier {
       debugPrint('🔄 Syncing order to Firebase: ${order.orderNumber}');
       
       // Get the unified sync service
-      final syncService = UnifiedSyncService();
+      final syncService = UnifiedSyncService.instance;
       
       // Check if sync service is available and connected
       if (syncService.isConnected) {
@@ -964,6 +970,12 @@ class OrderService extends ChangeNotifier {
       _setLoading(true);
       debugPrint('📥 Loading orders from database');
       
+      // 🧹 CRITICAL: Clean up existing ghost orders first
+      final cleanedCount = await cleanupExistingGhostOrders();
+      if (cleanedCount > 0) {
+        debugPrint('🧹 Cleaned up $cleanedCount ghost orders before loading');
+      }
+      
       final Database? database = await _databaseService.database;
       if (database == null) {
         throw OrderServiceException('Database not available', operation: 'load_orders');
@@ -1016,8 +1028,42 @@ class OrderService extends ChangeNotifier {
           
           // Create order with items
           final order = Order.fromJson(orderJson);
-          orders.add(order);
           
+          // 👻 CRITICAL FIX: Proper ghost order detection based on database order_items
+          if (await _isGhostOrder(order.id, items)) {
+            debugPrint('👻🗑️ IMMEDIATE DELETION: Ghost order detected: ${order.orderNumber} (Items: ${items.length}, Total: \$${order.totalAmount})');
+            try {
+              // Delete from local database immediately
+              await database.delete('order_items', where: 'order_id = ?', whereArgs: [order.id]);
+              await database.delete('orders', where: 'id = ?', whereArgs: [order.id]);
+              
+              // Delete from Firebase immediately
+              try {
+                final tenantId = FirebaseConfig.getCurrentTenantId();
+                if (tenantId != null) {
+                  await fs.FirebaseFirestore.instance
+                      .collection('tenants')
+                      .doc(tenantId)
+                      .collection('orders')
+                      .doc(order.id)
+                      .delete();
+                  debugPrint('☁️🗑️ DELETED ghost order from Firebase: ${order.orderNumber}');
+                }
+              } catch (firebaseError) {
+                debugPrint('⚠️ Failed to delete ghost order from Firebase: $firebaseError');
+              }
+              
+              debugPrint('✅🗑️ GHOST ORDER ELIMINATED: ${order.orderNumber}');
+              continue; // Skip adding this ghost order to the list
+            } catch (deleteError) {
+              debugPrint('❌ Failed to delete ghost order ${order.orderNumber}: $deleteError');
+              // If deletion fails, still don't add the ghost order to the list
+              continue;
+            }
+          }
+          
+          // Only add non-ghost orders to the list
+          orders.add(order);
           debugPrint('✅ Loaded order: ${order.orderNumber} with ${items.length} items');
         } catch (e) {
           debugPrint('❌ Error loading order ${orderMap['id']}: $e');
@@ -1050,6 +1096,196 @@ class OrderService extends ChangeNotifier {
     }
   }
 
+  /// 🔄 RECONSTRUCTION: Reconstruct orders from orphaned order_items
+  Future<int> reconstructOrdersFromOrphanedItems() async {
+    try {
+      debugPrint('🔄 Starting order reconstruction from orphaned items...');
+      
+      final reconstructionService = OrderReconstructionService();
+      final result = await reconstructionService.performFullReconstruction();
+      
+      if (result['success'] == true) {
+        final reconstructedCount = result['reconstructedOrders'] as int? ?? 0;
+        if (reconstructedCount > 0) {
+          // Reload orders to include the reconstructed ones
+          await loadOrders();
+        }
+        return reconstructedCount;
+      } else {
+        debugPrint('❌ Order reconstruction failed: ${result['message']}');
+        return 0;
+      }
+    } catch (e) {
+      debugPrint('❌ Error during order reconstruction: $e');
+      return 0;
+    }
+  }
+
+  /// 🏗️ GENERATOR: Generate orders from order_items (public method)
+  Future<Map<String, dynamic>> generateOrdersFromItems() async {
+    try {
+      debugPrint('🏗️ Generating orders from order_items...');
+      
+      final reconstructionService = OrderReconstructionService();
+      
+      // Step 1: Analyze current state
+      final analysis = await reconstructionService.analyzeOrderItems();
+      debugPrint('📊 Analysis: ${analysis['orphanedItems']} orphaned items, ${analysis['potentialReconstructableOrders']} potential orders');
+      
+      if (!(analysis['reconstructionNeeded'] as bool? ?? false)) {
+        return {
+          'success': true,
+          'message': 'No order generation needed - all items have orders',
+          'generated': 0,
+          'analysis': analysis,
+        };
+      }
+      
+      // Step 2: Generate orders
+      final result = await reconstructionService.performFullReconstruction();
+      
+      if (result['success'] == true) {
+        final generatedCount = result['reconstructedOrders'] as int? ?? 0;
+        
+        // Step 3: Reload orders to include generated ones
+        if (generatedCount > 0) {
+          await loadOrders();
+          debugPrint('✅ Generated $generatedCount orders and reloaded order list');
+        }
+        
+        return {
+          'success': true,
+          'message': 'Successfully generated $generatedCount orders from orphaned items',
+          'generated': generatedCount,
+          'analysis': analysis,
+          'orders': result['orders'],
+        };
+      } else {
+        return {
+          'success': false,
+          'message': result['message'] ?? 'Order generation failed',
+          'generated': 0,
+          'analysis': analysis,
+        };
+      }
+      
+    } catch (e) {
+      debugPrint('❌ Error generating orders from items: $e');
+      return {
+        'success': false,
+        'message': 'Error during order generation: $e',
+        'generated': 0,
+      };
+    }
+  }
+
+  /// 🧹 CLEANUP METHOD: Remove all existing ghost orders from database
+  Future<int> cleanupExistingGhostOrders() async {
+    try {
+      debugPrint('🧹 Starting cleanup of existing ghost orders...');
+      
+      final db = await _databaseService.database;
+      if (db == null) {
+        debugPrint('❌ Database not available for ghost order cleanup');
+        return 0;
+      }
+      
+      // Find all orders that have no items in order_items table
+      final ghostOrdersQuery = await db.rawQuery('''
+        SELECT o.id, o.order_number 
+        FROM orders o 
+        LEFT JOIN order_items oi ON o.id = oi.order_id 
+        WHERE oi.order_id IS NULL
+      ''');
+      
+      if (ghostOrdersQuery.isEmpty) {
+        debugPrint('🧹 No ghost orders found to cleanup');
+        return 0;
+      }
+      
+      debugPrint('🧹 Found ${ghostOrdersQuery.length} ghost orders to cleanup');
+      
+      int deletedCount = 0;
+      for (final ghostOrder in ghostOrdersQuery) {
+        final orderId = ghostOrder['id'] as String;
+        final orderNumber = ghostOrder['order_number'] as String;
+        
+        try {
+          // Delete from local database
+          await db.delete('orders', where: 'id = ?', whereArgs: [orderId]);
+          
+          // Delete from Firebase
+          try {
+            final tenantId = FirebaseConfig.getCurrentTenantId();
+            if (tenantId != null) {
+              await fs.FirebaseFirestore.instance
+                  .collection('tenants')
+                  .doc(tenantId)
+                  .collection('orders')
+                  .doc(orderId)
+                  .delete();
+              debugPrint('☁️🗑️ Deleted ghost order from Firebase: $orderNumber');
+            }
+          } catch (firebaseError) {
+            debugPrint('⚠️ Failed to delete ghost order from Firebase: $firebaseError');
+          }
+          
+          debugPrint('✅🗑️ Cleaned up ghost order: $orderNumber');
+          deletedCount++;
+          
+        } catch (e) {
+          debugPrint('❌ Failed to cleanup ghost order $orderNumber: $e');
+        }
+      }
+      
+      debugPrint('🧹 Ghost order cleanup complete: $deletedCount orders removed');
+      return deletedCount;
+      
+    } catch (e) {
+      debugPrint('❌ Error during ghost order cleanup: $e');
+      return 0;
+    }
+  }
+
+  /// 👻 CRITICAL METHOD: Determine if an order is a ghost order (no items in database)
+  Future<bool> _isGhostOrder(String orderId, List<OrderItem>? memoryItems, {List<Map<String, dynamic>>? itemResults}) async {
+    try {
+      // If we already have the database results, use them
+      if (itemResults != null) {
+        final hasItems = itemResults.isNotEmpty;
+        debugPrint('👻 Ghost check for order $orderId: ${hasItems ? 'HAS' : 'NO'} items in database (${itemResults.length} items)');
+        return !hasItems;
+      }
+      
+      // If we have memory items, check if they're empty
+      if (memoryItems != null) {
+        final hasItems = memoryItems.isNotEmpty;
+        debugPrint('👻 Ghost check for order $orderId: ${hasItems ? 'HAS' : 'NO'} items in memory (${memoryItems.length} items)');
+        return !hasItems;
+      }
+      
+      // Fallback: Query the database directly
+      final db = await _databaseService.database;
+      if (db == null) {
+        debugPrint('👻 Ghost check failed: Database not available');
+        return false; // Don't delete if we can't check
+      }
+      
+      final itemCount = Sqflite.firstIntValue(await db.rawQuery(
+        'SELECT COUNT(*) FROM order_items WHERE order_id = ?',
+        [orderId],
+      )) ?? 0;
+      
+      final hasItems = itemCount > 0;
+      debugPrint('👻 Ghost check for order $orderId: ${hasItems ? 'HAS' : 'NO'} items in database ($itemCount items)');
+      return !hasItems;
+      
+    } catch (e) {
+      debugPrint('👻 Error checking ghost order status for $orderId: $e');
+      return false; // Don't delete if we can't determine
+    }
+  }
+
   /// Load orders from local database
   Future<void> _loadOrdersFromDatabase() async {
     try {
@@ -1073,10 +1309,53 @@ class OrderService extends ChangeNotifier {
       for (final orderRow in orderResults) {
         try {
           final orderMap = _sqliteMapToOrder(orderRow);
+          final orderId = orderRow['id'] as String;
+          
+          // 🚫 CRITICAL FIX: Load order items FIRST to properly check for ghost orders
+          final List<Map<String, dynamic>> itemResults = await db!.query(
+            'order_items',
+            where: 'order_id = ?',
+            whereArgs: [orderId],
+          );
+          
+          // 👻 CRITICAL FIX: Proper ghost order detection based on database order_items
+          final totalAmount = (orderRow['total_amount'] as num?)?.toDouble() ?? 0.0;
+          if (await _isGhostOrder(orderId, null, itemResults: itemResults)) {
+            debugPrint('👻🗑️ IMMEDIATE DELETION: Ghost order detected: ${orderRow['order_number']} (Items: ${itemResults.length}, Total: \$${totalAmount})');
+            try {
+              // Delete from local database immediately
+              await db!.delete('order_items', where: 'order_id = ?', whereArgs: [orderId]);
+              await db!.delete('orders', where: 'id = ?', whereArgs: [orderId]);
+              
+              // Delete from Firebase immediately
+              try {
+                final tenantId = FirebaseConfig.getCurrentTenantId();
+                if (tenantId != null) {
+                  await fs.FirebaseFirestore.instance
+                      .collection('tenants')
+                      .doc(tenantId)
+                      .collection('orders')
+                      .doc(orderId)
+                      .delete();
+                  debugPrint('☁️🗑️ DELETED ghost order from Firebase: ${orderRow['order_number']}');
+                }
+              } catch (firebaseError) {
+                debugPrint('⚠️ Failed to delete ghost order from Firebase: $firebaseError');
+              }
+              
+              debugPrint('✅🗑️ GHOST ORDER ELIMINATED: ${orderRow['order_number']}');
+              continue; // Skip adding this ghost order to the list
+            } catch (deleteError) {
+              debugPrint('❌ Failed to delete ghost order ${orderRow['order_number']}: $deleteError');
+              // If deletion fails, still don't add the ghost order to the list
+              continue;
+            }
+          }
+          
+          // Only create Order object for non-ghost orders
           final order = Order.fromJson(orderMap);
           _allOrders.add(order);
-          
-          debugPrint('✅ Loaded order: ${order.orderNumber} with ${order.items.length} items');
+          debugPrint('✅ Loaded order: ${order.orderNumber} with ${itemResults.length} items');
         } catch (e) {
           debugPrint('❌ Failed to load order ${orderRow['order_number']}: $e');
         }
@@ -1174,7 +1453,7 @@ class OrderService extends ChangeNotifier {
       try {
         debugPrint('🔄 Starting independent Firebase sync for order: ${order.orderNumber} ($action)');
         
-        final unifiedSyncService = UnifiedSyncService();
+        final unifiedSyncService = UnifiedSyncService.instance;
         
         // CRITICAL FIX: Ensure real-time sync is always active before syncing
         await unifiedSyncService.ensureRealTimeSyncActive();
@@ -1213,7 +1492,7 @@ class OrderService extends ChangeNotifier {
     try {
       debugPrint('🔴 IMMEDIATE CROSS-DEVICE SYNC: Ensuring all devices get updated instantly...');
       
-      final unifiedSyncService = UnifiedSyncService();
+      final unifiedSyncService = UnifiedSyncService.instance;
       
       // Force a comprehensive sync to ensure all devices get the update
       await unifiedSyncService.forceSyncAllLocalData();
@@ -1319,7 +1598,7 @@ class OrderService extends ChangeNotifier {
       await _syncOrderDeletionToFirebase(order);
 
       // ENHANCEMENT: Automatic Firebase sync trigger
-      final unifiedSyncService = UnifiedSyncService();
+      final unifiedSyncService = UnifiedSyncService.instance;
       await unifiedSyncService.syncOrderToFirebase(order, 'deleted');
 
       // Remove from local state
@@ -1344,7 +1623,7 @@ class OrderService extends ChangeNotifier {
       debugPrint('🔄 Syncing order deletion to Firebase: ${order.orderNumber}');
       
       // Get the unified sync service
-      final syncService = UnifiedSyncService();
+      final syncService = UnifiedSyncService.instance;
       
       // Check if sync service is available and connected
       if (syncService.isConnected) {
@@ -1369,7 +1648,7 @@ class OrderService extends ChangeNotifier {
       debugPrint('🔄 Starting auto-sync to Firebase: ${order.orderNumber} ($action)');
       
       // Get the unified sync service instance
-      final syncService = UnifiedSyncService();
+      final syncService = UnifiedSyncService.instance;
       
       // Check if sync service is connected
       if (!syncService.isConnected) {
@@ -2033,61 +2312,80 @@ class OrderService extends ChangeNotifier {
       
       debugPrint('📊 Found ${localOrders.length} orders in local database');
 
-      // PHASE 2: Get Firebase orders
+      // PHASE 2: Get Firebase orders with error handling
       final firestoreInstance = fs.FirebaseFirestore.instance;
-      final ordersSnapshot = await firestoreInstance
-          .collection('tenants')
-          .doc(tenantId)
-          .collection('orders')
-          .get();
+      fs.QuerySnapshot? ordersSnapshot;
+      
+      try {
+        ordersSnapshot = await firestoreInstance
+            .collection('tenants')
+            .doc(tenantId)
+            .collection('orders')
+            .get();
+      } catch (e) {
+        debugPrint('❌ Failed to fetch orders from Firebase: $e');
+        // Continue with local-only operations
+        return;
+      }
       
       final firebaseOrders = <String, Map<String, dynamic>>{};
       for (final doc in ordersSnapshot.docs) {
         if (doc.id == '_persistence_config') continue;
         
-        final orderData = doc.data();
-        orderData['id'] = doc.id;
-        firebaseOrders[doc.id] = orderData;
+        try {
+          final orderData = doc.data() as Map<String, dynamic>;
+          orderData['id'] = doc.id;
+          firebaseOrders[doc.id] = orderData;
+        } catch (e) {
+          debugPrint('⚠️ Error processing Firebase order ${doc.id}: $e');
+          continue;
+        }
       }
       
       debugPrint('📊 Found ${firebaseOrders.length} orders in Firebase');
 
-      // PHASE 3: Comprehensive sync logic
+      // PHASE 3: Comprehensive sync logic with error handling
       int downloadedFromFirebase = 0;
       int uploadedToFirebase = 0;
       int skippedCount = 0;
+      int errorCount = 0;
 
       final allOrderIds = {...localOrders.keys, ...firebaseOrders.keys};
       
       for (final orderId in allOrderIds) {
-        final localOrder = localOrders[orderId];
-        final firebaseOrder = firebaseOrders[orderId];
+        try {
+          final localOrder = localOrders[orderId];
+          final firebaseOrder = firebaseOrders[orderId];
 
-        if (localOrder != null && firebaseOrder != null) {
-          // Both exist - compare timestamps using correct field names
-          final localUpdatedAt = DateTime.parse(localOrder['updatedAt'] ?? '1970-01-01T00:00:00.000Z');
-          final firebaseUpdatedAt = DateTime.parse(firebaseOrder['updatedAt'] ?? '1970-01-01T00:00:00.000Z');
-          
-          if (localUpdatedAt.isAfter(firebaseUpdatedAt)) {
-            // Local is newer - upload to Firebase
-            await _uploadOrderToFirebase(localOrder, tenantId);
+          if (localOrder != null && firebaseOrder != null) {
+            // Both exist - compare timestamps using correct field names
+            final localUpdatedAt = DateTime.parse(localOrder['updatedAt'] ?? '1970-01-01T00:00:00.000Z');
+            final firebaseUpdatedAt = DateTime.parse(firebaseOrder['updatedAt'] ?? '1970-01-01T00:00:00.000Z');
+            
+            if (localUpdatedAt.isAfter(firebaseUpdatedAt)) {
+              // Local is newer - upload to Firebase
+              await _uploadOrderToFirebaseWithRetry(localOrder, tenantId);
+              uploadedToFirebase++;
+            } else if (firebaseUpdatedAt.isAfter(localUpdatedAt)) {
+              // Firebase is newer - download to local
+              await _downloadOrderFromFirebaseWithRetry(firebaseOrder);
+              downloadedFromFirebase++;
+            } else {
+              // Timestamps are equal - no update needed
+              skippedCount++;
+            }
+          } else if (localOrder != null) {
+            // Only local exists - upload to Firebase
+            await _uploadOrderToFirebaseWithRetry(localOrder, tenantId);
             uploadedToFirebase++;
-          } else if (firebaseUpdatedAt.isAfter(localUpdatedAt)) {
-            // Firebase is newer - download to local
-            await _downloadOrderFromFirebase(firebaseOrder);
+          } else if (firebaseOrder != null) {
+            // Only Firebase exists - download to local
+            await _downloadOrderFromFirebaseWithRetry(firebaseOrder);
             downloadedFromFirebase++;
-          } else {
-            // Timestamps are equal - no update needed
-            skippedCount++;
           }
-        } else if (localOrder != null) {
-          // Only local exists - upload to Firebase
-          await _uploadOrderToFirebase(localOrder, tenantId);
-          uploadedToFirebase++;
-        } else if (firebaseOrder != null) {
-          // Only Firebase exists - download to local
-          await _downloadOrderFromFirebase(firebaseOrder);
-          downloadedFromFirebase++;
+        } catch (e) {
+          debugPrint('❌ Error syncing order $orderId: $e');
+          errorCount++;
         }
       }
 
@@ -2099,10 +2397,51 @@ class OrderService extends ChangeNotifier {
       debugPrint('   📥 Downloaded from Firebase: $downloadedFromFirebase');
       debugPrint('   📤 Uploaded to Firebase: $uploadedToFirebase');
       debugPrint('   ⏭️ Skipped (no changes): $skippedCount');
+      debugPrint('   ❌ Errors: $errorCount');
 
     } catch (e) {
-      debugPrint('❌ Comprehensive sync failed: $e');
-      rethrow; // Re-throw to allow error handling in calling code
+      debugPrint('❌ Comprehensive order sync failed: $e');
+      rethrow;
+    }
+  }
+  
+  /// Upload order to Firebase with retry mechanism
+  Future<void> _uploadOrderToFirebaseWithRetry(Map<String, dynamic> orderData, String tenantId, {int maxRetries = 3}) async {
+    int attempts = 0;
+    while (attempts < maxRetries) {
+      try {
+        await _uploadOrderToFirebase(orderData, tenantId);
+        return; // Success
+      } catch (e) {
+        attempts++;
+        if (attempts >= maxRetries) {
+          debugPrint('❌ Failed to upload order ${orderData['id']} after $maxRetries attempts: $e');
+          rethrow;
+        }
+        
+        debugPrint('⚠️ Upload attempt $attempts failed for order ${orderData['id']}, retrying: $e');
+        await Future.delayed(Duration(seconds: attempts * 2)); // Exponential backoff
+      }
+    }
+  }
+  
+  /// Download order from Firebase with retry mechanism
+  Future<void> _downloadOrderFromFirebaseWithRetry(Map<String, dynamic> orderData, {int maxRetries = 3}) async {
+    int attempts = 0;
+    while (attempts < maxRetries) {
+      try {
+        await _downloadOrderFromFirebase(orderData);
+        return; // Success
+      } catch (e) {
+        attempts++;
+        if (attempts >= maxRetries) {
+          debugPrint('❌ Failed to download order ${orderData['id']} after $maxRetries attempts: $e');
+          rethrow;
+        }
+        
+        debugPrint('⚠️ Download attempt $attempts failed for order ${orderData['id']}, retrying: $e');
+        await Future.delayed(Duration(seconds: attempts * 2)); // Exponential backoff
+      }
     }
   }
 

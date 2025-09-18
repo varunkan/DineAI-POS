@@ -56,7 +56,7 @@ class TableService with ChangeNotifier {
     
     // ENHANCEMENT: Automatic Firebase sync trigger
     try {
-      final unifiedSyncService = UnifiedSyncService();
+      final unifiedSyncService = UnifiedSyncService.instance;
       await unifiedSyncService.syncTableToFirebase(table, 'created');
     } catch (e) {
       debugPrint('⚠️ Failed to sync table creation to Firebase: $e');
@@ -188,7 +188,7 @@ class TableService with ChangeNotifier {
       
       // ENHANCEMENT: Automatic Firebase sync trigger
       try {
-        final unifiedSyncService = UnifiedSyncService();
+        final unifiedSyncService = UnifiedSyncService.instance;
         await unifiedSyncService.syncTableToFirebase(table, 'deleted');
       } catch (e) {
         debugPrint('⚠️ Failed to sync table deletion to Firebase: $e');
@@ -218,7 +218,7 @@ class TableService with ChangeNotifier {
       
       // ENHANCEMENT: Automatic Firebase sync trigger
       try {
-        final unifiedSyncService = UnifiedSyncService();
+        final unifiedSyncService = UnifiedSyncService.instance;
         await unifiedSyncService.syncTableToFirebase(table, 'updated');
       } catch (e) {
         debugPrint('⚠️ Failed to sync table update to Firebase: $e');

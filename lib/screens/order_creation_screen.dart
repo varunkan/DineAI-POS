@@ -1224,6 +1224,12 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
       return; // Don't save null orders
     }
 
+    // 🚫 CRITICAL FIX: NEVER save orders with no items (prevents ghost orders)
+    if (_currentOrder!.items.isEmpty) {
+      debugPrint('🚫 GHOST ORDER PREVENTION: Refusing to save order with 0 items: ${_currentOrder!.orderNumber}');
+      return;
+    }
+
     try {
       final orderService = Provider.of<OrderService>(context, listen: false);
       
@@ -1300,7 +1306,7 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
       debugPrint('🔄 Triggering controlled sync for order: ${_currentOrder!.orderNumber}');
       
       // Use the UnifiedSyncService for controlled sync
-      final unifiedSyncService = UnifiedSyncService();
+      final unifiedSyncService = UnifiedSyncService.instance;
       await unifiedSyncService.syncOrderToFirebase(_currentOrder!, 'updated');
       
       debugPrint('✅ Controlled sync completed for order: ${_currentOrder!.orderNumber}');
@@ -4132,6 +4138,9 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
         discountAmount: discountAmount,
       );
     });
+    
+    // 💾 CRITICAL FIX: Auto-save order to persist discount
+    _autoSaveOrder();
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -4156,6 +4165,9 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
         discountAmount: discountAmount,
       );
     });
+    
+    // 💾 CRITICAL FIX: Auto-save order to persist discount
+    _autoSaveOrder();
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -4310,6 +4322,9 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
         gratuityAmount: gratuityAmount,
       );
     });
+    
+    // 💾 CRITICAL FIX: Auto-save order to persist gratuity/tip
+    _autoSaveOrder();
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -4335,6 +4350,9 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
         gratuityAmount: gratuityAmount,
       );
     });
+    
+    // 💾 CRITICAL FIX: Auto-save order to persist gratuity/tip
+    _autoSaveOrder();
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(

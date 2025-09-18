@@ -329,7 +329,7 @@ class InventoryService with ChangeNotifier {
       
       // ENHANCEMENT: Automatic Firebase sync trigger
       try {
-        final unifiedSyncService = UnifiedSyncService();
+        final unifiedSyncService = UnifiedSyncService.instance;
         await unifiedSyncService.syncInventoryItemToFirebase(item, 'created');
       } catch (e) {
         debugPrint('⚠️ Failed to sync inventory item to Firebase: $e');
@@ -382,7 +382,7 @@ class InventoryService with ChangeNotifier {
       
       // ENHANCEMENT: Automatic Firebase sync trigger
       try {
-        final unifiedSyncService = UnifiedSyncService();
+        final unifiedSyncService = UnifiedSyncService.instance;
         await unifiedSyncService.syncInventoryItemToFirebase(updatedItem, 'updated');
       } catch (e) {
         debugPrint('⚠️ Failed to sync inventory item to Firebase: $e');
@@ -428,7 +428,7 @@ class InventoryService with ChangeNotifier {
       
       // ENHANCEMENT: Automatic Firebase sync trigger
       try {
-        final unifiedSyncService = UnifiedSyncService();
+        final unifiedSyncService = UnifiedSyncService.instance;
         await unifiedSyncService.syncInventoryItemToFirebase(item, 'deleted');
       } catch (e) {
         debugPrint('⚠️ Failed to sync inventory item deletion to Firebase: $e');
@@ -445,7 +445,7 @@ class InventoryService with ChangeNotifier {
   /// Auto-sync inventory item to Firebase
   Future<void> _autoSyncToFirebase(InventoryItem item, String action) async {
     try {
-      final syncService = UnifiedSyncService();
+      final syncService = UnifiedSyncService.instance;
       if (syncService.isConnected) {
         if (action == 'deleted') {
           await syncService.deleteItem('inventory', item.id);

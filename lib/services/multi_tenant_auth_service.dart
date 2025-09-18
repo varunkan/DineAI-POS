@@ -23,6 +23,7 @@ import '../config/firebase_config.dart'; // Added for FirebaseConfig
 import 'order_service.dart'; // Added for OrderService
 import 'order_log_service.dart'; // Added for OrderLogService
 import 'inventory_service.dart'; // Added for InventoryService
+import 'sync_fix_service.dart'; // Added for SyncFixService
 
 /// Multi-tenant authentication service for restaurant POS system
 /// Handles restaurant registration, user authentication, and session management
@@ -1609,7 +1610,7 @@ class MultiTenantAuthService extends ChangeNotifier {
           // ADDITIONAL: Also trigger unified sync service for cross-device consistency
           try {
             _addProgressMessage('🔄 Triggering unified sync service...');
-            final unifiedSyncService = UnifiedSyncService();
+            final unifiedSyncService = UnifiedSyncService.instance;
             await unifiedSyncService.initialize();
             await unifiedSyncService.connectToRestaurant(restaurant, RestaurantSession(
               restaurantId: restaurant.email,
@@ -1693,7 +1694,7 @@ class MultiTenantAuthService extends ChangeNotifier {
               // ADDITIONAL: Also trigger unified sync service for cross-device consistency
               try {
                 _addProgressMessage('🔄 Triggering unified sync service for user...');
-                final unifiedSyncService = UnifiedSyncService();
+                final unifiedSyncService = UnifiedSyncService.instance;
                 await unifiedSyncService.initialize();
                 await unifiedSyncService.connectToRestaurant(restaurant, RestaurantSession(
                   restaurantId: restaurant.email,
@@ -1829,7 +1830,7 @@ class MultiTenantAuthService extends ChangeNotifier {
       _addProgressMessage('🔄 Checking for cross-device data consistency...');
       
       // Initialize the unified sync service
-      final unifiedSyncService = UnifiedSyncService();
+      final unifiedSyncService = UnifiedSyncService.instance;
       await unifiedSyncService.initialize();
       
       // Connect to restaurant for sync
@@ -1871,11 +1872,34 @@ class MultiTenantAuthService extends ChangeNotifier {
   /// Perform timestamp-based sync (lightweight sync for fresh data)
   Future<void> _performTimestampBasedSync(Restaurant restaurant) async {
     try {
-      _addProgressMessage('🔄 Performing comprehensive timestamp-based sync...');
+      _addProgressMessage('🔄 Performing comprehensive timestamp-based sync with fixes...');
       
       if (_firestore == null || _tenantDb == null) {
         _addProgressMessage('⚠️ Firebase or tenant database not available for sync');
         return;
+      }
+      
+      // ENHANCEMENT: Run comprehensive sync fixes FIRST
+      try {
+        _addProgressMessage('🔧 Running comprehensive sync fixes...');
+        final syncFixService = SyncFixService.instance;
+        await syncFixService.initialize();
+        
+        // Set services for sync fix service
+        syncFixService.setServices(
+          databaseService: _tenantDb,
+        );
+        
+        final fixResult = await syncFixService.fixAllSyncIssues();
+        if (fixResult) {
+          _addProgressMessage('✅ Sync fixes completed successfully');
+        } else {
+          _addProgressMessage('⚠️ Some sync fixes failed, continuing with caution');
+        }
+      } catch (e) {
+        _addProgressMessage('⚠️ Sync fixes failed: $e');
+        debugPrint('⚠️ Sync fixes error: $e');
+        // Continue with regular sync even if fixes fail
       }
       
       // ENHANCEMENT: Comprehensive sync with timestamp comparison for ALL critical data
@@ -1909,7 +1933,7 @@ class MultiTenantAuthService extends ChangeNotifier {
       // 7. Update restaurant's last sync time
       await _updateRestaurantSyncTime(restaurant);
       
-      _addProgressMessage('✅ Comprehensive timestamp-based sync completed');
+      _addProgressMessage('✅ Comprehensive timestamp-based sync with fixes completed');
     } catch (e) {
       _addProgressMessage('❌ Timestamp-based sync failed: $e');
       debugPrint('⚠️ Sync error details: $e');
@@ -2421,11 +2445,11 @@ class MultiTenantAuthService extends ChangeNotifier {
               // Local is newer - upload to Firebase
               await _firestore!.collection('tenants').doc(restaurant.email).collection('orders').doc(orderId).set(localOrder);
               uploadedCount++;
-                      } else if (firebaseUpdatedAt.isAfter(localUpdatedAt)) {
-            // Firebase is newer - update local
-            await db.insert('orders', _sanitizeOrderData(firebaseOrder));
-            updatedCount++;
-          } else {
+            } else if (firebaseUpdatedAt.isAfter(localUpdatedAt)) {
+              // Firebase is newer - update local
+              await _upsertOrderSafe(db, firebaseOrder);
+              updatedCount++;
+            } else {
               // Timestamps are equal - no update needed
               skippedCount++;
             }
@@ -2440,7 +2464,7 @@ class MultiTenantAuthService extends ChangeNotifier {
           uploadedCount++;
         } else if (firebaseOrder != null) {
           // Only Firebase exists - download to local
-          await db.insert('orders', _sanitizeOrderData(firebaseOrder));
+          await _upsertOrderSafe(db, firebaseOrder);
           updatedCount++;
         }
       }
@@ -2450,6 +2474,58 @@ class MultiTenantAuthService extends ChangeNotifier {
       _addProgressMessage('⚠️ Failed to sync orders from cloud: $e');
       debugPrint('⚠️ Order sync error details: $e');
       // Don't fail the entire sync process due to order sync issues
+    }
+  }
+  
+  /// Safely upsert an order without violating UNIQUE(order_number)
+  /// - Skips ghost orders (no items and zero totals)
+  /// - Updates existing row by id, then by order_number; inserts only if nothing updated
+  Future<void> _upsertOrderSafe(Database db, Map<String, dynamic> firebaseOrder) async {
+    try {
+      final Map<String, dynamic> sanitized = _sanitizeOrderData(firebaseOrder);
+
+      final dynamic embeddedItems = firebaseOrder['items'] ?? sanitized['items'];
+      final bool hasEmbeddedItems = (embeddedItems is List && embeddedItems.isNotEmpty);
+
+      final num subtotal = (sanitized['subtotal'] as num?) ?? 0;
+      final num totalAmount = (sanitized['total_amount'] as num?) ?? 0;
+
+      bool hasLocalOrderItems = false;
+      final String? orderId = (sanitized['id'] as String?);
+      if (!hasEmbeddedItems && orderId != null) {
+        try {
+          final List<Map<String, Object?>> rows = await db.rawQuery(
+            'SELECT 1 FROM order_items WHERE order_id = ? LIMIT 1',
+            <Object?>[orderId],
+          );
+          hasLocalOrderItems = rows.isNotEmpty;
+        } catch (_) {
+          hasLocalOrderItems = false;
+        }
+      }
+
+      if (!hasEmbeddedItems && !hasLocalOrderItems && subtotal <= 0 && totalAmount <= 0) {
+        debugPrint('⚠️ Skipping ghost order on upsert (id=${sanitized['id']}, order_number=${sanitized['order_number']})');
+        return;
+      }
+
+      int affected = 0;
+      if (orderId != null && orderId.isNotEmpty) {
+        affected = await db.update('orders', sanitized, where: 'id = ?', whereArgs: <Object?>[orderId]);
+      }
+
+      if (affected == 0) {
+        final String? orderNumber = (sanitized['order_number'] as String?);
+        if (orderNumber != null && orderNumber.isNotEmpty) {
+          affected = await db.update('orders', sanitized, where: 'order_number = ?', whereArgs: <Object?>[orderNumber]);
+        }
+      }
+
+      if (affected == 0) {
+        await db.insert('orders', sanitized, conflictAlgorithm: ConflictAlgorithm.ignore);
+      }
+    } catch (e) {
+      debugPrint('⚠️ _upsertOrderSafe error: $e');
     }
   }
   
@@ -3197,7 +3273,7 @@ class MultiTenantAuthService extends ChangeNotifier {
       
       // Disconnect from Firebase sync
       try {
-        final syncService = UnifiedSyncService();
+        final syncService = UnifiedSyncService.instance;
         await syncService.disconnect();
       } catch (e) {
         debugPrint('⚠️ Error disconnecting from Firebase sync: $e');
@@ -3638,7 +3714,7 @@ class MultiTenantAuthService extends ChangeNotifier {
       
       // Try to get the unified sync service
       try {
-        final unifiedSyncService = UnifiedSyncService();
+        final unifiedSyncService = UnifiedSyncService.instance;
         await unifiedSyncService.initialize();
         
         // Create a temporary session for sync
@@ -3890,7 +3966,7 @@ class MultiTenantAuthService extends ChangeNotifier {
               uploadedCount++;
             } else if (firebaseUpdatedAt.isAfter(localUpdatedAt)) {
               // Firebase is newer - update local
-              await db.insert('orders', firebaseOrder);
+              await _upsertOrderSafe(db, firebaseOrder);
               updatedCount++;
             } else {
               // Timestamps are equal - no update needed
@@ -3907,7 +3983,7 @@ class MultiTenantAuthService extends ChangeNotifier {
           uploadedCount++;
         } else if (firebaseOrder != null) {
           // Only Firebase exists - download to local
-          await db.insert('orders', firebaseOrder);
+          await _upsertOrderSafe(db, firebaseOrder);
           updatedCount++;
         }
       }

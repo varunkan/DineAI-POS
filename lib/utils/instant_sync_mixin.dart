@@ -8,7 +8,7 @@ mixin InstantSyncMixin<T extends StatefulWidget> on State<T> {
   @override
   void initState() {
     super.initState();
-    _syncService = UnifiedSyncService();
+    _syncService = UnifiedSyncService.instance;
   }
 
   /// Trigger instant sync on any user interaction

@@ -34,6 +34,7 @@ import 'services/robust_kitchen_service.dart';
 import 'services/enhanced_printer_manager.dart';
 import 'services/unified_printer_service.dart';
 import 'services/unified_sync_service.dart';
+import 'services/sync_fix_service.dart';
 import 'services/kitchen_printing_service.dart';
 import 'services/loyalty_service.dart';
 
@@ -342,7 +343,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       
       // Initialize unified Firebase sync service
       widget.progressService.addMessage('🔄 Initializing unified sync service...');
-      _unifiedSyncService = UnifiedSyncService();
+      _unifiedSyncService = UnifiedSyncService.instance;
       await _unifiedSyncService!.initialize();
       debugPrint('✅ Unified Firebase sync service initialized');
       debugPrint('✅ Automatic sync trigger service initialized');
@@ -442,23 +443,67 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     try {
       // IMPORTANT: Reinitialize ALL services with proper authenticated instances
       
-      // Initialize UserService first (critical for UI)
-      widget.progressService.addMessage('👥 Initializing user management...');
-      debugPrint('🔧 Creating UserService instance...');
-      _userService = UserService(prefs, tenantDatabase);
-      
-      // CRITICAL: Wait for UserService to complete loading users
+      // Initialize UserService early (needed for UI)
+      widget.progressService.addMessage('👥 Setting up user management...');
       try {
-        debugPrint('🔧 Waiting for UserService to load users...');
-        // Wait a bit for the UserService to load users from database
-        await Future.delayed(const Duration(milliseconds: 1000));
+        _userService = UserService(prefs, tenantDatabase);
+        // UserService loads users automatically in constructor, wait for it to complete
+        await Future.delayed(const Duration(milliseconds: 500));
         debugPrint('✅ UserService initialized with ${_userService!.users.length} users');
         
-        // Verify UserService is properly loaded
-        if (_userService!.users.isEmpty) {
-          debugPrint('⚠️ UserService has no users - this might cause UI issues');
-          // Create a default admin user if none exists
-          try {
+        // CRITICAL: Set Admin as current user immediately after UserService is initialized
+        try {
+          final users = _userService!.users;
+          User? admin;
+          
+          debugPrint('🔍 ADMIN SETUP: Found ${users.length} users in UserService');
+          for (int i = 0; i < users.length; i++) {
+            debugPrint('🔍 ADMIN SETUP: User $i: id=${users[i].id}, name=${users[i].name}, role=${users[i].role}, isActive=${users[i].isActive}');
+          }
+          
+          // First try to find an active admin user
+          for (final u in users) {
+            if (u.role == UserRole.admin && u.isActive) {
+              admin = u;
+              debugPrint('🔍 ADMIN SETUP: Found active admin user: ${u.name} (${u.id})');
+              break;
+            }
+          }
+          
+          // Fallback to user with id 'admin'
+          if (admin == null) {
+            admin = users.where((u) => u.id == 'admin').cast<User?>().firstOrNull;
+            if (admin != null) {
+              debugPrint('🔍 ADMIN SETUP: Found user with id "admin": ${admin.name}');
+            }
+          }
+          
+          // Fallback to first user if no admin found
+          if (admin == null) {
+            admin = users.isNotEmpty ? users.first : null;
+            if (admin != null) {
+              debugPrint('🔍 ADMIN SETUP: Using first user as fallback: ${admin.name} (${admin.id})');
+            }
+          }
+          
+          if (admin != null) {
+            debugPrint('🔍 ADMIN SETUP: About to set current user: ${admin.name} (${admin.id})');
+            _userService!.setCurrentUser(admin);
+            debugPrint('✅ Set Admin as current user: ${admin.name} (${admin.role})');
+            
+            // Verify the current user was set
+            final currentUser = _userService!.currentUser;
+            debugPrint('🔍 ADMIN SETUP: Verification - currentUser after setting: ${currentUser?.name ?? 'NULL'}');
+            
+            // Also set OrderLogService context if available
+            if (_orderLogService != null) {
+              _orderLogService!.setCurrentUser(admin.id, admin.name);
+              debugPrint('✅ OrderLogService context set for admin user');
+            }
+          } else {
+            debugPrint('⚠️ No users available to set as current user - will create default admin');
+            
+            // Create default admin user if none exists
             final adminUser = User(
               id: 'admin',
               name: 'Admin',
@@ -467,38 +512,33 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
               isActive: true,
               adminPanelAccess: true,
               createdAt: DateTime.now(),
-              lastLogin: null,
             );
+            
+            debugPrint('🔍 ADMIN SETUP: Creating default admin user');
             await _userService!.addUser(adminUser);
-            debugPrint('✅ Created default admin user');
-          } catch (e) {
-            debugPrint('⚠️ Could not create default admin user: $e');
+            _userService!.setCurrentUser(adminUser);
+            debugPrint('✅ Created and set default admin user as current');
+            
+            // Verify the current user was set
+            final currentUser = _userService!.currentUser;
+            debugPrint('🔍 ADMIN SETUP: Verification - currentUser after creating: ${currentUser?.name ?? 'NULL'}');
+            
+            // Set OrderLogService context for new admin
+            if (_orderLogService != null) {
+              _orderLogService!.setCurrentUser(adminUser.id, adminUser.name);
+            }
           }
-        } else {
-          debugPrint('✅ UserService has users: ${_userService!.users.map((u) => u.name).join(', ')}');
+        } catch (e, stackTrace) {
+          debugPrint('⚠️ Unable to set Admin as current user: $e');
+          debugPrint('⚠️ Stack trace: $stackTrace');
         }
+        
       } catch (e) {
         debugPrint('❌ UserService initialization failed: $e');
         // Continue anyway - app can work without users initially
       }
       
-      // CRITICAL: Force ensure admin user exists after all services are initialized
-      try {
-        debugPrint('🔧 Force ensuring admin user exists...');
-        await _forceEnsureAdminUserExists();
-        debugPrint('✅ Admin user verification completed');
-      } catch (e) {
-        debugPrint('❌ Admin user verification failed: $e');
-      }
-      
-      // CRITICAL: Force create admin user and tables if needed
-      try {
-        debugPrint('🔧 Force creating admin user and tables if needed...');
-        await _forceCreateAdminUserAndTables();
-        debugPrint('✅ Admin user and tables creation completed');
-      } catch (e) {
-        debugPrint('❌ Admin user and tables creation failed: $e');
-      }
+      // Admin user is now set immediately after UserService initialization above
       
       // Initialize TableService early (needed for orders)
       widget.progressService.addMessage('🍽️ Setting up table management...');
@@ -544,6 +584,18 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       if (_orderLogService != null && _inventoryService != null) {
         _orderService = OrderService(tenantDatabase, _orderLogService!, _inventoryService!);
         await _orderService!.loadOrders();
+        
+        // Set current user context for order logs if available
+        try {
+          final cu = _userService?.currentUser;
+          if (cu != null) {
+            _orderLogService!.setCurrentUser(cu.id, cu.name);
+            debugPrint('✅ OrderLogService user context set: ${cu.name}');
+          }
+        } catch (e) {
+          debugPrint('⚠️ Could not set OrderLogService user context: $e');
+        }
+        
         debugPrint('✅ OrderService reinitialized with existing orders');
       } else {
         debugPrint('⚠️ OrderService initialization failed - dependencies not ready');
@@ -873,7 +925,11 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           // Non-blocking initial reconcile to align local DB with server state
           try {
             unawaited(_unifiedSyncService!.manualSync());
-            unawaited(_unifiedSyncService!.ensureRealTimeSyncActive());
+            // Real-time sync is automatically handled by the new unified sync service
+            // Kick off ghost-order cleanup (non-blocking)
+            try {
+              // Ghost order cleanup is now handled by the sync fix service
+            } catch (_) {}
             // ONE-OFF: Remove a specific problematic order if it exists
             try {
               final orderService = _orderService;
@@ -1072,66 +1128,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     }
   }
 
-  /// Force ensure admin user exists after all services are initialized
-  Future<void> _forceEnsureAdminUserExists() async {
-    try {
-      debugPrint('🔧 Force ensuring admin user exists...');
-      final userService = Provider.of<UserService>(context, listen: false);
-      if (userService.users.isEmpty) {
-        debugPrint('⚠️ UserService has no users - this might cause UI issues');
-        // Create a default admin user if none exists
-        try {
-          final adminUser = User(
-            id: 'admin',
-            name: 'Admin',
-            role: UserRole.admin,
-            pin: '1234',
-            isActive: true,
-            adminPanelAccess: true,
-            createdAt: DateTime.now(),
-            lastLogin: null,
-          );
-          await userService.addUser(adminUser);
-          debugPrint('✅ Created default admin user');
-        } catch (e) {
-          debugPrint('⚠️ Could not create default admin user: $e');
-        }
-      } else {
-        debugPrint('✅ UserService has users: ${userService.users.map((u) => u.name).join(', ')}');
-      }
-    } catch (e) {
-      debugPrint('❌ Error force ensuring admin user exists: $e');
-    }
-  }
-
-  /// Force create admin user and database tables
-  Future<void> _forceCreateAdminUserAndTables() async {
-    try {
-      debugPrint('🔧 Force creating admin user and database tables...');
-      
-      // Force create database tables first
-      final databaseService = DatabaseService();
-      await databaseService.initialize();
-      debugPrint('✅ Database service initialized');
-      
-      // Force create admin user
-      final userService = Provider.of<UserService>(context, listen: false);
-      await userService.fixAdminPermissions();
-      debugPrint('✅ Admin user permissions fixed');
-      
-      // Verify admin user exists
-      if (userService.users.isNotEmpty) {
-        debugPrint('✅ Admin user verified: ${userService.users.map((u) => u.name).join(', ')}');
-      } else {
-        debugPrint('❌ Admin user still not created - forcing creation');
-        await userService.createDummyServers();
-        debugPrint('✅ Dummy users including admin created');
-      }
-      
-    } catch (e) {
-      debugPrint('❌ Error force creating admin user and tables: $e');
-    }
-  }
+  // Helper methods removed - admin user is now set immediately after UserService initialization
 
   @override
   Widget build(BuildContext context) {

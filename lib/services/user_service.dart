@@ -480,7 +480,7 @@ class UserService with ChangeNotifier {
       
       // Sync to Firebase using unified sync service
       try {
-        final syncService = UnifiedSyncService();
+        final syncService = UnifiedSyncService.instance;
         if (syncService.isConnected) {
           await syncService.createOrUpdateUser(user);
         }
@@ -845,7 +845,7 @@ class UserService with ChangeNotifier {
       _users.add(user);
       
       // ENHANCEMENT: Automatic Firebase sync trigger
-      final unifiedSyncService = UnifiedSyncService();
+      final unifiedSyncService = UnifiedSyncService.instance;
       await unifiedSyncService.syncUserToFirebase(user, 'created');
       
       notifyListeners();
@@ -867,7 +867,7 @@ class UserService with ChangeNotifier {
       }
       
       // ENHANCEMENT: Automatic Firebase sync trigger
-      final unifiedSyncService = UnifiedSyncService();
+      final unifiedSyncService = UnifiedSyncService.instance;
       await unifiedSyncService.syncUserToFirebase(user, 'updated');
       
       notifyListeners();
@@ -890,7 +890,7 @@ class UserService with ChangeNotifier {
       _users.removeWhere((u) => u.id == userId);
       
       // ENHANCEMENT: Automatic Firebase sync trigger
-      final unifiedSyncService = UnifiedSyncService();
+      final unifiedSyncService = UnifiedSyncService.instance;
       await unifiedSyncService.syncUserToFirebase(user, 'deleted');
       
       notifyListeners();
@@ -904,7 +904,7 @@ class UserService with ChangeNotifier {
   /// Auto-sync user to Firebase
   Future<void> _autoSyncToFirebase(User user, String action) async {
     try {
-      final syncService = UnifiedSyncService();
+      final syncService = UnifiedSyncService.instance;
       if (syncService.isConnected) {
         if (action == 'deleted') {
           await syncService.deleteItem('users', user.id);
@@ -1023,7 +1023,7 @@ class UserService with ChangeNotifier {
       
       // Sync to Firebase
       try {
-        final syncService = UnifiedSyncService();
+        final syncService = UnifiedSyncService.instance;
         if (syncService.isConnected) {
           await syncService.syncUserToFirebase(user, 'restored');
         }

@@ -87,8 +87,17 @@ class _ReportsScreenState extends State<ReportsScreen> with TickerProviderStateM
 
   Future<void> _updateFilteredOrders() async {
     final orderService = Provider.of<OrderService>(context, listen: false);
-    await orderService.loadOrders();
-    final allOrders = orderService.allOrders;
+    
+    // 🚫 CRITICAL FIX: Use existing orders if available to avoid ghost order cleanup interference
+    List<Order> allOrders;
+    if (orderService.allOrders.isNotEmpty) {
+      debugPrint('📊 Reports Screen: Using existing loaded orders (${orderService.allOrders.length}) to avoid reload interference');
+      allOrders = orderService.allOrders;
+    } else {
+      debugPrint('📊 Reports Screen: Loading orders from database (first time)');
+      await orderService.loadOrders();
+      allOrders = orderService.allOrders;
+    }
     final now = DateTime.now();
     
     DateTime startDate;

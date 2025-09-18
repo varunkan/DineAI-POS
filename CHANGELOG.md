@@ -5,6 +5,45 @@ All notable changes to the DineAI-POS system will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.7.0] - 2025-09-18
+
+### Added
+- **Order Generation from Order Items System**
+  - Complete OrderReconstructionService for creating orders from orphaned order_items
+  - Admin panel integration with "Generate Orders from Items" button
+  - Test data creation functionality for demonstration purposes
+  - Comprehensive analysis and reconstruction of orphaned order items
+  - Automatic order creation with proper calculations (subtotal, HST, totals)
+  - Generated orders marked with "REC-" prefix for identification
+
+### Enhanced
+- **Unified Sync Service Improvements**
+  - Refactored to singleton pattern for better resource management
+  - Added comprehensive compatibility methods for backward compatibility
+  - Enhanced error handling and retry mechanisms for Firebase operations
+  - Improved real-time listeners with automatic restart capabilities
+  - Batch processing for real-time updates to prevent system overload
+
+### Fixed
+- **Ghost Order Management**
+  - Enhanced ghost order detection using database-level queries
+  - Improved prevention of empty order creation
+  - Better cleanup mechanisms for orphaned data
+  - Fixed tip and discount persistence issues in order creation
+  - Resolved cross-device notification suppression during cleanup
+
+### Technical Improvements
+- **Database Schema Validation**
+  - Better handling of schema mismatches between Firebase and local database
+  - Improved error reporting for database constraint violations
+  - Enhanced data integrity checks and validation
+
+### Developer Experience
+- **Admin Panel Enhancements**
+  - Added test data creation tools for order generation testing
+  - Improved monitoring and logging for order reconstruction process
+  - Better error messages and user feedback for admin operations
+
 ## [3.6.0] - 2025-08-30
 
 ### Changed

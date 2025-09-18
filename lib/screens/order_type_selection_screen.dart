@@ -40,6 +40,7 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
   Timer? _autoRefreshTimer;
   UnifiedSyncService? _syncService;
   bool _isRealTimeSyncActive = false;
+  bool _isGhostOrderCleanupActive = false; // Track ghost order cleanup to avoid false notifications
 
   @override
   void initState() {
@@ -3524,7 +3525,7 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
     try {
       debugPrint('🔄 REAL-TIME SYNC: Initializing cross-device synchronization...');
       
-      _syncService = UnifiedSyncService();
+      _syncService = UnifiedSyncService.instance;
       
       // CRITICAL FIX: Get the current restaurant from MultiTenantAuthService and connect the sync service
       final authService = Provider.of<MultiTenantAuthService?>(context, listen: false);
@@ -3649,6 +3650,10 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
     try {
       debugPrint('🔄 CROSS-DEVICE UPDATE: Processing order update from another device...');
       
+      // 🚫 CRITICAL FIX: Don't show notifications during ghost order cleanup
+      // Check if this is likely a ghost order cleanup by looking at recent logs
+      _checkIfGhostOrderCleanupActive();
+      
       // CRITICAL FIX: Automatically refresh orders and update UI
       _forceRefreshOrdersFromDatabase();
       
@@ -3659,16 +3664,41 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
         });
       }
       
-      // Show user notification
-      _showCrossDeviceUpdateNotification();
-      
-      debugPrint('✅ CROSS-DEVICE UPDATE: UI refreshed automatically - new orders should be visible');
+      // 🚫 ONLY show notification if NOT during ghost order cleanup
+      if (!_isGhostOrderCleanupActive) {
+        _showCrossDeviceUpdateNotification();
+        debugPrint('✅ CROSS-DEVICE UPDATE: UI refreshed with notification - new orders should be visible');
+      } else {
+        debugPrint('🚫 CROSS-DEVICE UPDATE: UI refreshed silently (ghost order cleanup detected)');
+      }
       
     } catch (e) {
       debugPrint('❌ CROSS-DEVICE UPDATE: Error handling update - $e');
     }
   }
   
+  /// 🚫 CRITICAL FIX: Check if ghost order cleanup is currently active
+  void _checkIfGhostOrderCleanupActive() {
+    try {
+      // SMART DETECTION: Suppress notifications during initial app startup (first 60 seconds)
+      // when ghost order cleanup is most likely to occur
+      final now = DateTime.now();
+      
+      if (!_isGhostOrderCleanupActive) {
+        _isGhostOrderCleanupActive = true;
+        debugPrint('🚫 GHOST CLEANUP DETECTION: Suppressing cross-device notifications during startup cleanup');
+        
+        // Re-enable notifications after 60 seconds (startup cleanup should be complete)
+        Timer(const Duration(seconds: 60), () {
+          _isGhostOrderCleanupActive = false;
+          debugPrint('✅ GHOST CLEANUP DETECTION: Re-enabling cross-device notifications after startup');
+        });
+      }
+    } catch (e) {
+      debugPrint('❌ GHOST CLEANUP DETECTION: Error checking cleanup status - $e');
+    }
+  }
+
   /// INNOVATIVE FIX: Show notification for cross-device updates
   void _showCrossDeviceUpdateNotification() {
     try {

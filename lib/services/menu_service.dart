@@ -395,7 +395,7 @@ class MenuService with ChangeNotifier {
       
       // Sync to Firebase using unified sync service (non-blocking)
       try {
-        final syncService = UnifiedSyncService();
+        final syncService = UnifiedSyncService.instance;
         if (syncService.isConnected) {
           await syncService.createOrUpdateMenuItem(item);
         }
@@ -450,7 +450,7 @@ class MenuService with ChangeNotifier {
       
       // ENHANCEMENT: Automatic Firebase sync trigger
       try {
-        final unifiedSyncService = UnifiedSyncService();
+        final unifiedSyncService = UnifiedSyncService.instance;
         await unifiedSyncService.syncMenuItemToFirebase(item, 'created');
       } catch (e) {
         debugPrint('⚠️ Firebase sync failed for menu item ${item.name}: $e');
@@ -478,7 +478,7 @@ class MenuService with ChangeNotifier {
     await saveMenuItem(updatedItem);
     
     // ENHANCEMENT: Automatic Firebase sync trigger
-    final unifiedSyncService = UnifiedSyncService();
+    final unifiedSyncService = UnifiedSyncService.instance;
     await unifiedSyncService.syncMenuItemToFirebase(updatedItem, 'updated');
   }
 
@@ -499,7 +499,7 @@ class MenuService with ChangeNotifier {
       _menuItems.removeWhere((item) => item.id == id);
       
       // ENHANCEMENT: Automatic Firebase sync trigger
-      final unifiedSyncService = UnifiedSyncService();
+      final unifiedSyncService = UnifiedSyncService.instance;
       await unifiedSyncService.syncMenuItemToFirebase(item, 'deleted');
       
       // Safely notify listeners
@@ -524,7 +524,7 @@ class MenuService with ChangeNotifier {
   /// Auto-sync menu item to Firebase
   Future<void> _autoSyncToFirebase(MenuItem item, String action) async {
     try {
-      final syncService = UnifiedSyncService();
+      final syncService = UnifiedSyncService.instance;
       if (syncService.isConnected) {
         if (action == 'deleted') {
           await syncService.deleteItem('menu_items', item.id);
@@ -630,7 +630,7 @@ class MenuService with ChangeNotifier {
       
       // Sync to Firebase using unified sync service
       try {
-        final syncService = UnifiedSyncService();
+        final syncService = UnifiedSyncService.instance;
         if (syncService.isConnected) {
           await syncService.createOrUpdateCategory(category);
         }
@@ -663,7 +663,7 @@ class MenuService with ChangeNotifier {
     await saveCategory(category);
     
           // ENHANCEMENT: Automatic Firebase sync trigger
-      final unifiedSyncService = UnifiedSyncService();
+      final unifiedSyncService = UnifiedSyncService.instance;
       await unifiedSyncService.syncCategoryToFirebase(category, 'created');
   }
 
@@ -675,14 +675,14 @@ class MenuService with ChangeNotifier {
     await saveCategory(updatedCategory);
     
     // ENHANCEMENT: Automatic Firebase sync trigger
-    final unifiedSyncService = UnifiedSyncService();
+    final unifiedSyncService = UnifiedSyncService.instance;
     await unifiedSyncService.syncCategoryToFirebase(updatedCategory, 'updated');
   }
 
   /// Auto-sync category to Firebase
   Future<void> _autoSyncCategoryToFirebase(pos_category.Category category, String action) async {
     try {
-      final syncService = UnifiedSyncService();
+      final syncService = UnifiedSyncService.instance;
       if (syncService.isConnected) {
         if (action == 'deleted') {
           await syncService.deleteItem('categories', category.id);
@@ -720,7 +720,7 @@ class MenuService with ChangeNotifier {
       _categories.removeWhere((category) => category.id == id);
       
       // ENHANCEMENT: Automatic Firebase sync trigger
-      final unifiedSyncService = UnifiedSyncService();
+      final unifiedSyncService = UnifiedSyncService.instance;
       await unifiedSyncService.syncCategoryToFirebase(category, 'deleted');
       
       // Safely notify listeners

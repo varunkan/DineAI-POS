@@ -65,7 +65,7 @@ class _TenantSetupScreenState extends State<TenantSetupScreen> {
       await TenantService.instance.setCurrentTenant(tenantId);
       
       // Clear and sync data for the new tenant
-      final syncService = UnifiedSyncService();
+      final syncService = UnifiedSyncService.instance;
       await syncService.forceSyncAllLocalData();
 
       if (mounted) {
@@ -105,7 +105,7 @@ class _TenantSetupScreenState extends State<TenantSetupScreen> {
       await TenantService.instance.setCurrentTenant(_selectedTenantId!);
       
       // Force sync data from Firebase
-      final syncService = UnifiedSyncService();
+      final syncService = UnifiedSyncService.instance;
       await syncService.triggerImmediateSync();
 
       if (mounted) {
@@ -141,7 +141,7 @@ class _TenantSetupScreenState extends State<TenantSetupScreen> {
 
     try {
       await TenantService.instance.setCurrentTenant(_selectedTenantId!);
-      final syncService = UnifiedSyncService();
+      final syncService = UnifiedSyncService.instance;
       await syncService.forceSyncAllLocalData();
       
       if (mounted) {

@@ -296,7 +296,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     _loyaltyService = LoyaltyService(dummyDb);
     _inventoryService = InventoryService();
     _orderService = OrderService(dummyDb, _orderLogService!, _inventoryService!);
-    debugPrint('✅ Core services initialized with dummy instances');
+    debugPrint('✅ Core services initialized with dummy instances (MenuService will be reinitialized after auth)');
   }
 
   /// Initialize services that can be created synchronously (before SharedPreferences)
@@ -604,9 +604,28 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       // Create new MenuService instance with updated database
       widget.progressService.addMessage('🍽️ Loading menu items...');
       _menuService = MenuService(tenantDatabase);
+      
+      // CRITICAL: Ensure MenuService is fully initialized before proceeding
+      debugPrint('🔧 Ensuring MenuService is fully initialized with tenant database...');
       await _menuService!.ensureInitialized();
       await _menuService!.ensureReceiptsCategoryExists();
-      debugPrint('✅ MenuService reinitialized');
+      
+      // Wait a moment for any pending database operations
+      await Future.delayed(const Duration(milliseconds: 100));
+      
+      debugPrint('✅ MenuService reinitialized with ${_menuService!.categories.length} categories and ${_menuService!.menuItems.length} items');
+      
+      // CRITICAL FIX: Set global MenuService reference for direct reload after sync
+      MultiTenantAuthService.setGlobalMenuService(_menuService!);
+      
+      // CRITICAL FIX: Set callback to reload MenuService when categories are synced from Firebase
+      widget.authService.setCategoriesSyncedCallback(() async {
+        if (_menuService != null) {
+          debugPrint('🔄 Categories synced from Firebase - reloading MenuService...');
+          await _menuService!.reloadMenuData();
+          debugPrint('✅ MenuService reloaded after Firebase sync: ${_menuService!.categories.length} categories, ${_menuService!.menuItems.length} items');
+        }
+      });
       
       // Create new ActivityLogService instance with updated database
       widget.progressService.addMessage('📝 Initializing activity logging...');
@@ -1098,6 +1117,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       _orderService = null;
       _menuService = null;
       _userService = null;
+      
+      // Clear global MenuService reference
+      MultiTenantAuthService.clearGlobalMenuService();
       _tableService = null;
       _paymentService = null;
       _printingService = null;

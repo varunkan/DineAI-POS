@@ -23,6 +23,7 @@ import '../config/firebase_config.dart'; // Added for FirebaseConfig
 import 'order_service.dart'; // Added for OrderService
 import 'order_log_service.dart'; // Added for OrderLogService
 import 'inventory_service.dart'; // Added for InventoryService
+import 'menu_service.dart'; // Added for MenuService
 import 'sync_fix_service.dart'; // Added for SyncFixService
 
 /// Multi-tenant authentication service for restaurant POS system
@@ -71,6 +72,12 @@ class MultiTenantAuthService extends ChangeNotifier {
   FirebaseFirestore? _firestore;
   firebase_auth.FirebaseAuth? _auth;
   
+  // Callback for when categories are synced from Firebase
+  VoidCallback? _onCategoriesSynced;
+  
+  // Global reference to MenuService for direct reload after sync
+  static MenuService? _globalMenuService;
+  
   // ZERO RISK: Feature flags for new functionality
   static const bool _enableEnhancedOrderItemsSync = true; // Can be set to false to disable
   static const bool _enableSafeWrappers = true; // Can be set to false to disable
@@ -98,6 +105,21 @@ class MultiTenantAuthService extends ChangeNotifier {
   /// Set progress service for initialization messages
   void setProgressService(InitializationProgressService progressService) {
     _progressService = progressService;
+  }
+  
+  /// Set callback for when categories are synced from Firebase
+  void setCategoriesSyncedCallback(VoidCallback callback) {
+    _onCategoriesSynced = callback;
+  }
+  
+  /// Set global MenuService reference for direct reload after sync
+  static void setGlobalMenuService(MenuService menuService) {
+    _globalMenuService = menuService;
+  }
+  
+  /// Clear global MenuService reference
+  static void clearGlobalMenuService() {
+    _globalMenuService = null;
   }
   
   /// Add progress message
@@ -2051,8 +2073,8 @@ class MultiTenantAuthService extends ChangeNotifier {
           await db.rawInsert('''
             INSERT OR REPLACE INTO categories (
               id, name, description, image_url, is_active, sort_order, 
-              created_at, updated_at, icon_code_point
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+              created_at, updated_at, icon_code_point, color_value
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ''', [
             categoryData['id'],
             categoryData['name'],
@@ -2063,12 +2085,36 @@ class MultiTenantAuthService extends ChangeNotifier {
             categoryData['created_at'] ?? DateTime.now().toIso8601String(),
             categoryData['updated_at'] ?? DateTime.now().toIso8601String(),
             categoryData['icon_code_point'] ?? 0,
+            categoryData['color_value'] ?? '',
           ]);
           syncedCount++;
         }
       }
       
       _addProgressMessage('✅ Synced $syncedCount categories from cloud');
+      
+      // CRITICAL FIX: Notify that categories have been synced so MenuService can reload
+      if (syncedCount > 0) {
+        debugPrint('🔄 Categories synced - triggering MenuService reload callback');
+        _onCategoriesSynced?.call();
+        
+        // ADDITIONAL FIX: Direct MenuService reload using global reference
+        if (_globalMenuService != null) {
+          debugPrint('🔄 Direct MenuService reload after category sync');
+          unawaited(_globalMenuService!.reloadMenuData());
+        }
+        
+        // FALLBACK: Also trigger a delayed reload to ensure MenuService gets updated
+        // This handles the case where the callback isn't set yet during authentication
+        Timer(const Duration(seconds: 2), () {
+          debugPrint('🔄 Delayed MenuService reload trigger after category sync');
+          _onCategoriesSynced?.call();
+          if (_globalMenuService != null) {
+            debugPrint('🔄 Delayed direct MenuService reload');
+            unawaited(_globalMenuService!.reloadMenuData());
+          }
+        });
+      }
     } catch (e) {
       _addProgressMessage('⚠️ Failed to sync categories from cloud: $e');
     }

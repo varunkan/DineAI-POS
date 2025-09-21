@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:uuid/uuid.dart';
 import 'package:ai_pos_system/models/menu_item.dart';
 import 'package:ai_pos_system/models/category.dart' as pos_category;
 import 'package:ai_pos_system/services/database_service.dart';
@@ -103,16 +104,20 @@ class MenuService with ChangeNotifier {
           }
         }
         
+        debugPrint('🔧 Loading menu data from database...');
         await _loadMenuData();
         
         // Check if we need to load sample data
         final needsSample = await _databaseService.needsSampleData();
+        debugPrint('🔍 Sample data check: needsSample=$needsSample, categories=${_categories.length}, items=${_menuItems.length}');
+        
         if (needsSample && _menuItems.isEmpty && _categories.isEmpty) {
           debugPrint('🔧 Loading sample menu data...');
           await loadSampleData();
           await _databaseService.markSampleDataLoaded();
           
           // Reload after adding sample data
+          debugPrint('🔄 Reloading menu data after sample data...');
           await _loadMenuData();
         }
         
@@ -122,6 +127,8 @@ class MenuService with ChangeNotifier {
         debugPrint('❌ Failed to initialize MenuService: $e');
         throw MenuServiceException('Failed to initialize menu service', operation: 'initialize', originalError: e);
       }
+    } else {
+      debugPrint('🔍 MenuService already initialized with ${_categories.length} categories and ${_menuItems.length} items');
     }
   }
 
@@ -236,6 +243,16 @@ class MenuService with ChangeNotifier {
     }
   }
 
+  /// Reloads all menu data from the database.
+  /// 
+  /// This method can be called after external data changes (e.g., Firebase sync)
+  /// to refresh the in-memory cache and notify UI listeners.
+  Future<void> reloadMenuData() async {
+    debugPrint('🔄 MenuService: Reloading menu data after external changes...');
+    await _loadMenuData();
+    debugPrint('✅ MenuService: Menu data reloaded with ${_categories.length} categories and ${_menuItems.length} items');
+  }
+
   /// Loads all menu items from the database.
   /// 
   /// Throws [MenuServiceException] if loading fails.
@@ -278,12 +295,42 @@ class MenuService with ChangeNotifier {
         categoriesData = await _webMenuLoader!.getCategories();
         debugPrint('🌐 Loaded ${categoriesData.length} categories from web storage');
       } else {
-        // Load from SQLite database
-        categoriesData = await _databaseService.query('categories');
+        // Load from SQLite database with error handling for schema issues
+        try {
+          debugPrint('🔍 Querying categories from SQLite database...');
+          categoriesData = await _databaseService.query('categories');
+          debugPrint('🔍 Raw categories query returned ${categoriesData.length} records');
+        } catch (e) {
+          debugPrint('⚠️ Database schema issue loading categories: $e');
+          // If database query fails due to schema issues, try to load with basic schema
+          try {
+            categoriesData = await _databaseService.query(
+              'categories',
+              columns: ['id', 'name', 'description', 'is_active', 'sort_order', 'created_at', 'updated_at'],
+            );
+            debugPrint('✅ Loaded categories with basic schema (${categoriesData.length} categories)');
+          } catch (e2) {
+            debugPrint('❌ Failed to load categories even with basic schema: $e2');
+            // If even basic schema fails, create empty list but don't throw
+            categoriesData = [];
+          }
+        }
       }
       
       _categories = categoriesData.map((data) {
-        return pos_category.Category.fromJson(data);
+        try {
+          return pos_category.Category.fromJson(data);
+        } catch (e) {
+          debugPrint('⚠️ Error parsing category ${data['id'] ?? 'unknown'}: $e');
+          // Return a basic category if parsing fails
+          return pos_category.Category(
+            id: data['id']?.toString() ?? const Uuid().v4(),
+            name: data['name']?.toString() ?? 'Unknown Category',
+            description: data['description']?.toString(),
+            isActive: (data['is_active'] as int?) == 1,
+            sortOrder: data['sort_order'] as int? ?? 0,
+          );
+        }
       }).toList();
       
       // Sort by sort order and name
@@ -291,8 +338,12 @@ class MenuService with ChangeNotifier {
         final orderCompare = a.sortOrder.compareTo(b.sortOrder);
         return orderCompare != 0 ? orderCompare : a.name.compareTo(b.name);
       });
+      
+      debugPrint('✅ Loaded ${_categories.length} categories successfully');
     } catch (e) {
-      throw MenuServiceException('Failed to load categories', operation: 'load_categories', originalError: e);
+      debugPrint('❌ Critical error loading categories: $e');
+      // Don't throw exception - just log and continue with empty categories
+      _categories = [];
     }
   }
 

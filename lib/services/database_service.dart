@@ -28,7 +28,7 @@ class DatabaseService {
   static Box? _webBox;
   static const String _databaseName = 'ai_pos_database.db';
   static const String _webBoxName = 'pos_data';
-  static const int _databaseVersion = 2;
+  static const int _databaseVersion = 3;
   
   // Singleton pattern with initialization lock
   static final DatabaseService _instance = DatabaseService._internal();
@@ -400,7 +400,9 @@ class DatabaseService {
         is_active INTEGER NOT NULL DEFAULT 1,
         sort_order INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
+        updated_at TEXT NOT NULL,
+        icon_code_point INTEGER,
+        color_value INTEGER
       )
     ''');
   }
@@ -745,8 +747,13 @@ class DatabaseService {
         await _migrateOrderLogsTable(db);
       }
       
+      // Version 2 → 3: Add icon_code_point and color_value columns to categories table
+      if (oldVersion < 3) {
+        await _migrateCategoriesTable(db);
+      }
+      
       // Future migrations can be added here
-      // if (oldVersion < 3) { ... }
+      // if (oldVersion < 4) { ... }
       
       debugPrint('✅ Database upgrade completed successfully');
       
@@ -1766,6 +1773,41 @@ class DatabaseService {
       debugPrint('✅ order_logs table schema migration completed');
     } catch (e) {
       debugPrint('❌ Failed to migrate order_logs table: $e');
+    }
+  }
+
+  /// Migrates the categories table to add missing columns for version 3.
+  Future<void> _migrateCategoriesTable(DatabaseExecutor db) async {
+    try {
+      debugPrint('🔄 Migrating categories table schema...');
+      
+      // Get current table schema
+      final tableInfo = await db.rawQuery("PRAGMA table_info(categories)");
+      final existingColumns = tableInfo.map((col) => col['name'] as String).toSet();
+      
+      // Add icon_code_point column if it doesn't exist
+      if (!existingColumns.contains('icon_code_point')) {
+        try {
+          await db.execute('ALTER TABLE categories ADD COLUMN icon_code_point INTEGER');
+          debugPrint('✅ Added icon_code_point column to categories');
+        } catch (e) {
+          debugPrint('⚠️ Could not add icon_code_point column: $e');
+        }
+      }
+      
+      // Add color_value column if it doesn't exist  
+      if (!existingColumns.contains('color_value')) {
+        try {
+          await db.execute('ALTER TABLE categories ADD COLUMN color_value TEXT');
+          debugPrint('✅ Added color_value column to categories');
+        } catch (e) {
+          debugPrint('⚠️ Could not add color_value column: $e');
+        }
+      }
+      
+      debugPrint('✅ Categories table schema migration completed');
+    } catch (e) {
+      debugPrint('❌ Failed to migrate categories table: $e');
     }
   }
 

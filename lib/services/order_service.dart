@@ -1406,7 +1406,7 @@ class OrderService extends ChangeNotifier {
         ),
         tableId: tableId,
         userId: orderUserId,
-        customerName: customerName,
+reinstall         customerName: customerName,
         customerPhone: customerPhone,
         customerEmail: customerEmail,
         customerAddress: customerAddress,

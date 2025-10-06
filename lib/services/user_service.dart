@@ -1113,4 +1113,11 @@ class UserService with ChangeNotifier {
       debugPrint('❌ Error restoring users from backup: $e');
     }
   }
+
+  /// Sync users with Firebase (background operation)
+  Future<void> syncUsersWithFirebase() async {
+    debugPrint('🔄 User sync started (background operation)');
+    // TODO: Implement user sync - for now just log
+    await Future.delayed(const Duration(milliseconds: 100)); // Simulate async operation
+  }
 } 

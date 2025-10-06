@@ -799,11 +799,11 @@ class MenuService with ChangeNotifier {
   }
 
   /// Sets the loading state and notifies listeners.
-  /// 
+  ///
   /// [loading] is the new loading state.
   void _setLoading(bool loading) {
     _isLoading = loading;
-    
+
     // Safely notify listeners using SchedulerBinding to avoid crashes
     try {
       SchedulerBinding.instance.addPostFrameCallback((_) {
@@ -816,6 +816,13 @@ class MenuService with ChangeNotifier {
     } catch (e) {
       debugPrint('Error scheduling notification during loading state change: $e');
     }
+  }
+
+  /// Sync menus with Firebase (background operation)
+  Future<void> syncMenusWithFirebase() async {
+    debugPrint('🔄 Menu sync started (background operation)');
+    // TODO: Implement menu sync - for now just log
+    await Future.delayed(const Duration(milliseconds: 100)); // Simulate async operation
   }
 
   /// Sorts menu items by category and name.

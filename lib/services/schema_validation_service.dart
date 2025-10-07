@@ -115,7 +115,6 @@ class SchemaValidationService {
   /// Validate entire database schema with zero risk protection
   Future<SchemaValidationResult> validateDatabaseSchema(Database database) async {
     if (!_enableSchemaValidation) {
-      debugPrint('$_logTag ⚠️ Schema validation disabled by feature flag');
       return SchemaValidationResult(
         isValid: true,
         issues: [],
@@ -124,7 +123,6 @@ class SchemaValidationService {
     }
 
     try {
-      debugPrint('$_logTag 🔍 Starting comprehensive database schema validation...');
       
       // ZERO RISK: Create backup before validation
       if (_enableBackupBeforeValidation) {
@@ -163,7 +161,6 @@ class SchemaValidationService {
         message: 'Schema validation completed with ${issues.length} issues found'
       );
       
-      debugPrint('$_logTag ✅ Schema validation completed: ${result.message}');
       
       // ZERO RISK: Auto-correct non-critical issues if enabled
       if (_enableAutoCorrection && !isValid) {
@@ -173,7 +170,6 @@ class SchemaValidationService {
       return result;
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Schema validation failed: $e');
       return SchemaValidationResult(
         isValid: false,
         issues: [SchemaIssue(
@@ -212,7 +208,6 @@ class SchemaValidationService {
         }
       }
     } catch (e) {
-      debugPrint('$_logTag ❌ Error validating table existence: $e');
       issues.add(SchemaIssue(
         table: 'unknown',
         column: 'unknown',
@@ -247,7 +242,6 @@ class SchemaValidationService {
         }
       }
     } catch (e) {
-      debugPrint('$_logTag ❌ Error validating schema for table $tableName: $e');
       issues.add(SchemaIssue(
         table: tableName,
         column: 'unknown',
@@ -320,7 +314,6 @@ class SchemaValidationService {
       }
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error validating data integrity: $e');
       issues.add(SchemaIssue(
         table: 'unknown',
         column: 'unknown',
@@ -352,7 +345,6 @@ class SchemaValidationService {
       }
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error validating foreign keys: $e');
       issues.add(SchemaIssue(
         table: 'unknown',
         column: 'unknown',
@@ -400,7 +392,6 @@ class SchemaValidationService {
       }
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error validating indexes: $e');
       issues.add(SchemaIssue(
         table: 'indexes',
         column: 'unknown',
@@ -417,21 +408,17 @@ class SchemaValidationService {
   Future<void> _autoCorrectIssues(Database database, List<SchemaIssue> issues) async {
     if (!_enableAutoCorrection) return;
     
-    debugPrint('$_logTag 🔧 Starting auto-correction of schema issues...');
     
     try {
       for (final issue in issues) {
         if (issue.severity == SchemaIssueSeverity.critical) {
-          debugPrint('$_logTag ⚠️ Skipping critical issue: ${issue.message}');
           continue;
         }
         
         await _correctIssue(database, issue);
       }
       
-      debugPrint('$_logTag ✅ Auto-correction completed');
     } catch (e) {
-      debugPrint('$_logTag ❌ Auto-correction failed: $e');
     }
   }
 
@@ -448,10 +435,8 @@ class SchemaValidationService {
           }
           break;
         default:
-          debugPrint('$_logTag ⚠️ No auto-correction available for: ${issue.message}');
       }
     } catch (e) {
-      debugPrint('$_logTag ❌ Failed to correct issue: $e');
     }
   }
 
@@ -478,9 +463,7 @@ class SchemaValidationService {
           await database.execute('CREATE INDEX IF NOT EXISTS idx_menu_items_available ON menu_items(is_available)');
           break;
       }
-      debugPrint('$_logTag ✅ Created missing index: $indexName');
     } catch (e) {
-      debugPrint('$_logTag ❌ Failed to create index $indexName: $e');
     }
   }
 
@@ -491,9 +474,7 @@ class SchemaValidationService {
         DELETE FROM order_items 
         WHERE order_id NOT IN (SELECT id FROM orders)
       ''');
-      debugPrint('$_logTag ✅ Removed $deleted orphaned order items');
     } catch (e) {
-      debugPrint('$_logTag ❌ Failed to remove orphaned order items: $e');
     }
   }
 
@@ -507,15 +488,12 @@ class SchemaValidationService {
       await database.execute('CREATE TABLE IF NOT EXISTS ${backupName}_orders AS SELECT * FROM orders');
       await database.execute('CREATE TABLE IF NOT EXISTS ${backupName}_order_items AS SELECT * FROM order_items');
       
-      debugPrint('$_logTag 💾 Created schema validation backup: $backupName');
     } catch (e) {
-      debugPrint('$_logTag ⚠️ Failed to create backup: $e');
     }
   }
 
   /// Emergency disable schema validation
   static void emergencyDisableSchemaValidation() {
-    debugPrint('$_logTag 🚨 EMERGENCY: Schema validation disabled');
     // This would normally update a configuration file or database setting
   }
 

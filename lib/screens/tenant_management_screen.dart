@@ -62,7 +62,6 @@ class _TenantManagementScreenState extends State<TenantManagementScreen> {
         }
       });
     } catch (e) {
-      debugPrint('Error loading current tenant: $e');
     }
   }
 
@@ -74,7 +73,6 @@ class _TenantManagementScreenState extends State<TenantManagementScreen> {
         _existingTenants = tenants;
       });
     } catch (e) {
-      debugPrint('Error loading existing tenants: $e');
     }
   }
 

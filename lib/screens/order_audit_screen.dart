@@ -48,9 +48,7 @@ class _OrderAuditScreenState extends State<OrderAuditScreen> with TickerProvider
     try {
       final orderLogService = Provider.of<OrderLogService>(context, listen: false);
       await orderLogService.reloadLogsForOrder(widget.orderId!);
-      debugPrint('✅ Reloaded logs for order ${widget.orderId}');
     } catch (e) {
-      debugPrint('❌ Failed to reload logs for order ${widget.orderId}: $e');
     }
   }
 
@@ -224,9 +222,7 @@ class _OrderAuditScreenState extends State<OrderAuditScreen> with TickerProvider
         : orderLogService.recentLogs;
     final filteredLogs = _getFilteredLogs(logs);
     
-    debugPrint('🔍 Audit Debug: orderId=${widget.orderId}, totalLogs=${logs.length}, filteredLogs=${filteredLogs.length}');
     if (widget.orderId != null) {
-      debugPrint('🔍 Order-specific logs: ${logs.map((l) => '${l.action}: ${l.description}').join(', ')}');
     }
     
     if (filteredLogs.isEmpty) {

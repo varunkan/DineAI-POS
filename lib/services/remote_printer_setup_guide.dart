@@ -38,14 +38,11 @@ class RemotePrinterSetupService {
 
       final success = await _printerConfigService.addConfiguration(remoteConfig);
       if (success) {
-        debugPrint('✅ Remote printer configured: $printerName via $restaurantPublicIP:$externalPort');
         return true;
       } else {
-        debugPrint('❌ Failed to configure remote printer: $printerName');
         return false;
       }
     } catch (e) {
-      debugPrint('❌ Error setting up remote printer: $e');
       return false;
     }
   }
@@ -93,15 +90,12 @@ class RemotePrinterSetupService {
       await _printerConfigService.addConfiguration(config);
     }
 
-    debugPrint('✅ Configured ${configs.length} remote printers for $restaurantPublicIP');
     return configs;
   }
 
   /// Test connection to remote printer
   Future<bool> testRemotePrinterConnection(PrinterConfiguration config) async {
     try {
-      debugPrint('🔍 Testing remote printer connection: ${config.name}');
-      debugPrint('🌐 Connecting to: ${config.ipAddress}:${config.port}');
       
       // This would implement actual connection testing
       // For now, we'll simulate a connection test
@@ -112,10 +106,8 @@ class RemotePrinterSetupService {
       // 2. Send a test command
       // 3. Verify response
       
-      debugPrint('✅ Remote printer connection successful: ${config.name}');
       return true;
     } catch (e) {
-      debugPrint('❌ Remote printer connection failed: $e');
       return false;
     }
   }

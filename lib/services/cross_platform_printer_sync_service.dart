@@ -49,7 +49,6 @@ class CrossPlatformPrinterSyncService extends ChangeNotifier {
   /// Initialize the sync service
   Future<void> initialize() async {
     try {
-      debugPrint('$_logTag 🚀 Initializing cross-platform sync service...');
       
       // Initialize SharedPreferences for cross-platform storage
       _prefs = await SharedPreferences.getInstance();
@@ -68,10 +67,8 @@ class CrossPlatformPrinterSyncService extends ChangeNotifier {
       // Perform initial sync
       // await _performInitialSync();
       
-      debugPrint('$_logTag ✅ Cross-platform sync service initialized (manual mode only)');
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error initializing sync service: $e');
       _syncError = 'Failed to initialize: $e';
     }
   }
@@ -85,13 +82,11 @@ class CrossPlatformPrinterSyncService extends ChangeNotifier {
       }
     });
     
-    debugPrint('$_logTag 🔄 Started periodic sync (every ${_syncInterval.inSeconds}s)');
   }
   
   /// Perform initial sync on startup
   Future<void> _performInitialSync() async {
     try {
-      debugPrint('$_logTag 📥 Performing initial sync...');
       
       // Check if we have stored assignments to restore
       final hasStoredAssignments = await _hasStoredAssignments();
@@ -99,15 +94,12 @@ class CrossPlatformPrinterSyncService extends ChangeNotifier {
       if (hasStoredAssignments) {
         // Restore assignments from cross-platform storage
         await _restoreAssignmentsFromStorage();
-        debugPrint('$_logTag ✅ Restored assignments from cross-platform storage');
       } else {
         // Save current assignments to cross-platform storage
         await _saveAssignmentsToStorage();
-        debugPrint('$_logTag 💾 Saved current assignments to cross-platform storage');
       }
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error in initial sync: $e');
     }
   }
   
@@ -128,7 +120,6 @@ class CrossPlatformPrinterSyncService extends ChangeNotifier {
           .map((json) => PrinterAssignment.fromJson(json as Map<String, dynamic>))
           .toList();
       
-      debugPrint('$_logTag 📥 Restoring ${assignments.length} assignments from storage...');
       
       // Clear existing assignments and restore from storage
       await _assignmentService.clearAllAssignments();
@@ -144,14 +135,11 @@ class CrossPlatformPrinterSyncService extends ChangeNotifier {
           );
         } catch (e) {
           // Log error but continue with other assignments
-          debugPrint('$_logTag ⚠️ Failed to restore assignment ${assignment.id}: $e');
         }
       }
       
-      debugPrint('$_logTag ✅ Successfully restored assignments from storage');
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error restoring assignments: $e');
     }
   }
   
@@ -168,10 +156,8 @@ class CrossPlatformPrinterSyncService extends ChangeNotifier {
       
       _lastSyncTime = DateTime.now();
       
-      debugPrint('$_logTag 💾 Saved ${assignments.length} assignments to cross-platform storage');
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error saving assignments: $e');
     }
   }
   
@@ -180,7 +166,6 @@ class CrossPlatformPrinterSyncService extends ChangeNotifier {
     try {
       await _performSync();
     } catch (e) {
-      debugPrint('$_logTag ❌ Background sync error: $e');
     }
   }
   
@@ -193,7 +178,6 @@ class CrossPlatformPrinterSyncService extends ChangeNotifier {
       _syncError = null;
       notifyListeners();
       
-      debugPrint('$_logTag 🔄 Starting synchronization...');
       
       // Save current state to cross-platform storage
       await _saveAssignmentsToStorage();
@@ -202,11 +186,9 @@ class CrossPlatformPrinterSyncService extends ChangeNotifier {
       await _saveToPersistentDatabase();
       
       _lastSyncTime = DateTime.now();
-      debugPrint('$_logTag ✅ Synchronization completed successfully');
       
     } catch (e) {
       _syncError = e.toString();
-      debugPrint('$_logTag ❌ Sync error: $e');
     } finally {
       _isSyncing = false;
       notifyListeners();
@@ -215,7 +197,6 @@ class CrossPlatformPrinterSyncService extends ChangeNotifier {
 
   /// Manual sync trigger - only call from printer assignment screen
   Future<void> manualSync() async {
-    debugPrint('$_logTag 🎯 Manual sync triggered from printer assignment screen');
     await _performSync();
   }
   
@@ -257,16 +238,13 @@ class CrossPlatformPrinterSyncService extends ChangeNotifier {
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
       
-      debugPrint('$_logTag 💾 Saved sync metadata to persistent database');
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error saving to persistent database: $e');
     }
   }
   
   /// Force sync now
   Future<void> forceSyncNow() async {
-    debugPrint('$_logTag 🔄 Force sync requested by user...');
     await _performSync();
   }
   
@@ -275,10 +253,8 @@ class CrossPlatformPrinterSyncService extends ChangeNotifier {
     _isEnabled = enabled;
     if (enabled) {
       _startPeriodicSync();
-      debugPrint('$_logTag ✅ Sync enabled');
     } else {
       _syncTimer?.cancel();
-      debugPrint('$_logTag ⏸️ Sync disabled');
     }
     notifyListeners();
   }
@@ -337,11 +313,9 @@ class CrossPlatformPrinterSyncService extends ChangeNotifier {
       _lastSyncTime = null;
       _syncError = null;
       
-      debugPrint('$_logTag 🧹 Cleared all sync data');
       notifyListeners();
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error clearing sync data: $e');
     }
   }
   

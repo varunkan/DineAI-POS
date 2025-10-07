@@ -109,9 +109,7 @@ class _KitchenScreenState extends State<KitchenScreen> with TickerProviderStateM
         _isLoading = false;
       });
       
-      debugPrint('✅ Kitchen orders loaded: ${_pendingOrders.length} pending, ${_preparingOrders.length} preparing, ${_readyOrders.length} ready');
     } catch (e) {
-      debugPrint('❌ Error loading kitchen orders: $e');
       setState(() {
         _isLoading = false;
       });
@@ -124,9 +122,7 @@ class _KitchenScreenState extends State<KitchenScreen> with TickerProviderStateM
     // try {
     //   final syncTriggerService = AutomaticSyncTriggerService();
     //   await syncTriggerService.triggerImmediateSyncOnInteraction();
-    //   debugPrint('🔄 Sync triggered on kitchen screen access');
     // } catch (e) {
-    //   debugPrint('⚠️ Failed to trigger sync on kitchen access: $e');
     // }
   }
 

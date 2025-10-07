@@ -31,9 +31,7 @@ class OrderLogService extends ChangeNotifier {
   /// Gets logs for a specific order
   List<OrderLog> getLogsForOrder(String orderId) {
     final logs = _orderLogsCache[orderId] ?? [];
-    debugPrint('🔍 getLogsForOrder($orderId): Found ${logs.length} logs');
     for (final log in logs) {
-      debugPrint('  - ${log.action}: ${log.description} (${log.timestamp})');
     }
     return logs;
   }
@@ -54,7 +52,6 @@ class OrderLogService extends ChangeNotifier {
         }
         
         _orderLogsCache[orderId] = orderLogs;
-        debugPrint('✅ Reloaded ${orderLogs.length} logs for order $orderId from web storage');
       } else {
         // Mobile/Desktop platform - use SQLite
         final db = await _databaseService.database;
@@ -74,12 +71,10 @@ class OrderLogService extends ChangeNotifier {
         }
         
         _orderLogsCache[orderId] = orderLogs;
-        debugPrint('✅ Reloaded ${orderLogs.length} logs for order $orderId from database');
       }
       
       notifyListeners();
     } catch (e) {
-      debugPrint('❌ Failed to reload logs for order $orderId: $e');
     }
   }
 
@@ -125,9 +120,7 @@ class OrderLogService extends ChangeNotifier {
       await _detectDeviceId();
       await _loadRecentLogs();
       _isInitialized = true;
-      debugPrint('✅ OrderLogService initialized successfully');
     } catch (e) {
-      debugPrint('❌ Failed to initialize OrderLogService: $e');
     }
   }
 
@@ -135,7 +128,6 @@ class OrderLogService extends ChangeNotifier {
   Future<void> _createOrderLogsTable() async {
     if (_databaseService.isWeb) {
       // Web platform - table creation is handled by web storage initialization
-      debugPrint('✅ Order logs table created with indexes (web)');
       return;
     }
     
@@ -176,7 +168,6 @@ class OrderLogService extends ChangeNotifier {
     await db.execute('CREATE INDEX IF NOT EXISTS idx_order_logs_action ON order_logs(action)');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_order_logs_performed_by ON order_logs(performed_by)');
 
-    debugPrint('✅ Order logs table created with indexes');
   }
 
   /// Generate a unique session ID
@@ -219,7 +210,6 @@ class OrderLogService extends ChangeNotifier {
           _orderLogsCache[log.orderId]!.add(log);
         }
 
-        debugPrint('✅ Loaded ${_logs.length} order logs from web storage');
       } else {
         // Mobile/Desktop platform - use SQLite
         final db = await _databaseService.database;
@@ -245,10 +235,8 @@ class OrderLogService extends ChangeNotifier {
           _orderLogsCache[log.orderId]!.add(log);
         }
 
-        debugPrint('✅ Loaded ${_logs.length} order logs from database');
       }
     } catch (e) {
-      debugPrint('❌ Failed to load order logs: $e');
     }
   }
 
@@ -284,7 +272,6 @@ class OrderLogService extends ChangeNotifier {
       // if (orderService != null) {
       //   final orderExists = orderService.allOrders.any((order) => order.id == orderId);
       //   if (!orderExists) {
-      //     debugPrint('⚠️ Order $orderId does not exist - skipping log entry');
       //     return false;
       //   }
       // }
@@ -313,7 +300,6 @@ class OrderLogService extends ChangeNotifier {
 
       final db = await _databaseService.database;
       if (db == null) {
-        debugPrint('❌ Database not available for logging');
         return false;
       }
 
@@ -352,10 +338,8 @@ class OrderLogService extends ChangeNotifier {
       _orderLogs.add(log);
       _orderLogs.sort((a, b) => b.timestamp.compareTo(a.timestamp));
 
-      debugPrint('📝 Logged operation: ${action.toString().split('.').last} for order $orderNumber');
       return true;
     } catch (e) {
-      debugPrint('❌ Failed to log operation: $e');
       // Don't throw - logging should not break the main flow
       return false;
     }
@@ -925,9 +909,7 @@ class OrderLogService extends ChangeNotifier {
       // Reload logs after cleanup
       await _loadRecentLogs();
       
-      debugPrint('✅ Cleaned up $deletedCount old log entries');
     } catch (e) {
-      debugPrint('❌ Failed to cleanup old logs: $e');
     }
   }
 
@@ -982,10 +964,8 @@ class OrderLogService extends ChangeNotifier {
         // Save updated logs back to web storage
         await _databaseService.saveWebOrderLogs(updatedLogs);
         
-        debugPrint('🧹 Deleted $deletedCount old order logs from web storage');
         return deletedCount;
       } catch (e) {
-        debugPrint('❌ Error deleting old web order logs: $e');
         return 0;
       }
     }
@@ -993,7 +973,6 @@ class OrderLogService extends ChangeNotifier {
     try {
       final db = await _databaseService.database;
       if (db == null) {
-        debugPrint('❌ Database not available for deleting old logs');
         return 0;
       }
       
@@ -1004,10 +983,8 @@ class OrderLogService extends ChangeNotifier {
         whereArgs: [cutoffDate.toIso8601String()],
       );
       
-      debugPrint('🧹 Deleted $deletedCount old order logs');
       return deletedCount;
     } catch (e) {
-      debugPrint('❌ Error deleting old order logs: $e');
       return 0;
     }
   }

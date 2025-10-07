@@ -37,6 +37,7 @@ class OrderCreationScreen extends StatefulWidget {
   final Order? existingOrder; // For editing existing orders
   final String? customerName;
   final String? customerPhone;
+  final String? selectedServerId; // Add selected server ID
 
   const OrderCreationScreen({
     super.key,
@@ -48,6 +49,7 @@ class OrderCreationScreen extends StatefulWidget {
     this.existingOrder, // Add existing order parameter
     this.customerName,
     this.customerPhone,
+    this.selectedServerId, // Add selected server ID parameter
   });
 
   @override
@@ -82,19 +84,11 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
   
   /// Verify that the current user has permission to create orders
   void _verifyUserPermissions() {
-    debugPrint('🔍 Verifying user permissions for order creation...');
-    debugPrint('👤 User: ${widget.user.name} (${widget.user.id})');
-    debugPrint('🔑 Role: ${widget.user.role}');
-    debugPrint('⚙️ Admin Panel Access: ${widget.user.adminPanelAccess}');
-    debugPrint('✅ User is active: ${widget.user.isActive}');
     
     // Admin users should always have access
     if (widget.user.role == UserRole.admin && widget.user.adminPanelAccess) {
-      debugPrint('✅ Admin user has full access to create orders');
     } else if (widget.user.isActive) {
-      debugPrint('✅ Regular user has access to create orders');
     } else {
-      debugPrint('⚠️ Warning: User may not have proper permissions');
     }
   }
 
@@ -115,7 +109,6 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
       case 'delivery':
         return OrderType.delivery;
       default:
-        debugPrint('⚠️ Unknown order type: $orderType, defaulting to dine-in');
         return OrderType.dineIn;
     }
   }
@@ -134,7 +127,6 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
       case 'delivery':
         return 'DL-$baseNumber';
       default:
-        debugPrint('⚠️ Unknown order type for number generation: $orderType, using DI-');
         return 'DI-$baseNumber';
     }
   }
@@ -148,11 +140,8 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
       _orderNotesController.text = _currentOrder!.specialInstructions ?? '';
       _chefNotesController.text = _currentOrder!.specialInstructions ?? '';
       
-      debugPrint('🔄 Loading existing order for editing: ${_currentOrder!.orderNumber}');
-      debugPrint('📋 Order has ${_currentOrder!.items.length} items');
     } else {
       // Create new order - CRITICAL FIX: Ensure clean state
-      debugPrint('🆕 Creating new order after completing previous one...');
       
       // Clear any existing state
       _currentOrder = null;
@@ -165,35 +154,35 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
               final orderService = Provider.of<OrderService>(context, listen: false);
               if (orderService != null) {
                 orderService.clearCurrentOrder();
-                debugPrint('🧹 Cleared OrderService currentOrder state for new order');
               } else {
-                debugPrint('⚠️ OrderService not available for clearing state');
               }
             } catch (providerError) {
-              debugPrint('⚠️ Could not access OrderService: $providerError');
             }
           }
         } catch (e) {
-          debugPrint('⚠️ Could not clear OrderService state: $e');
         }
       });
       
       final orderNumber = widget.orderNumber ??
           _generateOrderNumber(widget.orderType);
 
-      // Get current session to use restaurant email for user identification
-      final authService = MultiTenantAuthService();
-      final currentSession = authService.currentSession;
-      final currentRestaurant = authService.currentRestaurant;
-      
-      // Create email-based user ID: restaurant_email + user_id
-      String emailBasedUserId;
-      if (currentRestaurant != null && currentSession != null) {
-        emailBasedUserId = '${currentRestaurant.email}_${widget.user.id}';
-        debugPrint('📧 Using email-based user ID: $emailBasedUserId (restaurant: ${currentRestaurant.email}, user: ${widget.user.id})');
+      // Use selected server ID if available (for POS dashboard server assignment)
+      // Otherwise fall back to user-based identification
+      String orderUserId;
+      if (widget.selectedServerId != null && widget.selectedServerId!.isNotEmpty) {
+        // Use the selected server ID directly for POS dashboard filtering
+        orderUserId = widget.selectedServerId!;
       } else {
-        emailBasedUserId = widget.user.id; // Fallback to simple user ID
-        debugPrint('⚠️ No session available, using fallback user ID: $emailBasedUserId');
+        // Fallback to email-based user ID for backward compatibility
+        final authService = MultiTenantAuthService();
+        final currentSession = authService.currentSession;
+        final currentRestaurant = authService.currentRestaurant;
+
+        if (currentRestaurant != null && currentSession != null) {
+          orderUserId = '${currentRestaurant.email}_${widget.user.id}';
+        } else {
+          orderUserId = widget.user.id; // Fallback to simple user ID
+        }
       }
 
       _currentOrder = Order(
@@ -205,7 +194,7 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
         tableId: widget.table?.id,
         type: _getOrderTypeFromString(widget.orderType),
         orderTime: DateTime.now(),
-        userId: emailBasedUserId, // Use email-based user ID
+        userId: orderUserId, // Use server-based user ID
         status: OrderStatus.pending, // Set initial status
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
@@ -215,8 +204,6 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
         },
       );
       
-      debugPrint('🆕 Created new order: ${_currentOrder!.orderNumber} for user: ${widget.user.name} (ID: $emailBasedUserId)');
-      debugPrint('🆕 New order ID: ${_currentOrder!.id}');
     }
   }
 
@@ -1067,7 +1054,6 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
         // Trigger controlled sync after adding item (no infinite loop)
         _triggerControlledSync();
       } catch (e) {
-        debugPrint('Error adding configured item: $e');
         // Fallback to simple add if there's an error
         _addSimpleItemToOrder(item);
       }
@@ -1226,16 +1212,38 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
 
     // 🚫 CRITICAL FIX: NEVER save orders with no items (prevents ghost orders)
     if (_currentOrder!.items.isEmpty) {
-      debugPrint('🚫 GHOST ORDER PREVENTION: Refusing to save order with 0 items: ${_currentOrder!.orderNumber}');
+      return;
+    }
+
+    // HARD GUARD: Do not auto-save if totals are invalid
+    if ((_currentOrder!.totalAmount) < 0) {
       return;
     }
 
     try {
       final orderService = Provider.of<OrderService>(context, listen: false);
       
-      // Set the order status and user ID for proper tracking
+      // Use selected server ID if available (for POS dashboard server assignment)
+      // Otherwise fall back to user-based identification (consistent with order creation)
+      String orderUserId;
+      if (widget.selectedServerId != null && widget.selectedServerId!.isNotEmpty) {
+        // Use the selected server ID directly for POS dashboard filtering
+        orderUserId = widget.selectedServerId!;
+      } else {
+        // Fallback to email-based user ID for backward compatibility
+        final authService = MultiTenantAuthService();
+        final currentRestaurant = authService.currentRestaurant;
+
+        if (currentRestaurant != null) {
+          orderUserId = '${currentRestaurant.email}_${widget.user.id}';
+        } else {
+          orderUserId = widget.user.id; // Fallback to simple user ID
+        }
+      }
+
+      // Set the order status and user ID for proper tracking (preserve original order number!)
       final updatedOrder = _currentOrder!.copyWith(
-        userId: widget.user.id, // Ensure order is assigned to current user
+        userId: orderUserId, // Use server-based user ID
         status: OrderStatus.pending, // Set proper status
         updatedAt: DateTime.now(),
         preferences: {
@@ -1243,19 +1251,16 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
           if (widget.numberOfPeople != null) 'numberOfPeople': widget.numberOfPeople,
         },
       );
-      
-      debugPrint('💾 Auto-saving order: ${updatedOrder.orderNumber} with ${updatedOrder.items.length} items');
-      
-      final saved = await orderService.saveOrder(updatedOrder);
+
+
+      // CRITICAL: Use immediate save and sync for real-time updates
+      final saved = await orderService.saveAndSyncOrderImmediately(updatedOrder);
       if (saved) {
         // Update our local reference
         _currentOrder = updatedOrder;
-        debugPrint('✅ Order auto-saved successfully');
       } else {
-        debugPrint('⚠️ Order auto-save failed');
       }
     } catch (e) {
-      debugPrint('❌ Error auto-saving order: $e');
       // Don't show error to user for auto-save failures
     }
   }
@@ -1303,15 +1308,12 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
       // Only sync if we have a current order and it's not already syncing
       if (_currentOrder == null) return;
       
-      debugPrint('🔄 Triggering controlled sync for order: ${_currentOrder!.orderNumber}');
       
       // Use the UnifiedSyncService for controlled sync
       final unifiedSyncService = UnifiedSyncService.instance;
       await unifiedSyncService.syncOrderToFirebase(_currentOrder!, 'updated');
       
-      debugPrint('✅ Controlled sync completed for order: ${_currentOrder!.orderNumber}');
     } catch (e) {
-      debugPrint('⚠️ Controlled sync failed: $e');
       // Don't fail the operation if sync fails
     }
   }
@@ -1319,7 +1321,6 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
   /// Send order to kitchen using the existing RobustKitchenService
   Future<void> _sendOrderToKitchen() async {
     if (_currentOrder == null || _currentOrder!.items.isEmpty) {
-      debugPrint('⚠️ No order or items to send to kitchen');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -1331,10 +1332,19 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
       return;
     }
 
+    // Persist the latest order state (including discount/tip) BEFORE any printing flow
+    try {
+      final orderService = Provider.of<OrderService>(context, listen: false);
+      await orderService.saveAndSyncOrderImmediately(
+        _currentOrder!.copyWith(updatedAt: DateTime.now()),
+      );
+    } catch (_) {
+      // Ignore; we'll still proceed and try to save again later
+    }
+
     // Check if there are any items that haven't been sent to kitchen
     final newItems = _currentOrder!.items.where((item) => !item.sentToKitchen).toList();
     if (newItems.isEmpty) {
-      debugPrint('⚠️ No new items to send to kitchen');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -1375,7 +1385,6 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
       await _sendOrderToKitchenInternal().timeout(
         const Duration(seconds: 45), // 45 second overall timeout
         onTimeout: () {
-          debugPrint('⏰ Overall send to kitchen operation timed out');
           // Show success message since order is still saved
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -1386,13 +1395,15 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
                 behavior: SnackBarBehavior.floating,
               ),
             );
+            // Ensure we persist current order state even on timeout
+            final orderService = Provider.of<OrderService>(context, listen: false);
+            orderService.saveAndSyncOrderImmediately(_currentOrder!.copyWith(updatedAt: DateTime.now()));
             _refreshOrderFromDatabase();
           }
         },
       );
       
     } catch (e) {
-      debugPrint('❌ Error in kitchen printing process: $e');
       if (mounted) {
         // CRITICAL FIX: Order is still saved successfully even if printer fails
         // Show success message instead of error - printer issues are handled silently
@@ -1405,16 +1416,20 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
           ),
         );
         
+        // Persist current order state on printer failure as well
+        try {
+          final orderService = Provider.of<OrderService>(context, listen: false);
+          await orderService.saveAndSyncOrderImmediately(_currentOrder!.copyWith(updatedAt: DateTime.now()));
+        } catch (_) {}
+
         // Always refresh order state since it was saved successfully
         _refreshOrderFromDatabase();
       }
     } finally {
       // CRITICAL SAFETY: Always ensure loading state is cleared
-      debugPrint('🧹 Ensuring loading state is cleared...');
       if (mounted) {
         setState(() => _isLoading = false);
       }
-      debugPrint('✅ Loading state cleared successfully');
     }
   }
   
@@ -1423,7 +1438,6 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
     try {
       // CRITICAL FIX: Use the existing RobustKitchenService for independent parallel processing
       if (!mounted) {
-        debugPrint('⚠️ Widget not mounted, aborting send to kitchen');
         return;
       }
       
@@ -1434,7 +1448,6 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
       
       try {
         if (!mounted) {
-          debugPrint('⚠️ Widget not mounted, aborting send to kitchen');
           return;
         }
         
@@ -1443,28 +1456,20 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
         printingService = Provider.of<PrintingService>(context, listen: false);
         assignmentService = Provider.of<EnhancedPrinterAssignmentService>(context, listen: false);
         
-        debugPrint('🔍 Service availability check:');
-        debugPrint('  - RobustKitchenService: ${robustKitchenService != null}');
-        debugPrint('  - PrintingService: ${printingService != null}');
-        debugPrint('  - AssignmentService: ${assignmentService != null}');
         
       } catch (e) {
-        debugPrint('❌ Failed to get services: $e');
         throw Exception('Failed to access required services: $e');
       }
       
       if (robustKitchenService == null) {
-        debugPrint('⚠️ RobustKitchenService not available, using fallback method');
         // Fallback to basic method if robust service is not available
         await _sendOrderToKitchenFallback();
         return;
       }
       
-      debugPrint('🍽️ Using RobustKitchenService for independent parallel processing...');
       
       // CRITICAL FIX: Ensure service is properly initialized before use
       if (!robustKitchenService.isInitialized) {
-        debugPrint('🔄 RobustKitchenService not initialized, initializing now...');
         await robustKitchenService.initialize();
       }
       
@@ -1482,7 +1487,6 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
       
       // CRITICAL FIX: Check if widget is still mounted before updating state
       if (!mounted) {
-        debugPrint('⚠️ Widget disposed during kitchen printing operation');
         return;
       }
       
@@ -1495,7 +1499,6 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
         // Check if kitchen service returned an updated order
         if (result.containsKey('updatedOrder') && result['updatedOrder'] != null) {
           try {
-            debugPrint('🔄 Kitchen service returned updated order with sentToKitchen flags');
             
             // Get the updated order from the result
             final updatedOrder = result['updatedOrder'] as Order;
@@ -1503,17 +1506,13 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
             // Save the updated order to database
             final orderService = Provider.of<OrderService>(context, listen: false);
             if (orderService != null) {
-              debugPrint('💾 Saving updated order with sentToKitchen flags to database...');
               final saved = await orderService.updateOrder(updatedOrder);
               if (saved) {
-                debugPrint('✅ Successfully saved updated order to database');
                 _currentOrder = updatedOrder; // Update local state
               } else {
-                debugPrint('⚠️ Failed to save updated order to database');
               }
             }
           } catch (e) {
-            debugPrint('⚠️ Error handling updated order: $e');
           }
         }
         
@@ -1548,7 +1547,6 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
       }
       
     } catch (e) {
-      debugPrint('❌ Error in kitchen printing process: $e');
       throw e; // Re-throw to be handled by the outer method
     }
   }
@@ -1556,20 +1554,17 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
   /// Fallback method if RobustKitchenService is not available
   Future<void> _sendOrderToKitchenFallback() async {
     try {
-      debugPrint('🔄 Using fallback send to kitchen method...');
       
       // CRITICAL FIX: Store services before async operations to avoid context issues
       OrderService? orderService;
       
       if (!mounted) {
-        debugPrint('⚠️ Widget not mounted, aborting fallback send to kitchen');
         return;
       }
       
       try {
         orderService = Provider.of<OrderService>(context, listen: false);
       } catch (e) {
-        debugPrint('❌ Failed to get OrderService: $e');
         throw Exception('Failed to access OrderService');
       }
       
@@ -1578,7 +1573,6 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
       }
       
       // Save order first
-      debugPrint('💾 Saving order to database...');
       final saved = await orderService.saveOrder(_currentOrder!);
       if (!saved) {
         throw Exception('Failed to save order to database');
@@ -1612,7 +1606,6 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
       }
       
     } catch (e) {
-      debugPrint('❌ Fallback send to kitchen failed: $e');
       setState(() => _isLoading = false);
       
       if (mounted) {
@@ -1634,13 +1627,11 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
   Future<void> _refreshOrderFromDatabase() async {
     try {
       if (!mounted) {
-        debugPrint('⚠️ Widget not mounted, skipping order refresh');
         return;
       }
       
       final orderService = Provider.of<OrderService>(context, listen: false);
       if (orderService != null && _currentOrder != null) {
-        debugPrint('🔄 Refreshing order from database: ${_currentOrder!.orderNumber}');
         
         // CRITICAL FIX: Actually refresh from database, not just in-memory cache
         // Force reload orders from database to get updated sentToKitchen status
@@ -1658,15 +1649,12 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
         final newSentCount = updatedOrder.items.where((item) => item.sentToKitchen).length;
         
         if (oldSentCount != newSentCount) {
-          debugPrint('✅ Order refreshed: sentToKitchen count changed from $oldSentCount to $newSentCount');
         }
         
         _currentOrder = updatedOrder;
         setState(() {}); // Refresh UI
-        debugPrint('🔄 Order refreshed from database successfully');
       }
     } catch (e) {
-      debugPrint('⚠️ Failed to refresh order from database: $e');
     }
   }
 
@@ -4466,28 +4454,17 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
         _isLoading = true;
       });
 
-      // Mark order as cancelled
-      final cancelledOrder = _currentOrder!.copyWith(
-        status: OrderStatus.cancelled,
-        completedTime: DateTime.now(),
-      );
-
-      // Save the cancelled order - CRITICAL FIX: Use safer Provider access
-      try {
-        if (mounted) {
-          final orderService = Provider.of<OrderService>(context, listen: false);
-          if (orderService != null) {
-            await orderService.saveOrder(cancelledOrder);
-          } else {
-            throw Exception('OrderService not available');
-          }
-        } else {
-          throw Exception('Widget not mounted');
-        }
-      } catch (e) {
-        debugPrint('❌ Failed to save cancelled order: $e');
-        throw Exception('Failed to save cancelled order: $e');
+      // Cancel the order using the proper service method (handles all field updates and Firebase sync)
+      final orderService = Provider.of<OrderService>(context, listen: false);
+      if (orderService == null) {
+        throw Exception('OrderService not available');
       }
+
+      final result = await orderService.cancelOrder(_currentOrder!);
+      if (!result['success']) {
+        throw Exception(result['message'] ?? 'Failed to cancel order');
+      }
+
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -4532,7 +4509,6 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
     
     try {
       if (!mounted) {
-        debugPrint('⚠️ Widget not mounted, skipping item addition logging');
         return;
       }
       
@@ -4566,17 +4542,13 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
                 screenName: 'Order Creation',
               );
             } else {
-              debugPrint('⚠️ OrderLogService not available for item addition logging');
             }
           } else {
-            debugPrint('⚠️ Widget not mounted during post-frame callback, skipping item addition logging');
           }
         } catch (e) {
-          debugPrint('❌ Failed to log item addition in post-frame callback: $e');
         }
       });
     } catch (e) {
-      debugPrint('❌ Failed to setup item addition logging: $e');
     }
   }
 
@@ -4585,11 +4557,9 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
     
     try {
       if (!mounted) {
-        debugPrint('⚠️ Widget not mounted, skipping item removal logging');
         return;
       }
       
-      debugPrint('🔍 Logging item removal: ${item.menuItem.name} (${item.quantity}x) from order ${_currentOrder!.orderNumber}');
       
       // CRITICAL FIX: Use a safer approach to access Provider
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -4603,7 +4573,6 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
                 item,
                 widget.user.id,
               );
-              debugPrint('✅ Item removal logged successfully');
               // Also log to ActivityLog for audit
               activityLogService?.logActivity(
                 action: ActivityAction.orderItemRemoved,
@@ -4623,17 +4592,13 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
                 screenName: 'Order Creation',
               );
             } else {
-              debugPrint('⚠️ OrderLogService not available for item removal logging');
             }
           } else {
-            debugPrint('⚠️ Widget not mounted during post-frame callback, skipping item removal logging');
           }
         } catch (e) {
-          debugPrint('❌ Failed to log item removal in post-frame callback: $e');
         }
       });
     } catch (e) {
-      debugPrint('❌ Failed to setup item removal logging: $e');
     }
   }
 
@@ -4642,7 +4607,6 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
     
     try {
       if (!mounted) {
-        debugPrint('⚠️ Widget not mounted, skipping item modification logging');
         return;
       }
       
@@ -4659,17 +4623,13 @@ class _OrderCreationScreenState extends State<OrderCreationScreen> with TickerPr
                 changeDescription,
               );
             } else {
-              debugPrint('⚠️ OrderLogService not available for item modification logging');
             }
           } else {
-            debugPrint('⚠️ Widget not mounted during post-frame callback, skipping item modification logging');
           }
         } catch (e) {
-          debugPrint('❌ Failed to log item modification in post-frame callback: $e');
         }
       });
     } catch (e) {
-      debugPrint('❌ Failed to setup item modification logging: $e');
     }
   }
 

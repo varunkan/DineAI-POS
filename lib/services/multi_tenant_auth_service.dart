@@ -11,7 +11,6 @@ import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path_provider/path_provider.dart'; // Added for getDatabasesPath
 import 'dart:io'; // Added for File
-import 'dart:developer';
 import 'dart:typed_data';
 
 import '../models/restaurant.dart';
@@ -44,15 +43,10 @@ class MultiTenantAuthService extends ChangeNotifier {
   
   // CRITICAL FIX: Add setter with protection for authentication state
   set isAuthenticated(bool value) {
-    debugPrint('🔐 CRITICAL: _isAuthenticated being set to $value');
     if (_isAuthenticated == true && value == false) {
-      debugPrint('⚠️ WARNING: Attempting to set _isAuthenticated to false when it was true!');
-      debugPrint('⚠️ This might indicate an unwanted authentication reset');
       // Add stack trace to see where this is coming from
-      debugPrint('⚠️ Stack trace: ${StackTrace.current}');
     }
     _isAuthenticated = value;
-    debugPrint('🔐 CRITICAL: _isAuthenticated now set to $_isAuthenticated');
   }
   bool _isLoading = false;
   String? _lastError;
@@ -92,7 +86,6 @@ class MultiTenantAuthService extends ChangeNotifier {
   
   // Getters
   bool get isAuthenticated {
-    debugPrint('🔐 CRITICAL: isAuthenticated getter called - returning $_isAuthenticated');
     return _isAuthenticated;
   }
   bool get isLoading => _isLoading;
@@ -125,7 +118,6 @@ class MultiTenantAuthService extends ChangeNotifier {
   /// Add progress message
   void _addProgressMessage(String message) {
     _progressService?.addMessage(message);
-    debugPrint(message);
   }
   
   /// Initialize the multi-tenant auth service
@@ -141,7 +133,6 @@ class MultiTenantAuthService extends ChangeNotifier {
         // Ensure anonymous authentication
         await _ensureAnonymousAuthentication();
       } catch (e) {
-        debugPrint('⚠️ Firebase initialization failed, continuing with local mode: $e');
       }
       
       // Initialize global database with timeout
@@ -149,12 +140,10 @@ class MultiTenantAuthService extends ChangeNotifier {
         await _initializeGlobalDatabase().timeout(
           const Duration(seconds: 15),
           onTimeout: () {
-            debugPrint('⚠️ Global database initialization timed out, continuing...');
             _addProgressMessage('⚠️ Database initialization timed out, continuing...');
           },
         );
       } catch (e) {
-        debugPrint('⚠️ Global database initialization failed: $e');
         _addProgressMessage('⚠️ Database initialization failed, continuing...');
       }
       
@@ -163,12 +152,10 @@ class MultiTenantAuthService extends ChangeNotifier {
         await _loadRegisteredRestaurants().timeout(
           const Duration(seconds: 10),
           onTimeout: () {
-            debugPrint('⚠️ Restaurant loading timed out, continuing...');
             _addProgressMessage('⚠️ Restaurant loading timed out, continuing...');
           },
         );
       } catch (e) {
-        debugPrint('⚠️ Restaurant loading failed: $e');
         _addProgressMessage('⚠️ Restaurant loading failed, continuing...');
       }
       
@@ -186,7 +173,6 @@ class MultiTenantAuthService extends ChangeNotifier {
           _addProgressMessage('✅ Startup sync completed');
         } catch (syncError) {
           _addProgressMessage('⚠️ Startup sync completed with warnings: $syncError');
-          debugPrint('⚠️ Startup sync warning (non-critical): $syncError');
           // Don't fail initialization due to sync issues
         }
       }
@@ -293,7 +279,6 @@ class MultiTenantAuthService extends ChangeNotifier {
     } catch (e) {
       _addProgressMessage('❌ Failed to ensure restaurants table: $e');
       // Don't throw here - allow app to continue
-      debugPrint('Database error: $e');
     }
   }
   
@@ -310,7 +295,6 @@ class MultiTenantAuthService extends ChangeNotifier {
         try {
           await _loadRestaurantsFromFirebase();
         } catch (e) {
-          debugPrint('⚠️ Firebase loading failed, using local data only: $e');
         }
       }
       
@@ -345,7 +329,6 @@ class MultiTenantAuthService extends ChangeNotifier {
   Future<void> _loadRestaurantsFromFirebase() async {
     try {
       if (_firestore == null) {
-        debugPrint('⚠️ Firebase not available for cloud loading');
         return;
       }
       
@@ -366,23 +349,19 @@ class MultiTenantAuthService extends ChangeNotifier {
               _registeredRestaurants.add(restaurant);
               // Save to local database
               await _saveRestaurantToLocal(restaurant);
-              debugPrint('✅ Added new restaurant from Firebase tenants: ${restaurant.name}');
             } else {
               // Update existing restaurant with cloud data
               final existingIndex = _registeredRestaurants.indexWhere((r) => r.email == restaurant.email);
               _registeredRestaurants[existingIndex] = restaurant;
               await _saveRestaurantToLocal(restaurant);
-              debugPrint('✅ Updated restaurant from Firebase tenants: ${restaurant.name}');
             }
           }
         } catch (e) {
-          debugPrint('⚠️ Failed to parse Firebase tenant restaurant: $e');
         }
       }
       
       _addProgressMessage('✅ Synced ${tenantsSnapshot.docs.length} restaurants from Firebase tenants');
     } catch (e) {
-      debugPrint('⚠️ Failed to load restaurants from Firebase tenants: $e');
       // Don't show error message to user, just log it
     }
   }
@@ -485,7 +464,6 @@ class MultiTenantAuthService extends ChangeNotifier {
     } catch (e) {
       _addProgressMessage('❌ Restaurant registration failed: $e');
       _setError(e.toString());
-      debugPrint('Restaurant registration error: $e');
       return false;
     } finally {
       _setLoading(false);
@@ -1475,7 +1453,6 @@ class MultiTenantAuthService extends ChangeNotifier {
       
     } catch (e) {
       _addProgressMessage('❌ Failed to sync data to Firebase: $e');
-      debugPrint('Firebase sync error: $e');
       // Don't throw - Firebase sync is optional for registration success
     }
   }
@@ -1527,13 +1504,11 @@ class MultiTenantAuthService extends ChangeNotifier {
       _setLoading(true);
       _clearError();
       
-      debugPrint('🔐 SIMPLIFIED LOGIN: Authenticating user: $userId at restaurant: $restaurantEmail');
       
       // STEP 1: Check local database for restaurant
       Restaurant? restaurant = _findRestaurantLocally(restaurantEmail);
       
       if (restaurant != null) {
-        debugPrint('✅ Found restaurant locally: ${restaurant.name}');
         
         // ENHANCEMENT: Sync will happen AFTER database connection in _authenticateUser
         // No need to sync here since database isn't connected yet
@@ -1542,11 +1517,9 @@ class MultiTenantAuthService extends ChangeNotifier {
       }
       
       // STEP 2: Restaurant not found locally, check Firebase
-      debugPrint('☁️ Restaurant not found locally, checking Firebase...');
       restaurant = await _findRestaurantInFirebase(restaurantEmail);
       
       if (restaurant != null) {
-        debugPrint('✅ Found restaurant in Firebase: ${restaurant.name}');
         // Save to local database for future fast access
         await _saveRestaurantToLocal(restaurant);
         _registeredRestaurants.add(restaurant);
@@ -1561,7 +1534,6 @@ class MultiTenantAuthService extends ChangeNotifier {
       throw Exception('Restaurant not found with email: $restaurantEmail');
       
     } catch (e) {
-      debugPrint('❌ Login failed: $e');
       _setError(e.toString());
       return false;
     } finally {
@@ -1588,7 +1560,6 @@ class MultiTenantAuthService extends ChangeNotifier {
       
       // Check admin credentials first
       if (restaurant.adminUserId == userId && _verifyPassword(password, restaurant.adminPassword)) {
-        debugPrint('✅ Admin authentication successful');
         await _createUserSession(restaurant, userId, 'Admin', app_user.UserRole.admin);
         
         // ENHANCEMENT: Perform comprehensive sync AFTER database connection is established
@@ -1626,7 +1597,6 @@ class MultiTenantAuthService extends ChangeNotifier {
             }
           } catch (comprehensiveSyncError) {
             _addProgressMessage('⚠️ Working comprehensive sync completed with warnings: $comprehensiveSyncError');
-            debugPrint('⚠️ Working comprehensive sync warning: $comprehensiveSyncError');
           }
           
           // ADDITIONAL: Also trigger unified sync service for cross-device consistency
@@ -1649,11 +1619,9 @@ class MultiTenantAuthService extends ChangeNotifier {
             _addProgressMessage('✅ Unified sync service completed');
           } catch (unifiedSyncError) {
             _addProgressMessage('⚠️ Unified sync completed with warnings: $unifiedSyncError');
-            debugPrint('⚠️ Unified sync warning: $unifiedSyncError');
           }
         } catch (syncError) {
           _addProgressMessage('⚠️ Sync completed with warnings: $syncError');
-          debugPrint('⚠️ Sync warning (non-critical): $syncError');
           // Don't fail authentication due to sync issues
         }
         
@@ -1672,7 +1640,6 @@ class MultiTenantAuthService extends ChangeNotifier {
         if (usersResult.isNotEmpty) {
           final user = usersResult.first;
           if (_verifyPassword(password, user['password'] as String)) {
-            debugPrint('✅ User authentication successful');
             await _createUserSession(
               restaurant, 
               userId, 
@@ -1710,7 +1677,6 @@ class MultiTenantAuthService extends ChangeNotifier {
                 }
               } catch (comprehensiveSyncError) {
                 _addProgressMessage('⚠️ Working comprehensive sync completed with warnings: $comprehensiveSyncError');
-                debugPrint('⚠️ Working comprehensive sync warning: $comprehensiveSyncError');
               }
               
               // ADDITIONAL: Also trigger unified sync service for cross-device consistency
@@ -1736,11 +1702,9 @@ class MultiTenantAuthService extends ChangeNotifier {
                 _addProgressMessage('✅ Unified sync service completed for user');
               } catch (unifiedSyncError) {
                 _addProgressMessage('⚠️ Unified sync completed with warnings: $unifiedSyncError');
-                debugPrint('⚠️ Unified sync warning: $unifiedSyncError');
               }
             } catch (syncError) {
               _addProgressMessage('⚠️ User sync completed with warnings: $syncError');
-              debugPrint('⚠️ User sync warning (non-critical): $syncError');
             }
             
             return true;
@@ -1751,7 +1715,6 @@ class MultiTenantAuthService extends ChangeNotifier {
       throw Exception('Invalid user ID or password');
       
     } catch (e) {
-      debugPrint('❌ Authentication failed: $e');
       throw e;
     }
   }
@@ -1769,24 +1732,20 @@ class MultiTenantAuthService extends ChangeNotifier {
     );
     
     await _createSession(restaurant, session);
-    debugPrint('✅ User session created: $userName ($userRole)');
   }
   
   /// SIMPLIFIED: Find restaurant in Firebase
   Future<Restaurant?> _findRestaurantInFirebase(String email) async {
     try {
       if (_firestore == null) {
-        debugPrint('⚠️ Firebase not available for cloud lookup');
         return null;
       }
       
-      debugPrint('🔍 SIMPLIFIED: Searching for restaurant in Firebase: $email');
       
       // Check tenants collection first (most common)
       final tenantDoc = await _firestore!.collection('tenants').doc(email.toLowerCase()).get();
       
       if (tenantDoc.exists) {
-        debugPrint('✅ Found restaurant in tenants collection');
         final data = tenantDoc.data()!;
         
         final restaurant = Restaurant(
@@ -1811,16 +1770,13 @@ class MultiTenantAuthService extends ChangeNotifier {
       final globalDoc = await _firestore!.collection('global_restaurants').doc(email.toLowerCase()).get();
       
       if (globalDoc.exists) {
-        debugPrint('✅ Found restaurant in global_restaurants collection');
         final data = globalDoc.data()!;
         return Restaurant.fromJson(data);
       }
       
-      debugPrint('❌ Restaurant not found in any Firebase collection');
       return null;
       
     } catch (e) {
-      debugPrint('❌ Failed to find restaurant in Firebase: $e');
       return null;
     }
   }
@@ -1881,7 +1837,6 @@ class MultiTenantAuthService extends ChangeNotifier {
     } catch (e) {
       _addProgressMessage('⚠️ Cross-device sync check failed: $e');
       // Don't throw error - sync failure shouldn't prevent login
-      debugPrint('⚠️ Cross-device sync failed: $e');
     }
   }
   
@@ -1920,7 +1875,6 @@ class MultiTenantAuthService extends ChangeNotifier {
         }
       } catch (e) {
         _addProgressMessage('⚠️ Sync fixes failed: $e');
-        debugPrint('⚠️ Sync fixes error: $e');
         // Continue with regular sync even if fixes fail
       }
       
@@ -1958,7 +1912,6 @@ class MultiTenantAuthService extends ChangeNotifier {
       _addProgressMessage('✅ Comprehensive timestamp-based sync with fixes completed');
     } catch (e) {
       _addProgressMessage('❌ Timestamp-based sync failed: $e');
-      debugPrint('⚠️ Sync error details: $e');
       // Don't fail the login process due to sync issues
     }
   }
@@ -2019,7 +1972,6 @@ class MultiTenantAuthService extends ChangeNotifier {
       _addProgressMessage('✅ COMPLETE sync from cloud to local finished for ${restaurant.name} - ALL data downloaded');
     } catch (e) {
       _addProgressMessage('❌ Full sync failed for ${restaurant.name}: $e');
-      debugPrint('❌ Full sync error for ${restaurant.name}: $e');
       rethrow; // Re-throw to let caller handle the error
     }
   }
@@ -2095,22 +2047,18 @@ class MultiTenantAuthService extends ChangeNotifier {
       
       // CRITICAL FIX: Notify that categories have been synced so MenuService can reload
       if (syncedCount > 0) {
-        debugPrint('🔄 Categories synced - triggering MenuService reload callback');
         _onCategoriesSynced?.call();
         
         // ADDITIONAL FIX: Direct MenuService reload using global reference
         if (_globalMenuService != null) {
-          debugPrint('🔄 Direct MenuService reload after category sync');
           unawaited(_globalMenuService!.reloadMenuData());
         }
         
         // FALLBACK: Also trigger a delayed reload to ensure MenuService gets updated
         // This handles the case where the callback isn't set yet during authentication
         Timer(const Duration(seconds: 2), () {
-          debugPrint('🔄 Delayed MenuService reload trigger after category sync');
           _onCategoriesSynced?.call();
           if (_globalMenuService != null) {
-            debugPrint('🔄 Delayed direct MenuService reload');
             unawaited(_globalMenuService!.reloadMenuData());
           }
         });
@@ -2194,7 +2142,6 @@ class MultiTenantAuthService extends ChangeNotifier {
           }
         } catch (e) {
           _addProgressMessage('⚠️ Error syncing menu item ${doc.id}: $e');
-          debugPrint('⚠️ Menu item sync error details for ${doc.id}: $e');
           errorCount++;
         }
       }
@@ -2207,7 +2154,6 @@ class MultiTenantAuthService extends ChangeNotifier {
       
     } catch (e) {
       _addProgressMessage('⚠️ Failed to sync menu items from cloud: $e');
-      debugPrint('⚠️ Menu items sync error details: $e');
     }
   }
   
@@ -2518,7 +2464,6 @@ class MultiTenantAuthService extends ChangeNotifier {
       _addProgressMessage('✅ Orders sync completed: $updatedCount downloaded, $uploadedCount uploaded, $skippedCount skipped');
     } catch (e) {
       _addProgressMessage('⚠️ Failed to sync orders from cloud: $e');
-      debugPrint('⚠️ Order sync error details: $e');
       // Don't fail the entire sync process due to order sync issues
     }
   }
@@ -2551,7 +2496,6 @@ class MultiTenantAuthService extends ChangeNotifier {
       }
 
       if (!hasEmbeddedItems && !hasLocalOrderItems && subtotal <= 0 && totalAmount <= 0) {
-        debugPrint('⚠️ Skipping ghost order on upsert (id=${sanitized['id']}, order_number=${sanitized['order_number']})');
         return;
       }
 
@@ -2571,7 +2515,6 @@ class MultiTenantAuthService extends ChangeNotifier {
         await db.insert('orders', sanitized, conflictAlgorithm: ConflictAlgorithm.ignore);
       }
     } catch (e) {
-      debugPrint('⚠️ _upsertOrderSafe error: $e');
     }
   }
   
@@ -2892,7 +2835,6 @@ class MultiTenantAuthService extends ChangeNotifier {
       
     } catch (e) {
       _addProgressMessage('⚠️ Failed to sync order items from cloud: $e');
-      debugPrint('⚠️ Order items sync error details: $e');
     }
   }
   
@@ -3264,7 +3206,6 @@ class MultiTenantAuthService extends ChangeNotifier {
     await _connectToTenantDatabase(restaurant);
     
     isAuthenticated = true; // Use setter for protection
-    debugPrint('🔐 CRITICAL: _isAuthenticated set to TRUE in _createSession');
     
     // Save session to preferences
     await _saveSession();
@@ -3273,9 +3214,7 @@ class MultiTenantAuthService extends ChangeNotifier {
     _startSessionTimer();
     
     _addProgressMessage('✅ Session created for ${session.userName} at ${restaurant.name}');
-    debugPrint('🔐 CRITICAL: About to notify listeners with _isAuthenticated=$_isAuthenticated');
     notifyListeners();
-    debugPrint('🔐 CRITICAL: Listeners notified with _isAuthenticated=$_isAuthenticated');
   }
   
   /// Connect to tenant database
@@ -3298,7 +3237,6 @@ class MultiTenantAuthService extends ChangeNotifier {
   /// Logout current user and clear session
   Future<void> logout() async {
     try {
-      debugPrint('🔒 Logging out user...');
       
       // Stop session timer
       _sessionTimer?.cancel();
@@ -3322,16 +3260,13 @@ class MultiTenantAuthService extends ChangeNotifier {
         final syncService = UnifiedSyncService.instance;
         await syncService.disconnect();
       } catch (e) {
-        debugPrint('⚠️ Error disconnecting from Firebase sync: $e');
       }
       
       // Clear tenant database reference
       _tenantDb = null;
       
-      debugPrint('✅ Logout completed successfully');
       notifyListeners();
     } catch (e) {
-      debugPrint('❌ Error during logout: $e');
       // Force clear state even if there's an error
       _currentSession = null;
       isAuthenticated = false; // Use setter for protection
@@ -3438,7 +3373,6 @@ class MultiTenantAuthService extends ChangeNotifier {
   
   /// Force clear loading state (for emergency recovery)
   void forceClearLoading() {
-    debugPrint('🔄 Force clearing loading state');
     _isLoading = false;
     _clearError();
     notifyListeners();
@@ -3452,7 +3386,6 @@ class MultiTenantAuthService extends ChangeNotifier {
   /// Set error state
   void _setError(String error) {
     _lastError = error;
-    debugPrint('❌ Auth error: $error');
   }
   
   /// ENHANCEMENT: Immediately sync tenant data to Firebase for cross-device availability
@@ -3593,7 +3526,6 @@ class MultiTenantAuthService extends ChangeNotifier {
       
     } catch (e) {
       _addProgressMessage('⚠️ Failed to validate tenant database: $e');
-      debugPrint('Database validation error: $e');
     }
   }
   
@@ -3681,7 +3613,6 @@ class MultiTenantAuthService extends ChangeNotifier {
         orderService = OrderService(_tenantDb!, OrderLogService(_tenantDb!), InventoryService());
       } catch (e) {
         _addProgressMessage('⚠️ OrderService creation failed, skipping enhanced sync: $e');
-        debugPrint('⚠️ OrderService creation error: $e');
         // Continue with basic sync only - ZERO RISK
         return;
       }
@@ -3711,7 +3642,6 @@ class MultiTenantAuthService extends ChangeNotifier {
       
     } catch (e) {
       _addProgressMessage('❌ Working comprehensive sync failed: $e');
-      debugPrint('❌ Working comprehensive sync error: $e');
       // Don't throw - sync failure shouldn't prevent login
     }
   }
@@ -3748,7 +3678,6 @@ class MultiTenantAuthService extends ChangeNotifier {
       
     } catch (e) {
       _addProgressMessage('❌ Comprehensive timestamp-based sync failed: $e');
-      debugPrint('⚠️ Comprehensive timestamp-based sync error: $e');
       // Don't throw - continue with other sync methods
     }
   }
@@ -3786,13 +3715,11 @@ class MultiTenantAuthService extends ChangeNotifier {
         }
       } catch (e) {
         _addProgressMessage('⚠️ Unified sync service not available: $e');
-        debugPrint('⚠️ Unified sync service error: $e');
         // Continue without unified sync service
       }
       
     } catch (e) {
       _addProgressMessage('❌ Smart time-based sync failed: $e');
-      debugPrint('⚠️ Smart time-based sync error: $e');
       // Don't throw - continue with other sync methods
     }
   }
@@ -3829,7 +3756,6 @@ class MultiTenantAuthService extends ChangeNotifier {
       
     } catch (e) {
       _addProgressMessage('⚠️ Failed to ensure Firebase persistence: $e');
-      debugPrint('Firebase persistence error: $e');
     }
   }
 
@@ -3872,7 +3798,6 @@ class MultiTenantAuthService extends ChangeNotifier {
       
     } catch (e) {
       _addProgressMessage('⚠️ Failed to verify Firebase data: $e');
-      debugPrint('Firebase verification error: $e');
     }
   }
   
@@ -3936,7 +3861,6 @@ class MultiTenantAuthService extends ChangeNotifier {
           _addProgressMessage('✅ Successfully synced data for ${restaurant.name}');
         } catch (restaurantSyncError) {
           _addProgressMessage('⚠️ Failed to sync ${restaurant.name}: $restaurantSyncError');
-          debugPrint('⚠️ Restaurant sync error for ${restaurant.name}: $restaurantSyncError');
           // Continue with other restaurants - don't fail entire startup sync
         }
       }
@@ -3944,7 +3868,6 @@ class MultiTenantAuthService extends ChangeNotifier {
       _addProgressMessage('✅ Startup sync completed for all restaurants');
     } catch (e) {
       _addProgressMessage('⚠️ Startup sync failed: $e');
-      debugPrint('⚠️ Startup sync error: $e');
       // Don't fail initialization due to sync issues
     }
   }
@@ -4037,7 +3960,6 @@ class MultiTenantAuthService extends ChangeNotifier {
       _addProgressMessage('✅ Orders sync completed: $updatedCount downloaded, $uploadedCount uploaded, $skippedCount skipped');
     } catch (e) {
       _addProgressMessage('❌ Failed to perform direct order sync: $e');
-      debugPrint('⚠️ Direct order sync error details: $e');
       rethrow;
     }
   }
@@ -4499,7 +4421,6 @@ class MultiTenantAuthService extends ChangeNotifier {
       
     } catch (e) {
       _addProgressMessage('❌ Failed to extract order items from orders: $e');
-      debugPrint('⚠️ Order items extraction error details: $e');
     }
   }
 
@@ -4542,7 +4463,6 @@ class MultiTenantAuthService extends ChangeNotifier {
       
     } catch (e) {
       _addProgressMessage('⚠️ Safe sync wrapper failed: $e');
-      debugPrint('⚠️ Safe sync wrapper error: $e');
       // Never throw - this is the ultimate safety net
     }
   }
@@ -4586,7 +4506,6 @@ class MultiTenantAuthService extends ChangeNotifier {
       
     } catch (e) {
       _addProgressMessage('⚠️ Safe extraction wrapper failed: $e');
-      debugPrint('⚠️ Safe extraction wrapper error: $e');
       // Never throw - this is the ultimate safety net
     }
   }
@@ -4618,7 +4537,6 @@ class MultiTenantAuthService extends ChangeNotifier {
       _addProgressMessage('🔄 Rollback completed successfully');
     } catch (e) {
       _addProgressMessage('⚠️ Rollback failed: $e');
-      debugPrint('⚠️ Rollback error: $e');
     }
   }
 
@@ -4626,7 +4544,6 @@ class MultiTenantAuthService extends ChangeNotifier {
   /// Call this method to completely disable all new features
   static void emergencyDisableEnhancedFeatures() {
     // This would require a restart to take effect, but provides ultimate safety
-    debugPrint('🛡️ EMERGENCY: Enhanced features disabled - system will use only existing functionality');
   }
 
   /// ZERO RISK: Check if enhanced features are enabled
@@ -4680,7 +4597,6 @@ class MultiTenantAuthService extends ChangeNotifier {
       
     } catch (e) {
       _addProgressMessage('❌ Comprehensive data sync failed: $e');
-      debugPrint('⚠️ Comprehensive data sync error: $e');
       rethrow;
     }
   }

@@ -107,7 +107,6 @@ class PrinterConnection {
         await wifiSocket!.close();
       }
     } catch (e) {
-      debugPrint('Error disconnecting printer ${config.name}: $e');
     }
   }
 
@@ -175,13 +174,11 @@ class PrintingService with ChangeNotifier {
     
     // FIXED: Don't start automatic printer discovery immediately to prevent hanging
     // _startAutomaticDiscovery();
-    debugPrint('🔄 Automatic printer discovery disabled during initialization to prevent hanging');
   }
   
   /// Start automatic printer discovery
   /// FIXED: Removed automatic discovery - only manual discovery available
   void _startAutomaticDiscovery() {
-    debugPrint('🔄 Automatic printer discovery disabled - only manual discovery available');
     // No automatic discovery - only manual discovery on user request
   }
 
@@ -230,7 +227,6 @@ class PrintingService with ChangeNotifier {
         
         _safeNotifyListeners();
       } catch (e) {
-        debugPrint('Error loading printing settings: $e');
       }
     }
   }
@@ -260,7 +256,6 @@ class PrintingService with ChangeNotifier {
         _connectedPrinter = PrinterDevice.fromJson(printerMap);
         _safeNotifyListeners();
       } catch (e) {
-        debugPrint('Error loading connected printer: $e');
       }
     }
   }
@@ -282,15 +277,12 @@ class PrintingService with ChangeNotifier {
         final List<dynamic> printersList = jsonDecode(activePrintersJson);
         final List<String> printerIds = printersList.cast<String>();
         
-        debugPrint('📂 Loading ${printerIds.length} active printer connections...');
         
         // Note: Actual reconnection will happen when printer configurations are loaded
         // This just marks which printers should be connected
         for (final printerId in printerIds) {
-          debugPrint('📌 Marked printer $printerId for reconnection');
         }
       } catch (e) {
-        debugPrint('Error loading active printers: $e');
       }
     }
   }
@@ -305,12 +297,10 @@ class PrintingService with ChangeNotifier {
   /// Scan for available printers by type
   Future<List<PrinterDevice>> scanForPrinters(PrinterType type) async {
     if (!_isManualScanningEnabled) {
-      debugPrint('Manual scanning not enabled. Call enableManualScanning() first.');
       return [];
     }
     
     if (_isCurrentlyScanning) {
-      debugPrint('Already scanning for printers. Please wait...');
       return [];
     }
     
@@ -326,7 +316,6 @@ class PrintingService with ChangeNotifier {
         case PrinterType.usb:
         case PrinterType.remote:
         case PrinterType.vpn:
-          debugPrint('❌ Printer type ${type} not yet implemented');
           return [];
       }
     } finally {
@@ -343,18 +332,15 @@ class PrintingService with ChangeNotifier {
     final stopwatch = Stopwatch()..start();
     
     try {
-      debugPrint('Starting comprehensive WiFi printer scan...');
       
       // Double check that manual scanning is enabled
       if (!_isManualScanningEnabled) {
-        debugPrint('WiFi scanning aborted - manual scanning not enabled');
         return printers;
       }
       
       // Get current WiFi network info
       final wifiIP = await _networkInfo.getWifiIP();
       if (wifiIP == null) {
-        debugPrint('No WiFi connection detected');
         return printers;
       }
       
@@ -362,7 +348,6 @@ class PrintingService with ChangeNotifier {
       final parts = wifiIP.split('.');
       if (parts.length == 4) {
         final subnet = '${parts[0]}.${parts[1]}.${parts[2]}';
-        debugPrint('Scanning WiFi subnet: $subnet.* on multiple ports (comprehensive scan)');
         
         // Common printer ports
         final printerPorts = [9100, 515, 631, 9101, 9102];
@@ -382,19 +367,16 @@ class PrintingService with ChangeNotifier {
         final yourIP = parts[3];
         priorityIPs.removeWhere((ip) => ip.endsWith('.$yourIP'));
         
-        debugPrint('Scanning ${priorityIPs.length} priority IPs on ${printerPorts.length} ports...');
         
         // Scan priority IPs first
         for (int i = 0; i < priorityIPs.length; i += 5) {
           // Check timeout
           if (stopwatch.elapsed > scanTimeout) {
-            debugPrint('⏰ WiFi scan timeout reached, stopping scan');
             break;
           }
           
           // Check if scanning is still enabled
           if (!_isManualScanningEnabled) {
-            debugPrint('WiFi scanning stopped - manual scanning disabled during scan');
             break;
           }
           
@@ -420,14 +402,12 @@ class PrintingService with ChangeNotifier {
               
               if (existingPrinter == null) {
                 printers.add(printer);
-                debugPrint('Found WiFi printer: ${printer.name} at ${printer.address}');
               }
             }
           }
           
           // Progress update every 25 IPs
           if ((i + 5) % 25 == 0) {
-            debugPrint('Scanned ${i + 5}/${priorityIPs.length} IPs... Found ${printers.length} printers so far');
           }
           
           // Small delay between batches to be network-friendly
@@ -438,15 +418,12 @@ class PrintingService with ChangeNotifier {
         
         // If we found printers, don't do a full scan
         if (printers.isNotEmpty) {
-          debugPrint('✅ Quick scan found ${printers.length} WiFi printers');
         } else {
           // Do a limited full scan only if no printers found
-          debugPrint('🔍 No printers found in priority IPs, doing limited full scan...');
           
           // Scan only first 50 IPs to avoid hanging
           for (int i = 1; i <= 50; i++) {
             if (stopwatch.elapsed > scanTimeout) {
-              debugPrint('⏰ Full scan timeout reached');
               break;
             }
             
@@ -464,7 +441,6 @@ class PrintingService with ChangeNotifier {
                   
                   if (existingPrinter == null) {
                     printers.add(printer);
-                    debugPrint('Found WiFi printer: ${printer.name} at ${printer.address}');
                   }
                 }
               } catch (e) {
@@ -476,10 +452,8 @@ class PrintingService with ChangeNotifier {
       }
       
       stopwatch.stop();
-      debugPrint('Comprehensive WiFi scan completed in ${stopwatch.elapsedMilliseconds}ms - found ${printers.length} WiFi printers');
       
     } catch (e) {
-      debugPrint('Error in comprehensive WiFi printer scan: $e');
     }
 
     return printers;
@@ -554,7 +528,6 @@ class PrintingService with ChangeNotifier {
   /// Manually add a printer by IP address
   Future<PrinterDevice?> addPrinterByIP(String ipAddress, {int port = 9100}) async {
     try {
-      debugPrint('Testing manual IP: $ipAddress:$port');
       
       // Validate IP format
       final parts = ipAddress.split('.');
@@ -572,13 +545,11 @@ class PrintingService with ChangeNotifier {
       // Test connection to the specific IP and port
       final printer = await _testAndCreatePrinterDevice(ipAddress, port);
       if (printer != null) {
-        debugPrint('Successfully connected to manual IP: ${printer.address}');
         return printer;
       } else {
         throw Exception('No printer found at $ipAddress:$port');
       }
     } catch (e) {
-      debugPrint('Error testing manual IP $ipAddress:$port - $e');
       throw Exception('Failed to connect to $ipAddress:$port - $e');
     }
   }
@@ -588,7 +559,6 @@ class PrintingService with ChangeNotifier {
   /// Test if a network printer is available at the given IP and port
   Future<bool> _testPrinterConnection(String ip, int port) async {
     try {
-      debugPrint('🧪 Testing connection to $ip:$port...');
       
       final socket = await Socket.connect(
         ip, 
@@ -605,16 +575,13 @@ class PrintingService with ChangeNotifier {
         
         // Wait briefly for any response
         await Future.delayed(const Duration(milliseconds: 200));
-        debugPrint('✅ Printer test successful for $ip:$port');
       } catch (statusError) {
-        debugPrint('⚠️ Status request failed for $ip:$port (but connection works): $statusError');
         // Connection works even if status request fails
       }
       
       await socket.close();
       return true;
     } catch (e) {
-      debugPrint('❌ Connection test failed for $ip:$port: $e');
       return false;
     }
   }
@@ -638,7 +605,6 @@ class PrintingService with ChangeNotifier {
                          'f${DateTime.now().millisecondsSinceEpoch}\n'  // Data file name
                          '\n';
       
-      debugPrint('📡 Sending LPR control data: ${controlData.length} bytes');
       
       // Send control data
       _wifiSocket?.add(utf8.encode(controlData));
@@ -647,9 +613,7 @@ class PrintingService with ChangeNotifier {
       // Wait for acknowledgment
       await Future.delayed(const Duration(milliseconds: 200));
       
-      debugPrint('✅ LPR/LPD connection initialized');
     } catch (e) {
-      debugPrint('❌ Error initializing LPR connection: $e');
       rethrow;
     }
   }
@@ -674,9 +638,7 @@ class PrintingService with ChangeNotifier {
       _wifiSocket?.add([0x00]); // NULL terminator
       await _wifiSocket?.flush();
       
-      debugPrint('✅ Data sent via LPR/LPD protocol');
     } catch (e) {
-      debugPrint('❌ Error sending via LPR protocol: $e');
       rethrow;
     }
   }
@@ -692,7 +654,6 @@ class PrintingService with ChangeNotifier {
   Future<Map<String, bool>> connectToMultiplePrinters(List<PrinterConfiguration> printers) async {
     final Map<String, bool> results = {};
     
-    debugPrint('🔗 Connecting to ${printers.length} printers simultaneously...');
     
     // Create connection futures for all printers
     final List<Future<MapEntry<String, bool>>> connectionFutures = printers.map((printer) {
@@ -711,10 +672,8 @@ class PrintingService with ChangeNotifier {
       _safeNotifyListeners();
       
       final successCount = results.values.where((success) => success).length;
-      debugPrint('✅ Successfully connected to $successCount/${printers.length} printers');
       
     } catch (e) {
-      debugPrint('❌ Error connecting to multiple printers: $e');
     }
     
     return results;
@@ -723,11 +682,9 @@ class PrintingService with ChangeNotifier {
   /// Connect to a single printer (async version)
   Future<bool> _connectToPrinterAsync(PrinterConfiguration printer) async {
     try {
-      debugPrint('🔗 Connecting to ${printer.name} (${printer.fullAddress})...');
       
       // Check if already connected
       if (_activeConnections.containsKey(printer.id)) {
-        debugPrint('ℹ️ Printer ${printer.name} already connected');
         return true;
       }
       
@@ -736,7 +693,6 @@ class PrintingService with ChangeNotifier {
       if (retryCount >= _maxRetries) {
         final lastAttempt = _lastConnectionAttempt[printer.id];
         if (lastAttempt != null && DateTime.now().difference(lastAttempt) < _retryDelay) {
-          debugPrint('⏳ Printer ${printer.name} retry limit reached, waiting...');
           return false;
         }
         // Reset retry count after delay
@@ -754,22 +710,18 @@ class PrintingService with ChangeNotifier {
        } 
        // Bluetooth support temporarily disabled
        // else if (printer.type == PrinterType.bluetooth) {
-       //   debugPrint('⚠️ Bluetooth printing temporarily disabled');
        //   return false;
        // }
       
       if (connection != null) {
         _activeConnections[printer.id] = connection;
         _connectionRetryCount[printer.id] = 0; // Reset retry count on success
-        debugPrint('✅ Successfully connected to ${printer.name}');
         return true;
       } else {
-        debugPrint('❌ Failed to connect to ${printer.name}');
         return false;
       }
       
     } catch (e) {
-      debugPrint('❌ Error connecting to ${printer.name}: $e');
       return false;
     }
   }
@@ -789,7 +741,6 @@ class PrintingService with ChangeNotifier {
         wifiSocket: socket,
       );
     } catch (e) {
-      debugPrint('❌ WiFi connection failed for ${printer.name}: $e');
       return null;
     }
   }
@@ -809,19 +760,16 @@ class PrintingService with ChangeNotifier {
         await _saveActivePrinters();
         _safeNotifyListeners();
         
-        debugPrint('✅ Disconnected from printer: ${connection.config.name}');
         return true;
       }
       return false;
     } catch (e) {
-      debugPrint('❌ Error disconnecting from printer: $e');
       return false;
     }
   }
 
   /// Disconnect from all printers
   Future<void> disconnectFromAllPrinters() async {
-    debugPrint('🔌 Disconnecting from all printers...');
     
     final List<Future<void>> disconnectionFutures = _activeConnections.values.map((connection) {
       return connection.disconnect();
@@ -836,7 +784,6 @@ class PrintingService with ChangeNotifier {
     await _saveActivePrinters();
     _safeNotifyListeners();
     
-    debugPrint('✅ Disconnected from all printers');
   }
 
   /// Check connection status for all printers
@@ -860,7 +807,6 @@ class PrintingService with ChangeNotifier {
          }
       } catch (e) {
         connectionStatus[printerId] = false;
-        debugPrint('❌ Connection check failed for ${connection.config.name}: $e');
       }
     }
     
@@ -874,7 +820,6 @@ class PrintingService with ChangeNotifier {
   ) async {
     final Map<String, bool> results = {};
     
-    debugPrint('🖨️ Printing to ${itemsByPrinter.length} printers simultaneously...');
     
     // Create print futures for all printers
     final List<Future<MapEntry<String, bool>>> printFutures = itemsByPrinter.entries.map((entry) {
@@ -895,10 +840,8 @@ class PrintingService with ChangeNotifier {
       }
       
       final successCount = results.values.where((success) => success).length;
-      debugPrint('✅ Successfully printed to $successCount/${itemsByPrinter.length} printers');
       
     } catch (e) {
-      debugPrint('❌ Error printing to multiple printers: $e');
     }
     
     return results;
@@ -913,7 +856,6 @@ class PrintingService with ChangeNotifier {
     try {
       final connection = _activeConnections[printerId];
       if (connection == null) {
-        debugPrint('❌ No connection found for printer: $printerId');
         return false;
       }
       
@@ -949,11 +891,9 @@ class PrintingService with ChangeNotifier {
       // Send to printer
       await connection.sendData(data);
       
-      debugPrint('✅ Successfully printed to ${connection.config.name}');
       return true;
       
     } catch (e) {
-      debugPrint('❌ Error printing to printer $printerId: $e');
       return false;
     }
   }
@@ -1006,11 +946,9 @@ class PrintingService with ChangeNotifier {
           .toList();
       
       if (printersToReconnect.isNotEmpty) {
-        debugPrint('🔄 Auto-reconnecting to ${printersToReconnect.length} printers...');
         await connectToMultiplePrinters(printersToReconnect);
       }
     } catch (e) {
-      debugPrint('❌ Error during auto-reconnect: $e');
     }
   }
 
@@ -1070,25 +1008,20 @@ class PrintingService with ChangeNotifier {
               } catch (_) {}
             }
             if (anySuccess) {
-              debugPrint('🧾 Receipt routed to ${receiptAssignments.length} assigned printer(s).');
               return true;
             }
           }
         } catch (e) {
-          debugPrint('⚠️ Receipt category routing unavailable, falling back: $e');
         }
       }
 
       // Fallback: existing behavior (connected printer)
       if (_connectedPrinter == null) {
-        debugPrint('No printer connected - cannot print receipt for order: ${order.orderNumber}');
         return false;
       }
       await _sendToPrinter(receipt);
-      debugPrint('Customer receipt printed successfully for order: ${order.orderNumber}');
       return true;
     } catch (e) {
-      debugPrint('Failed to print receipt: $e');
       return false;
     }
   }
@@ -1096,26 +1029,21 @@ class PrintingService with ChangeNotifier {
   /// Print kitchen ticket
   Future<bool> printKitchenTicket(Order order) async {
     try {
-      debugPrint('🖨️ Attempting to print kitchen ticket for order: ${order.orderNumber}');
       
       // CRITICAL FIX: Check if order is completed and handle gracefully
       if (order.status == OrderStatus.completed) {
-        debugPrint('⚠️ Order ${order.orderNumber} is completed - printing kitchen ticket for record keeping');
       }
       
       // Check if printer is connected
       if (_connectedPrinter == null) {
-        debugPrint('⚠️ No printer connected - cannot print kitchen ticket for order: ${order.orderNumber}');
         return false;
       }
       
       // Check if printer connection is valid
       if (!await _validatePrinterConnection()) {
-        debugPrint('⚠️ Printer connection invalid - attempting to reconnect...');
         try {
           await _reconnectPrinter();
         } catch (reconnectError) {
-          debugPrint('❌ Failed to reconnect printer: $reconnectError');
           return false;
         }
       }
@@ -1131,16 +1059,12 @@ class PrintingService with ChangeNotifier {
         try {
           await _sendToPrinter(ticket);
           printSuccess = true;
-          debugPrint('✅ Kitchen ticket printed successfully for order: ${order.orderNumber}');
         } catch (printError) {
           retryCount++;
-          debugPrint('⚠️ Print attempt $retryCount failed: $printError');
           
           if (retryCount < maxRetries) {
-            debugPrint('🔄 Retrying print in 1 second...');
             await Future.delayed(const Duration(seconds: 1));
           } else {
-            debugPrint('❌ All print attempts failed for order: ${order.orderNumber}');
             throw printError;
           }
         }
@@ -1148,7 +1072,6 @@ class PrintingService with ChangeNotifier {
       
       return printSuccess;
     } catch (e) {
-      debugPrint('❌ Failed to print kitchen ticket for order ${order.orderNumber}: $e');
       return false;
     }
   }
@@ -1169,7 +1092,6 @@ class PrintingService with ChangeNotifier {
           return false;
       }
     } catch (e) {
-      debugPrint('Error validating printer connection: $e');
       return false;
     }
   }
@@ -1178,7 +1100,6 @@ class PrintingService with ChangeNotifier {
   Future<void> _reconnectPrinter() async {
     if (_connectedPrinter == null) return;
     
-    debugPrint('🔄 Attempting to reconnect to printer: ${_connectedPrinter!.name}');
     
     try {
       // Disconnect first
@@ -1187,9 +1108,7 @@ class PrintingService with ChangeNotifier {
       // Reconnect
       await connectToPrinter(_connectedPrinter!);
       
-      debugPrint('✅ Successfully reconnected to printer');
     } catch (e) {
-      debugPrint('❌ Failed to reconnect to printer: $e');
       rethrow;
     }
   }
@@ -1292,7 +1211,6 @@ class PrintingService with ChangeNotifier {
       try {
         return _generatePreviewMatchedKitchenTicket(order);
       } catch (e) {
-        debugPrint('⚠️ Preview-matched kitchen generator failed, using fallback: $e');
       }
     }
     return _generateGenericESCPOSKitchenTicket(order, 'Kitchen Printer');
@@ -1305,7 +1223,6 @@ class PrintingService with ChangeNotifier {
     }
 
     try {
-      debugPrint('📤 Sending ${content.length} characters to ${_connectedPrinter!.name}');
       
       // Send to actual hardware printer
       final data = Uint8List.fromList(content.codeUnits);
@@ -1324,10 +1241,8 @@ class PrintingService with ChangeNotifier {
               final port = addressParts.length > 1 ? int.tryParse(addressParts[1]) ?? 9100 : 9100;
               
               if (port == 515) {
-                debugPrint('📡 Sending ${data.length} bytes via LPR/LPD to ${_connectedPrinter!.address}');
                 await _sendViaLprProtocol(data);
               } else {
-                debugPrint('📡 Sending ${data.length} bytes via RAW/ESC-POS to ${_connectedPrinter!.address}');
                 _wifiSocket!.add(data);
                 await _wifiSocket!.flush();
               }
@@ -1335,15 +1250,12 @@ class PrintingService with ChangeNotifier {
               // Add a small delay to ensure data is sent
               await Future.delayed(const Duration(milliseconds: 100));
               
-              debugPrint('✅ WiFi data sent and flushed successfully');
             } catch (socketError) {
-              debugPrint('❌ WiFi socket error: $socketError');
               _wifiSocket = null;
               _connectedPrinter = _connectedPrinter!.copyWith(isConnected: false);
               throw Exception('WiFi connection failed: $socketError');
             }
           } else {
-            debugPrint('❌ WiFi printer connection not established');
             throw Exception('WiFi printer connection not established - please reconnect to printer');
           }
           break;
@@ -1352,14 +1264,11 @@ class PrintingService with ChangeNotifier {
         case PrinterType.usb:
         case PrinterType.remote:
         case PrinterType.vpn:
-          debugPrint('❌ Printer type ${_connectedPrinter!.type} not yet implemented');
           throw Exception('Printer type ${_connectedPrinter!.type} not yet implemented');
           break;
       }
       
-      debugPrint('✅ Content sent to printer successfully');
     } catch (e) {
-      debugPrint('❌ Error sending to printer: $e');
       throw Exception('Failed to send to printer: $e');
     }
   }
@@ -1419,11 +1328,9 @@ class PrintingService with ChangeNotifier {
         try {
           notifyListeners();
         } catch (e) {
-          debugPrint('Error notifying listeners: $e');
         }
       });
     } catch (e) {
-      debugPrint('Error scheduling notification: $e');
     }
   }
 
@@ -1444,36 +1351,28 @@ class PrintingService with ChangeNotifier {
   /// Enable manual scanning for WiFi printers
   void enableManualScanning() {
     _isManualScanningEnabled = true;
-    debugPrint('Manual printer scanning enabled');
     _safeNotifyListeners();
   }
 
   /// Disable manual scanning (default state)
   void disableManualScanning() {
     _isManualScanningEnabled = false;
-    debugPrint('Manual printer scanning disabled');
     _safeNotifyListeners();
   }
   
   /// Manually trigger printer discovery (can be called from UI)
   Future<void> manualDiscovery() async {
-    debugPrint('🔍 Manual printer discovery triggered by user');
     if (_isManualScanningEnabled) {
       // FIXED: Add timeout to prevent infinite spinner
       try {
         await _scanWiFiPrinters().timeout(const Duration(seconds: 30));
-        debugPrint('✅ Manual printer discovery completed');
       } catch (e) {
-        debugPrint('❌ Manual printer discovery failed or timed out: $e');
       }
     } else {
-      debugPrint('⚠️ Manual scanning not enabled - enabling automatically');
       enableManualScanning();
       try {
         await _scanWiFiPrinters().timeout(const Duration(seconds: 30));
-        debugPrint('✅ Manual printer discovery completed');
       } catch (e) {
-        debugPrint('❌ Manual printer discovery failed or timed out: $e');
       }
     }
   }
@@ -1481,10 +1380,8 @@ class PrintingService with ChangeNotifier {
   /// Print order with segregated items based on printer assignments - FIXED MULTI-PRINTER HANGING
   Future<void> printOrderSegregated(Order order, Map<String, List<OrderItem>> itemsByPrinter) async {
     try {
-      debugPrint('🖨️ Starting segregated printing for order: ${order.orderNumber} to ${itemsByPrinter.length} printers');
       
       if (itemsByPrinter.isEmpty) {
-        debugPrint('⚠️ No printers assigned - skipping segregated printing');
         return;
       }
       
@@ -1498,12 +1395,10 @@ class PrintingService with ChangeNotifier {
         final items = entry.value;
         
         if (items.isEmpty) {
-          debugPrint('⚠️ No items for printer $printerId - skipping');
           continue;
         }
         
         try {
-          debugPrint('🖨️ Printing ${items.length} items to printer: $printerId');
           
           // Create a partial order with only the items for this printer
           final partialOrder = Order(
@@ -1537,7 +1432,6 @@ class PrintingService with ChangeNotifier {
           });
           
           successCount++;
-          debugPrint('✅ Successfully printed to printer $printerId');
           
           // Small delay between printers to prevent connection conflicts
           if (entry != itemsByPrinter.entries.last) {
@@ -1545,16 +1439,13 @@ class PrintingService with ChangeNotifier {
           }
           
         } catch (e) {
-          debugPrint('❌ Failed to print to printer $printerId: $e');
           failedPrinters.add(printerId);
           // Continue with other printers even if one fails
         }
       }
       
-      debugPrint('🎉 Segregated printing completed: $successCount/$totalPrinters printers successful');
       
       if (failedPrinters.isNotEmpty) {
-        debugPrint('⚠️ Failed printers: ${failedPrinters.join(', ')}');
       }
       
       if (successCount == 0) {
@@ -1562,7 +1453,6 @@ class PrintingService with ChangeNotifier {
       }
       
     } catch (e) {
-      debugPrint('❌ Error in segregated printing: $e');
       throw Exception('Failed to print segregated order: $e');
     }
   }
@@ -1570,7 +1460,6 @@ class PrintingService with ChangeNotifier {
   /// Print to a specific printer by ID - FIXED TYPE CASTING
   Future<void> _printToSpecificPrinter(Order order, String printerId, bool isKitchenTicket) async {
     try {
-      debugPrint('🔍 Looking for printer with ID: $printerId');
       
       // Get the actual printer configuration from the service
       final databaseService = DatabaseService();
@@ -1584,7 +1473,6 @@ class PrintingService with ChangeNotifier {
         throw Exception('Printer configuration not found for ID: $printerId');
       }
       
-      debugPrint('📍 Found printer: ${printerConfig.name} (${printerConfig.fullAddress})');
       
       // Create PrinterDevice from configuration
       final targetPrinter = PrinterDevice(
@@ -1594,7 +1482,6 @@ class PrintingService with ChangeNotifier {
         type: _convertConfigTypeToDeviceType(printerConfig.type),
       );
       
-      debugPrint('🔌 Connecting to printer: ${targetPrinter.name} (${targetPrinter.address})');
       
       // Connect to the specific printer
       await _connectToSpecificPrinter(targetPrinter);
@@ -1606,10 +1493,8 @@ class PrintingService with ChangeNotifier {
       
       await _sendToPrinter(content);
       
-      debugPrint('✅ Successfully printed to ${targetPrinter.name}');
       
     } catch (e) {
-      debugPrint('❌ Error printing to specific printer: $e');
       throw Exception('Failed to print to printer $printerId: $e');
     }
   }
@@ -1623,7 +1508,6 @@ class PrintingService with ChangeNotifier {
           try {
             await _wifiSocket!.close();
           } catch (closeError) {
-            debugPrint('⚠️ Error closing existing socket: $closeError');
           }
           _wifiSocket = null;
         }
@@ -1634,7 +1518,6 @@ class PrintingService with ChangeNotifier {
           final ip = addressParts[0];
           final port = addressParts.length > 1 ? int.tryParse(addressParts[1]) ?? 9100 : 9100;
           
-          debugPrint('🔌 Connecting to specific WiFi printer: $ip:$port');
           
           _wifiSocket = await Socket.connect(
             ip,
@@ -1648,14 +1531,11 @@ class PrintingService with ChangeNotifier {
           // Set up error handling
           _wifiSocket!.listen(
             (data) {
-              debugPrint('📥 Received ${data.length} bytes from specific printer');
             },
             onError: (error) {
-              debugPrint('❌ Specific printer connection error: $error');
               _wifiSocket = null;
             },
             onDone: () {
-              debugPrint('🔌 Specific printer connection closed');
               _wifiSocket = null;
             },
           );
@@ -1665,19 +1545,15 @@ class PrintingService with ChangeNotifier {
             final initData = Uint8List.fromList('\x1B\x40'.codeUnits); // ESC @ (initialize)
             _wifiSocket!.add(initData);
             await _wifiSocket!.flush();
-            debugPrint('✅ Specific printer initialized successfully');
           } catch (initError) {
-            debugPrint('⚠️ Specific printer initialization failed: $initError');
             // Continue anyway - some printers don't respond to init commands
           }
           
-          debugPrint('✅ Connected to specific WiFi printer: ${printer.address}');
         }
       }
       // Add Bluetooth support if needed
       
     } catch (e) {
-      debugPrint('❌ Error connecting to printer ${printer.name}: $e');
       _wifiSocket = null;
       throw Exception('Failed to connect to printer: $e');
     }
@@ -1706,11 +1582,9 @@ class PrintingService with ChangeNotifier {
         String printerId;
         if (assignment != null) {
           printerId = assignment.printerId;
-          debugPrint('Item ${item.menuItem.name} assigned to printer: ${assignment.printerName}');
         } else {
           // Default printer if no assignment found
           printerId = 'printer_1'; // Kitchen Main Printer
-          debugPrint('Item ${item.menuItem.name} using default printer');
         }
         
         if (!itemsByPrinter.containsKey(printerId)) {
@@ -1719,11 +1593,9 @@ class PrintingService with ChangeNotifier {
         itemsByPrinter[printerId]!.add(item);
       }
       
-      debugPrint('Items segregated across ${itemsByPrinter.length} printers');
       return itemsByPrinter;
       
     } catch (e) {
-      debugPrint('Error segregating order items: $e');
       // Fallback: send all items to default printer
       return {'printer_1': order.items};
     }
@@ -1741,7 +1613,6 @@ class PrintingService with ChangeNotifier {
     _wifiSocket = null;
     
     notifyListeners();
-    debugPrint('Updated printer configuration for ${updatedPrinter.name}');
   }
 
   /// Convert printer configuration type to device type
@@ -1956,12 +1827,10 @@ class PrintingService with ChangeNotifier {
         await socket.flush();
         await socket.close();
         
-        debugPrint('Successfully sent test print to ${printer.name}');
       } else {
         throw Exception('Printer type ${printer.type} not yet implemented for test printing');
       }
     } catch (e) {
-      debugPrint('Error sending test print to ${printer.name}: $e');
       rethrow;
     }
   }
@@ -1974,7 +1843,6 @@ class PrintingService with ChangeNotifier {
       // For backward compatibility, disconnect existing connections
       await disconnectPrinter();
 
-      debugPrint('Connecting to ${printer.name} at ${printer.address}...');
       
       // Connect to real printer based on type
       switch (printer.type) {
@@ -1985,11 +1853,9 @@ class PrintingService with ChangeNotifier {
         case PrinterType.usb:
         case PrinterType.remote:
         case PrinterType.vpn:
-          debugPrint('❌ Printer type ${printer.type} not yet implemented');
           return false;
       }
     } catch (e) {
-      debugPrint('Error connecting to printer: $e');
       return false;
     }
   }
@@ -2001,14 +1867,12 @@ class PrintingService with ChangeNotifier {
       final ip = parts[0];
       final port = parts.length > 1 ? int.tryParse(parts[1]) ?? 9100 : 9100;
 
-      debugPrint('🔌 Attempting WiFi connection to $ip:$port...');
       
       // Close any existing WiFi connection
       if (_wifiSocket != null) {
         try {
           await _wifiSocket!.close();
         } catch (e) {
-          debugPrint('⚠️ Error closing existing socket: $e');
         }
         _wifiSocket = null;
       }
@@ -2025,27 +1889,22 @@ class PrintingService with ChangeNotifier {
       
       // Handle different printer protocols
       if (port == 515) {
-        debugPrint('📡 Using LPR/LPD protocol for port 515');
         // Initialize LPR/LPD connection
         await _initializeLprConnection();
       } else {
-        debugPrint('📡 Using RAW/ESC-POS protocol for port $port');
       }
       
       // Listen for connection errors
       _wifiSocket!.listen(
         (data) {
           // Handle incoming data if needed
-          debugPrint('📥 Received ${data.length} bytes from printer');
         },
         onError: (error) {
-          debugPrint('❌ WiFi printer connection error: $error');
           _wifiSocket = null;
           _connectedPrinter = null;
           _safeNotifyListeners();
         },
         onDone: () {
-          debugPrint('🔌 WiFi printer connection closed');
           _wifiSocket = null;
           if (_connectedPrinter != null) {
             _connectedPrinter = _connectedPrinter!.copyWith(isConnected: false);
@@ -2058,22 +1917,18 @@ class PrintingService with ChangeNotifier {
       await _saveConnectedPrinter();
       _safeNotifyListeners();
       
-      debugPrint('✅ Connected to WiFi printer: ${printer.address}');
       
       // Test the connection with a simple command
       try {
         final testData = Uint8List.fromList('\x1B\x40'.codeUnits); // ESC @ (initialize printer)
         _wifiSocket!.add(testData);
         await _wifiSocket!.flush();
-        debugPrint('✅ Printer initialization command sent successfully');
       } catch (testError) {
-        debugPrint('⚠️ Printer test command failed: $testError');
         // Don't fail the connection for test command issues
       }
       
       return true;
     } catch (e) {
-      debugPrint('❌ Failed to connect to WiFi printer: $e');
       _wifiSocket = null;
       _connectedPrinter = null;
       return false;
@@ -2083,7 +1938,6 @@ class PrintingService with ChangeNotifier {
   /// Connect to Bluetooth printer (legacy method) - DISABLED
   Future<bool> _connectToBluetoothPrinterLegacy(PrinterDevice printer) async {
     // Bluetooth functionality temporarily disabled
-    debugPrint('❌ Bluetooth printing temporarily disabled');
     return false;
   }
 
@@ -2097,9 +1951,7 @@ class PrintingService with ChangeNotifier {
       await _saveConnectedPrinter();
       _safeNotifyListeners();
       
-      debugPrint('Disconnected from printer');
     } catch (e) {
-      debugPrint('Error disconnecting printer: $e');
     }
   }
 
@@ -2137,7 +1989,6 @@ class PrintingService with ChangeNotifier {
   Future<void> initializePrinterConnections(
     List<PrinterConfiguration> configurations,
   ) async {
-    debugPrint('🔧 Initializing printer connections...');
     
     // Filter active configurations
     final activeConfigs = configurations.where((config) => config.isActive).toList();
@@ -2146,15 +1997,12 @@ class PrintingService with ChangeNotifier {
       final results = await connectToMultiplePrinters(activeConfigs);
       
       final successCount = results.values.where((success) => success).length;
-      debugPrint('✅ Initialized $successCount/${activeConfigs.length} printer connections');
     } else {
-      debugPrint('ℹ️ No active printer configurations found');
     }
   }
 
   /// Test all printer connections
   Future<Map<String, bool>> testAllPrinterConnections() async {
-    debugPrint('🧪 Testing all printer connections...');
     
     final results = <String, bool>{};
     
@@ -2176,10 +2024,8 @@ your printer is working correctly!
         
         await connection.sendData(Uint8List.fromList(testContent.codeUnits));
         results[printerId] = true;
-        debugPrint('✅ Test successful for ${connection.config.name}');
       } catch (e) {
         results[printerId] = false;
-        debugPrint('❌ Test failed for ${connection.config.name}: $e');
       }
     }
     
@@ -2210,13 +2056,10 @@ your printer is working correctly!
 
   /// Graceful shutdown of all printer connections
   Future<void> shutdownAllConnections() async {
-    debugPrint('🔌 Shutting down all printer connections...');
     
     try {
       await disconnectFromAllPrinters();
-      debugPrint('✅ All printer connections shut down successfully');
     } catch (e) {
-      debugPrint('❌ Error during shutdown: $e');
     }
   }
 
@@ -2254,14 +2097,12 @@ your printer is working correctly!
           
           if (existingPrinter == null) {
             foundPrinters.add(printer);
-            debugPrint('🖨️ Found Epson TM-M30III: ${printer.name} at ${printer.address}');
           }
         }
       }
       
       // Progress update
       if ((i + batchSize) % 25 == 0) {
-        debugPrint('📊 Scanned ${i + batchSize}/${ips.length} IPs... Found ${foundPrinters.length} Epson printers');
       }
       
       // Small delay to be network-friendly
@@ -2276,7 +2117,6 @@ your printer is working correctly!
     Socket? socket;
     
     try {
-      debugPrint('🔍 Testing Epson connection: $ip:$port');
       
       // Establish connection with appropriate timeout
       socket = await Socket.connect(
@@ -2292,7 +2132,6 @@ your printer is working correctly!
       final printerInfo = await _identifyEpsonTmM30iii(socket);
       
       if (printerInfo != null) {
-        debugPrint('✅ Verified Epson TM-M30III at $ip:$port');
         
         return PrinterDevice(
           id: 'epson_tm_m30iii_${ip.replaceAll('.', '_')}_$port',
@@ -2306,7 +2145,6 @@ your printer is working correctly!
       
     } catch (e) {
       // Not an Epson printer or connection failed
-      // debugPrint('❌ Not Epson or connection failed for $ip:$port: $e');
     } finally {
       try {
         await socket?.close();
@@ -2354,7 +2192,6 @@ your printer is working correctly!
           
         } catch (e) {
           // Command failed, continue with next
-          debugPrint('⚠️ Command failed: $command - $e');
         }
       }
       
@@ -2372,7 +2209,6 @@ your printer is working correctly!
       return await _testEpsonPrintCapability(socket);
       
     } catch (e) {
-      debugPrint('❌ Error identifying Epson printer: $e');
       return null;
     }
   }
@@ -2404,7 +2240,6 @@ your printer is working correctly!
         }
       }
     } catch (e) {
-      debugPrint('⚠️ Error analyzing Epson responses: $e');
     }
     
     return info;
@@ -2447,7 +2282,6 @@ your printer is working correctly!
       await Future.delayed(const Duration(milliseconds: 200));
       
       // If we reach here without exception, likely an Epson printer
-      debugPrint('✅ Printer accepts Epson ESC/POS commands');
       
       return {
         'model': 'Epson Compatible',
@@ -2456,28 +2290,24 @@ your printer is working correctly!
       };
       
     } catch (e) {
-      debugPrint('❌ Printer does not accept Epson commands: $e');
       return null;
     }
   }
   
   /// Robust connection to Epson TM-M30III with retry logic
   Future<bool> connectToEpsonTmM30iii(String ipAddress, {int port = 9100}) async {
-    debugPrint('🔗 Connecting to Epson TM-M30III at $ipAddress:$port');
     
     const maxRetries = 5;
     const baseDelay = Duration(milliseconds: 500);
     
     for (int attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        debugPrint('🔄 Connection attempt $attempt/$maxRetries to $ipAddress:$port');
         
         // Close any existing connection
         if (_wifiSocket != null) {
           try {
             await _wifiSocket!.close();
           } catch (e) {
-            debugPrint('⚠️ Error closing existing socket: $e');
           }
           _wifiSocket = null;
         }
@@ -2495,16 +2325,13 @@ your printer is working correctly!
         // Set up connection monitoring
         _wifiSocket!.listen(
           (data) {
-            debugPrint('📥 Received ${data.length} bytes from Epson printer');
           },
           onError: (error) {
-            debugPrint('❌ Epson printer connection error: $error');
             _wifiSocket = null;
             _connectedPrinter = null;
             _safeNotifyListeners();
           },
           onDone: () {
-            debugPrint('🔌 Epson printer connection closed');
             _wifiSocket = null;
             if (_connectedPrinter != null) {
               _connectedPrinter = _connectedPrinter!.copyWith(isConnected: false);
@@ -2531,27 +2358,22 @@ your printer is working correctly!
           await _saveConnectedPrinter();
           _safeNotifyListeners();
           
-          debugPrint('✅ Successfully connected to Epson TM-M30III at $ipAddress:$port');
           return true;
         } else {
-          debugPrint('❌ Failed to initialize Epson TM-M30III');
           await _wifiSocket?.close();
           _wifiSocket = null;
         }
         
       } catch (e) {
-        debugPrint('❌ Attempt $attempt failed: $e');
         _wifiSocket = null;
         
         if (attempt < maxRetries) {
           final delay = baseDelay * attempt; // Exponential backoff
-          debugPrint('⏳ Waiting ${delay.inMilliseconds}ms before retry...');
           await Future.delayed(delay);
         }
       }
     }
     
-    debugPrint('❌ All connection attempts failed for Epson TM-M30III at $ipAddress:$port');
     return false;
   }
   
@@ -2560,7 +2382,6 @@ your printer is working correctly!
     if (_wifiSocket == null) return false;
     
     try {
-      debugPrint('🔧 Initializing Epson TM-M30III...');
       
       // Epson TM-M30III initialization sequence
       final initCommands = <List<int>>[
@@ -2581,7 +2402,6 @@ your printer is working correctly!
           await Future.delayed(const Duration(milliseconds: 50));
           
         } catch (e) {
-          debugPrint('⚠️ Init command failed: $command - $e');
           return false;
         }
       }
@@ -2589,11 +2409,9 @@ your printer is working correctly!
       // Test print capability with minimal output
       await _testEpsonPrintCapabilityMinimal();
       
-      debugPrint('✅ Epson TM-M30III initialized successfully');
       return true;
       
     } catch (e) {
-      debugPrint('❌ Failed to initialize Epson TM-M30III: $e');
       return false;
     }
   }
@@ -2611,10 +2429,8 @@ your printer is working correctly!
       // Wait for status response
       await Future.delayed(const Duration(milliseconds: 100));
       
-      debugPrint('✅ Epson communication test successful');
       
     } catch (e) {
-      debugPrint('⚠️ Epson communication test failed: $e');
       // Don't throw - connection might still work for printing
     }
   }
@@ -2622,12 +2438,10 @@ your printer is working correctly!
   /// Test print to Epson TM-M30III
   Future<bool> testPrintEpsonTmM30iii({String? customMessage}) async {
     if (_wifiSocket == null || _connectedPrinter == null) {
-      debugPrint('❌ No Epson printer connected for test print');
       return false;
     }
     
     try {
-      debugPrint('🖨️ Starting test print to Epson TM-M30III...');
       
       final testContent = _generateEpsonTestReceipt(customMessage);
       final data = Uint8List.fromList(testContent.codeUnits);
@@ -2642,11 +2456,9 @@ your printer is working correctly!
           // Wait for print completion
           await Future.delayed(const Duration(seconds: 2));
           
-          debugPrint('✅ Epson test print sent successfully');
           return true;
           
         } catch (e) {
-          debugPrint('❌ Test print attempt $attempt failed: $e');
           
           if (attempt < maxRetries) {
             await Future.delayed(const Duration(milliseconds: 500));
@@ -2657,7 +2469,6 @@ your printer is working correctly!
       return false;
       
     } catch (e) {
-      debugPrint('❌ Epson test print failed: $e');
       return false;
     }
   }
@@ -2684,7 +2495,6 @@ ${customMessage ?? 'Test print successful!\nPrinter is ready for use.'}
   
   /// Quick connection test for known Epson printer
   Future<bool> quickTestEpsonConnection(String ipAddress, {int port = 9100}) async {
-    debugPrint('⚡ Quick testing Epson connection: $ipAddress:$port');
     
     Socket? socket;
     try {
@@ -2702,11 +2512,9 @@ ${customMessage ?? 'Test print successful!\nPrinter is ready for use.'}
       // Wait briefly for response
       await Future.delayed(const Duration(milliseconds: 300));
       
-      debugPrint('✅ Quick Epson test successful for $ipAddress:$port');
       return true;
       
     } catch (e) {
-      debugPrint('❌ Quick Epson test failed for $ipAddress:$port: $e');
       return false;
     } finally {
       try {
@@ -3185,7 +2993,6 @@ ${customMessage ?? 'Test print successful!\nPrinter is ready for use.'}
         }
       } catch (e) {
         // Never block printing due to transformation errors
-        debugPrint('⚠️ Failed to normalize kitchen ticket size: $e');
       }
     }
     
@@ -3195,7 +3002,6 @@ ${customMessage ?? 'Test print successful!\nPrinter is ready for use.'}
 
   /// Comprehensive Generic ESC/POS printer discovery and connection
   Future<List<PrinterDevice>> discoverGenericESCPOSPrinters() async {
-    debugPrint('🔍 Starting discovery of generic ESC/POS printers...');
     
     _discoveredPrinters.clear();
     notifyListeners();
@@ -3248,14 +3054,12 @@ ${customMessage ?? 'Test print successful!\nPrinter is ready for use.'}
       
       _discoveredPrinters.addAll(discoveredPrinters);
       
-      debugPrint('🎉 Discovery complete! Found ${_discoveredPrinters.length} generic ESC/POS printers');
       
       // FIXED: Notify about discovered printers for UI updates
       notifyListeners();
       
       return _discoveredPrinters;
     } catch (e) {
-      debugPrint('❌ Error during printer discovery: $e');
       return [];
     }
   }
@@ -3300,7 +3104,6 @@ ${customMessage ?? 'Test print successful!\nPrinter is ready for use.'}
   /// Connect to generic ESC/POS printer
   Future<bool> connectToGenericESCPOS(String ipAddress, {int port = 9100}) async {
     try {
-      debugPrint('🔗 Connecting to generic ESC/POS printer at $ipAddress:$port...');
       
       // Close existing connection if any
       if (_wifiSocket != null) {
@@ -3332,11 +3135,9 @@ ${customMessage ?? 'Test print successful!\nPrinter is ready for use.'}
       // Initialize printer
       final success = await _initializeGenericESCPOS();
       if (success) {
-        debugPrint('✅ Successfully connected to generic ESC/POS printer');
         _safeNotifyListeners();
         return true;
       } else {
-        debugPrint('❌ Failed to initialize generic ESC/POS printer');
         await _wifiSocket?.close();
         _wifiSocket = null;
         _connectedPrinter = null;
@@ -3344,7 +3145,6 @@ ${customMessage ?? 'Test print successful!\nPrinter is ready for use.'}
       }
       
     } catch (e) {
-      debugPrint('❌ Error connecting to generic ESC/POS printer: $e');
       _wifiSocket = null;
       _connectedPrinter = null;
       return false;
@@ -3370,11 +3170,9 @@ ${customMessage ?? 'Test print successful!\nPrinter is ready for use.'}
         await Future.delayed(const Duration(milliseconds: 50));
       }
       
-      debugPrint('✅ Generic ESC/POS printer initialized successfully');
       return true;
       
     } catch (e) {
-      debugPrint('❌ Error initializing generic ESC/POS printer: $e');
       return false;
     }
   }
@@ -3382,7 +3180,6 @@ ${customMessage ?? 'Test print successful!\nPrinter is ready for use.'}
   /// Test print for generic ESC/POS printer
   Future<bool> testPrintGenericESCPOS({String? customMessage}) async {
     if (_wifiSocket == null) {
-      debugPrint('❌ No printer connection for test print');
       return false;
     }
     
@@ -3419,11 +3216,9 @@ ${customMessage ?? 'Test print successful!\nPrinter is ready for use.'}
       _wifiSocket!.add(commands);
       await _wifiSocket!.flush();
       
-      debugPrint('✅ Test print sent successfully');
       return true;
       
     } catch (e) {
-      debugPrint('❌ Error sending test print: $e');
       return false;
     }
   }
@@ -3466,22 +3261,18 @@ ${customMessage ?? 'Test print successful!\nPrinter is ready for use.'}
         await socket.flush();
         await socket.close();
         
-        debugPrint('✅ Successfully sent content to printer: $printerId');
         return true;
       } else {
-        debugPrint('❌ Printer type $printerType not supported for specific printing');
         return false;
       }
       
     } catch (e) {
-      debugPrint('❌ Error printing to specific printer: $e');
       return false;
     }
   }
 
   /// Maintain printer connections during order completion
   Future<void> maintainConnectionsDuringOrderCompletion() async {
-    debugPrint('🔌 Maintaining printer connections during order completion...');
     
     // Keep existing connections alive
     for (final connection in _activeConnections.values) {
@@ -3490,10 +3281,8 @@ ${customMessage ?? 'Test print successful!\nPrinter is ready for use.'}
           // Send a keep-alive command
           final keepAliveData = Uint8List.fromList('\x1B\x40'.codeUnits); // ESC @ (initialize)
           await connection.sendData(keepAliveData);
-          debugPrint('✅ Maintained connection to ${connection.config.name}');
         }
       } catch (e) {
-        debugPrint('⚠️ Failed to maintain connection to ${connection.config.name}: $e');
         // Don't break other connections if one fails
       }
     }
@@ -3504,13 +3293,10 @@ ${customMessage ?? 'Test print successful!\nPrinter is ready for use.'}
         final keepAliveData = Uint8List.fromList('\x1B\x40'.codeUnits); // ESC @ (initialize)
         _wifiSocket!.add(keepAliveData);
         await _wifiSocket!.flush();
-        debugPrint('✅ Maintained WiFi socket connection');
       } catch (e) {
-        debugPrint('⚠️ Failed to maintain WiFi socket connection: $e');
       }
     }
     
-    debugPrint('🔌 Printer connections maintained successfully');
   }
   
   /// Check if printing service is healthy
@@ -3532,11 +3318,9 @@ ${customMessage ?? 'Test print successful!\nPrinter is ready for use.'}
   /// Reinitialize service if needed
   Future<bool> reinitializeIfNeeded() async {
     if (isHealthy) {
-      debugPrint('✅ Printing service is healthy, no reinitialization needed');
       return true;
     }
     
-    debugPrint('🔄 Printing service needs reinitialization');
     try {
       // Try to reconnect to the last known printer
       if (_connectedPrinter != null) {
@@ -3545,7 +3329,6 @@ ${customMessage ?? 'Test print successful!\nPrinter is ready for use.'}
       }
       return false;
     } catch (e) {
-      debugPrint('❌ Failed to reinitialize printing service: $e');
       return false;
     }
   }
@@ -3553,24 +3336,20 @@ ${customMessage ?? 'Test print successful!\nPrinter is ready for use.'}
   /// Immediate auto-reconnect for login scenarios
   Future<void> immediateAutoReconnect() async {
     try {
-      debugPrint('🚀 Starting immediate auto-reconnect for login...');
       
       // Get saved printer configurations
       final String? activePrintersJson = _prefs.getString(_activePrintersKey);
       if (activePrintersJson == null) {
-        debugPrint('ℹ️ No previously connected printers found');
         return;
       }
       
       final List<dynamic> printersList = jsonDecode(activePrintersJson);
-      debugPrint('📋 Found ${printersList.length} previously connected printers for immediate reconnection');
       
       // For each saved printer configuration, attempt to reconnect immediately
       for (final printerData in printersList) {
         try {
           // Validate printer data structure
           if (printerData is! Map<String, dynamic>) {
-            debugPrint('⚠️ Invalid printer data structure, skipping');
             continue;
           }
           
@@ -3582,7 +3361,6 @@ ${customMessage ?? 'Test print successful!\nPrinter is ready for use.'}
           final isActive = printerData['isActive'] as bool? ?? true;
           
           if (printerId == null || !isActive) {
-            debugPrint('⏭️ Skipping invalid or inactive printer: $printerName');
             continue;
           }
           
@@ -3599,39 +3377,30 @@ ${customMessage ?? 'Test print successful!\nPrinter is ready for use.'}
               isActive: true,
             );
           } else {
-            debugPrint('⚠️ Invalid printer configuration for $printerName, skipping');
             continue;
           }
           
-          debugPrint('🔗 Attempting immediate reconnection to $printerName ($printerType)...');
           final success = await _connectToPrinterAsync(config);
           
           if (success) {
-            debugPrint('✅ Successfully reconnected to $printerName');
           } else {
-            debugPrint('❌ Failed to reconnect to $printerName');
           }
         } catch (e) {
-          debugPrint('❌ Error reconnecting to printer: $e');
         }
       }
       
-      debugPrint('🚀 Immediate auto-reconnect process completed');
     } catch (e) {
-      debugPrint('❌ Error during immediate auto-reconnect: $e');
     }
   }
 
   /// Discover Bluetooth printers
   Future<List<PrinterDevice>> discoverBluetoothPrinters() async {
-    debugPrint('🔍 Bluetooth discovery temporarily disabled');
     return [];
   }
 
   /// URGENT: Add known Epson TM-M30II printers directly (bypass discovery)
   /// This method adds the specific Epson printers found on the network
   Future<void> addKnownEpsonPrinters() async {
-    debugPrint('🚨 URGENT: Adding known Epson TM-M30II printers directly...');
     
     _discoveredPrinters.clear();
     
@@ -3670,7 +3439,6 @@ ${customMessage ?? 'Test print successful!\nPrinter is ready for use.'}
         final ip = parts[0];
         final port = int.parse(parts[1]);
         
-        debugPrint('🔍 Testing Epson printer at $ip:$port...');
         
         // Quick connection test
         final socket = await Socket.connect(
@@ -3686,23 +3454,19 @@ ${customMessage ?? 'Test print successful!\nPrinter is ready for use.'}
         
         // If we got here, printer is responsive
         _discoveredPrinters.add(printer);
-        debugPrint('✅ Added responsive Epson printer: ${printer.name}');
         
       } catch (e) {
-        debugPrint('⚠️ Epson printer ${printer.name} not responsive: $e');
         // Still add it to the list for manual connection attempts
         _discoveredPrinters.add(printer);
       }
     }
     
-    debugPrint('🎉 Added ${_discoveredPrinters.length} known Epson TM-M30II printers');
     notifyListeners();
   }
 
   /// URGENT: Test specific Epson printer connection
   Future<bool> testEpsonPrinterConnection(String ip, int port) async {
     try {
-      debugPrint('🔍 Testing Epson TM-M30II at $ip:$port...');
       
       final socket = await Socket.connect(
         ip, 
@@ -3719,11 +3483,9 @@ ${customMessage ?? 'Test print successful!\nPrinter is ready for use.'}
       
       await socket.close();
       
-      debugPrint('✅ Epson printer at $ip:$port is responsive!');
       return true;
       
     } catch (e) {
-      debugPrint('❌ Epson printer at $ip:$port failed test: $e');
       return false;
     }
   }

@@ -60,9 +60,7 @@ class InventoryService with ChangeNotifier {
           .toList();
       
       _isInitialized = true;
-      debugPrint('InventoryService initialized with ${_items.length} items and ${_transactions.length} transactions');
     } catch (e) {
-      debugPrint('Error initializing InventoryService: $e');
       _isInitialized = true;
     }
   }
@@ -90,7 +88,6 @@ class InventoryService with ChangeNotifier {
           .toList();
       await prefs.setStringList(_inventoryRecipeLinksKey, linksJson);
     } catch (e) {
-      debugPrint('Error saving inventory data: $e');
     }
   }
 
@@ -137,7 +134,6 @@ class InventoryService with ChangeNotifier {
             .set(link.toJson(), fs.SetOptions(merge: true));
       }
     } catch (e) {
-      debugPrint('⚠️ Failed to sync recipe link: $e');
     }
     notifyListeners();
   }
@@ -159,7 +155,6 @@ class InventoryService with ChangeNotifier {
             .delete();
       }
     } catch (e) {
-      debugPrint('⚠️ Failed to sync recipe link deletion: $e');
     }
     notifyListeners();
   }
@@ -187,7 +182,6 @@ class InventoryService with ChangeNotifier {
       await _saveData();
       notifyListeners();
     } catch (e) {
-      debugPrint('❌ Failed to update recipe link from Firebase: $e');
     }
   }
 
@@ -252,7 +246,6 @@ class InventoryService with ChangeNotifier {
 
       return added;
     } catch (e) {
-      debugPrint('Error reconciling inventory with sold items: $e');
       return 0;
     }
   }
@@ -320,7 +313,6 @@ class InventoryService with ChangeNotifier {
           .firstOrNull;
       
       if (existingItem != null) {
-        debugPrint('Item with name "${item.name}" already exists');
         return false;
       }
 
@@ -332,7 +324,6 @@ class InventoryService with ChangeNotifier {
         final unifiedSyncService = UnifiedSyncService.instance;
         await unifiedSyncService.syncInventoryItemToFirebase(item, 'created');
       } catch (e) {
-        debugPrint('⚠️ Failed to sync inventory item to Firebase: $e');
       }
       
       // Safely notify listeners
@@ -341,17 +332,13 @@ class InventoryService with ChangeNotifier {
           try {
             notifyListeners();
           } catch (e) {
-            debugPrint('Error notifying listeners during add item: $e');
           }
         });
       } catch (e) {
-        debugPrint('Error scheduling notification during add item: $e');
       }
       
-      debugPrint('Added inventory item: ${item.name}');
       return true;
     } catch (e) {
-      debugPrint('Error adding inventory item: $e');
       return false;
     }
   }
@@ -361,7 +348,6 @@ class InventoryService with ChangeNotifier {
     try {
       final index = _items.indexWhere((item) => item.id == updatedItem.id);
       if (index == -1) {
-        debugPrint('Item not found: ${updatedItem.id}');
         return false;
       }
 
@@ -373,7 +359,6 @@ class InventoryService with ChangeNotifier {
           .firstOrNull;
       
       if (nameConflict != null) {
-        debugPrint('Item with name "${updatedItem.name}" already exists');
         return false;
       }
 
@@ -385,7 +370,6 @@ class InventoryService with ChangeNotifier {
         final unifiedSyncService = UnifiedSyncService.instance;
         await unifiedSyncService.syncInventoryItemToFirebase(updatedItem, 'updated');
       } catch (e) {
-        debugPrint('⚠️ Failed to sync inventory item to Firebase: $e');
       }
       
       // Safely notify listeners
@@ -394,17 +378,13 @@ class InventoryService with ChangeNotifier {
           try {
             notifyListeners();
           } catch (e) {
-            debugPrint('Error notifying listeners during update item: $e');
           }
         });
       } catch (e) {
-        debugPrint('Error scheduling notification during update item: $e');
       }
       
-      debugPrint('Updated inventory item: ${updatedItem.name}');
       return true;
     } catch (e) {
-      debugPrint('Error updating inventory item: $e');
       return false;
     }
   }
@@ -414,7 +394,6 @@ class InventoryService with ChangeNotifier {
     try {
       final index = _items.indexWhere((item) => item.id == id);
       if (index == -1) {
-        debugPrint('Item not found: $id');
         return false;
       }
 
@@ -431,13 +410,10 @@ class InventoryService with ChangeNotifier {
         final unifiedSyncService = UnifiedSyncService.instance;
         await unifiedSyncService.syncInventoryItemToFirebase(item, 'deleted');
       } catch (e) {
-        debugPrint('⚠️ Failed to sync inventory item deletion to Firebase: $e');
       }
       
-      debugPrint('Deleted inventory item: ${item.name}');
       return true;
     } catch (e) {
-      debugPrint('Error deleting inventory item: $e');
       return false;
     }
   }
@@ -452,10 +428,8 @@ class InventoryService with ChangeNotifier {
         } else {
           await syncService.createOrUpdateInventoryItem(item);
         }
-        debugPrint('🔄 Inventory item auto-synced to Firebase: ${item.name} ($action)');
       }
     } catch (e) {
-      debugPrint('⚠️ Failed to auto-sync inventory item to Firebase: $e');
     }
   }
 
@@ -470,7 +444,6 @@ class InventoryService with ChangeNotifier {
     try {
       final itemIndex = _items.indexWhere((item) => item.id == itemId);
       if (itemIndex == -1) {
-        debugPrint('Item not found: $itemId');
         return false;
       }
 
@@ -488,12 +461,10 @@ class InventoryService with ChangeNotifier {
           newStock -= quantity;
           break;
         default:
-          debugPrint('Invalid transaction type: $type');
           return false;
       }
 
       if (newStock < 0) {
-        debugPrint('Stock cannot be negative');
         return false;
       }
 
@@ -517,10 +488,8 @@ class InventoryService with ChangeNotifier {
       _transactions.add(transaction);
 
       await _saveData();
-      debugPrint('Stock adjusted for ${item.name}: $type $quantity ${item.unitDisplay}');
       return true;
     } catch (e) {
-      debugPrint('Error adjusting stock: $e');
       return false;
     }
   }
@@ -659,7 +628,6 @@ class InventoryService with ChangeNotifier {
   /// Load sample inventory data for demonstration.
   Future<void> loadSampleData() async {
     if (_items.isNotEmpty) {
-      debugPrint('Sample data already loaded');
       return;
     }
 
@@ -762,7 +730,6 @@ class InventoryService with ChangeNotifier {
     await useStock(sampleItems[1].id, 2.0, reason: 'Kitchen usage');
     await recordWaste(sampleItems[2].id, 0.5, reason: 'Expired');
 
-    debugPrint('Sample inventory data loaded successfully');
   }
 
   /// Clear all data (for testing).
@@ -770,17 +737,14 @@ class InventoryService with ChangeNotifier {
     _items.clear();
     _transactions.clear();
     await _saveData();
-    debugPrint('All inventory data cleared');
   }
 
   /// Update inventory after order completion - Critical Feature Implementation
   Future<bool> updateInventoryOnOrderCompletion(Order order) async {
     try {
       await initialize();
-      debugPrint('📦 Starting inventory update for completed order: ${order.orderNumber}');
       
       if (order.status != OrderStatus.completed) {
-        debugPrint('⚠️ Cannot update inventory - order is not completed: ${order.status}');
         return false;
       }
 
@@ -791,7 +755,6 @@ class InventoryService with ChangeNotifier {
       for (final orderItem in order.items) {
         // Skip voided or comped items
         if (orderItem.voided == true || orderItem.comped == true) {
-          debugPrint('⏭️ Skipping voided/comped item: ${orderItem.menuItem.name}');
           continue;
         }
 
@@ -824,7 +787,6 @@ class InventoryService with ChangeNotifier {
           final inventoryItem = _findInventoryItemForMenuItem(orderItem.menuItem);
           if (inventoryItem != null) {
             if (getLinksForInventoryItem(inventoryItem.id).isEmpty) {
-              debugPrint('ℹ️ No recipe link for ${inventoryItem.name}; using 1:1 deduction for ${orderItem.menuItem.name}');
             }
             final quantityToDeduct = orderItem.quantity.toDouble();
             final available = inventoryItem.currentStock;
@@ -843,7 +805,6 @@ class InventoryService with ChangeNotifier {
               }
             }
           } else {
-            debugPrint('⚠️ No inventory item found for menu item: ${orderItem.menuItem.name}');
           }
         }
       }
@@ -857,22 +818,17 @@ class InventoryService with ChangeNotifier {
           try {
             notifyListeners();
           } catch (e) {
-            debugPrint('Error notifying inventory listeners: $e');
           }
         });
 
-        debugPrint('📦 Inventory updated successfully for order ${order.orderNumber}:');
         for (final update in stockUpdates) {
-          debugPrint('  • $update');
         }
 
         return true;
       } else {
-        debugPrint('📦 No inventory updates were made for order ${order.orderNumber}');
         return false;
       }
     } catch (e) {
-      debugPrint('❌ Error updating inventory for order ${order.orderNumber}: $e');
       return false;
     }
   }
@@ -914,7 +870,6 @@ class InventoryService with ChangeNotifier {
     try {
       final itemIndex = _items.indexWhere((item) => item.id == inventoryItemId);
       if (itemIndex == -1) {
-        debugPrint('Inventory item not found: $inventoryItemId');
         return false;
       }
 
@@ -943,18 +898,14 @@ class InventoryService with ChangeNotifier {
       );
       _transactions.add(transaction);
 
-      debugPrint('📦 Stock deducted for ${item.name}: -$quantity ${item.unitDisplay} (New stock: $newStock)');
       
       // Check for low stock alerts
       if (newStock <= item.minimumStock && newStock > 0) {
-        debugPrint('⚠️ LOW STOCK ALERT: ${item.name} - Current: $newStock ${item.unitDisplay}, Minimum: ${item.minimumStock}');
       } else if (newStock <= 0) {
-        debugPrint('🚨 OUT OF STOCK: ${item.name} - Current: $newStock ${item.unitDisplay}');
       }
 
       return true;
     } catch (e) {
-      debugPrint('Error deducting stock: $e');
       return false;
     }
   }
@@ -962,7 +913,6 @@ class InventoryService with ChangeNotifier {
   /// Update inventory item from Firebase (for cross-device sync)
   Future<void> updateItemFromFirebase(InventoryItem firebaseItem) async {
     try {
-      debugPrint('🔄 Updating inventory item from Firebase: ${firebaseItem.name}');
       
       // Check if item already exists locally
       final existingIndex = _items.indexWhere((item) => item.id == firebaseItem.id);
@@ -970,27 +920,22 @@ class InventoryService with ChangeNotifier {
       if (existingIndex != -1) {
         // Update existing item
         _items[existingIndex] = firebaseItem;
-        debugPrint('🔄 Updated existing inventory item from Firebase: ${firebaseItem.name}');
       } else {
         // Add new item from Firebase
         _items.add(firebaseItem);
-        debugPrint('➕ Added new inventory item from Firebase: ${firebaseItem.name}');
       }
       
       // Save to local storage
       await _saveData();
       
-      debugPrint('✅ Inventory item updated from Firebase: ${firebaseItem.name}');
       notifyListeners();
     } catch (e) {
-      debugPrint('❌ Failed to update inventory item from Firebase: $e');
     }
   }
 
   /// Clear all inventory items from memory and database
   Future<void> clearAllItems() async {
     try {
-      debugPrint('🗑️ Clearing all inventory items...');
       
       // Clear from memory
       _items.clear();
@@ -1007,10 +952,8 @@ class InventoryService with ChangeNotifier {
         await prefs.remove(_inventoryRecipeLinksKey);
       }
       
-      debugPrint('✅ All inventory items cleared');
       notifyListeners();
     } catch (e) {
-      debugPrint('❌ Error clearing inventory items: $e');
       rethrow;
     }
   }

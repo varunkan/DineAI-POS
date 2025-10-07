@@ -46,16 +46,12 @@ class PaymentService with ChangeNotifier {
           try {
             notifyListeners();
           } catch (e) {
-            debugPrint('Error notifying listeners during process payment: $e');
           }
         });
       } catch (e) {
-        debugPrint('Error scheduling notification during process payment: $e');
       }
       
-      debugPrint('Payment processed for order: ${order.orderNumber}');
     } catch (e) {
-      debugPrint('Payment failed: $e');
       // Optionally update order/payment status to failed
       // ...
       rethrow;
@@ -79,16 +75,12 @@ class PaymentService with ChangeNotifier {
           try {
             notifyListeners();
           } catch (e) {
-            debugPrint('Error notifying listeners during refund payment: $e');
           }
         });
       } catch (e) {
-        debugPrint('Error scheduling notification during refund payment: $e');
       }
       
-      debugPrint('Payment refunded for order: ${order.orderNumber}');
     } catch (e) {
-      debugPrint('Refund failed: $e');
       rethrow;
     }
   }

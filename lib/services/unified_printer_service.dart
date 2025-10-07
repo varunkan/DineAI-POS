@@ -111,7 +111,6 @@ class UnifiedPrinterService extends ChangeNotifier {
   Future<bool> initialize({String? cloudEndpoint, String? restaurantId}) async {
     if (_isInitialized) return true;
     
-    debugPrint('$_logTag 🚀 Initializing World\'s Most Advanced Printer System...');
     
     try {
       _cloudEndpoint = cloudEndpoint;
@@ -139,13 +138,9 @@ class UnifiedPrinterService extends ChangeNotifier {
       _isInitialized = true;
       notifyListeners();
       
-      debugPrint('$_logTag ✅ Advanced Printer System initialized successfully!');
-      debugPrint('$_logTag 📊 Loaded ${_printers.length} printers, ${_assignments.length} assignments');
-      debugPrint('$_logTag ☁️ Cloud sync: ${_cloudSyncEnabled ? "ENABLED" : "DISABLED"}');
       
       return true;
     } catch (e) {
-      debugPrint('$_logTag ❌ Initialization failed: $e');
       return false;
     }
   }
@@ -232,7 +227,6 @@ class UnifiedPrinterService extends ChangeNotifier {
     await db.execute('CREATE INDEX IF NOT EXISTS idx_print_stats_printer ON print_statistics(printer_id)');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_print_stats_time ON print_statistics(print_time)');
     
-    debugPrint('$_logTag ✅ Enhanced database schema initialized');
   }
   
   /// Load printers from database
@@ -268,9 +262,7 @@ class UnifiedPrinterService extends ChangeNotifier {
           : null,
       )).toList();
       
-      debugPrint('$_logTag 📥 Loaded ${_printers.length} printers from database');
     } catch (e) {
-      debugPrint('$_logTag ❌ Error loading printers: $e');
       _printers = [];
     }
   }
@@ -298,9 +290,7 @@ class UnifiedPrinterService extends ChangeNotifier {
         isActive: (row['is_active'] as int? ?? 1) == 1,
       )).toList();
       
-      debugPrint('$_logTag 📥 Loaded ${_assignments.length} assignments from database');
     } catch (e) {
-      debugPrint('$_logTag ❌ Error loading assignments: $e');
       _assignments = [];
     }
   }
@@ -318,13 +308,11 @@ class UnifiedPrinterService extends ChangeNotifier {
       }
     }
     
-    debugPrint('$_logTag 🗺️ Assignment maps rebuilt: ${_categoryToPrinters.length} categories, ${_menuItemToPrinters.length} items');
   }
   
   /// Start printer discovery
   /// FIXED: Removed automatic discovery - only manual discovery available
   Future<void> _startPrinterDiscovery() async {
-    debugPrint('$_logTag 🔄 Automatic discovery disabled - only manual discovery available');
     // No automatic discovery - only manual discovery on user request
   }
   
@@ -340,12 +328,10 @@ class UnifiedPrinterService extends ChangeNotifier {
       final wifiIP = await networkInfo.getWifiIP();
       
       if (wifiIP == null) {
-        debugPrint('$_logTag ⚠️ No WiFi connection detected');
         return;
       }
       
       final subnet = wifiIP.split('.').take(3).join('.');
-      debugPrint('$_logTag 🌐 Quick scanning subnet: $subnet.x');
       
       // Common printer ports
       const ports = [9100, 515, 631];
@@ -364,7 +350,6 @@ class UnifiedPrinterService extends ChangeNotifier {
       for (int i = 140; i <= 170; i++) commonIPs.add('$subnet.$i'); // Extended to include 141, 147
       for (int i = 10; i <= 30; i++) commonIPs.add('$subnet.$i');
       
-      debugPrint('$_logTag 🔍 Scanning ${commonIPs.length} common printer IPs...');
       
       // Scan with timeout
       final scanTimeout = const Duration(seconds: 15);
@@ -372,7 +357,6 @@ class UnifiedPrinterService extends ChangeNotifier {
       
       for (final ip in commonIPs) {
         if (stopwatch.elapsed > scanTimeout) {
-          debugPrint('$_logTag ⏰ Scan timeout reached');
           break;
         }
         
@@ -381,7 +365,6 @@ class UnifiedPrinterService extends ChangeNotifier {
             final config = await _checkPrinterAt(ip, port);
             if (config != null) {
               discovered.add(config);
-              debugPrint('$_logTag 🖨️ Found printer: ${config.name} at ${config.ipAddress}:${config.port}');
             }
           } catch (e) {
             // Continue scanning
@@ -397,10 +380,8 @@ class UnifiedPrinterService extends ChangeNotifier {
       }
       
       stopwatch.stop();
-      debugPrint('$_logTag ✅ Quick scan completed in ${stopwatch.elapsedMilliseconds}ms. Found ${discovered.length} new printers');
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Discovery error: $e');
     } finally {
       _isScanning = false;
       notifyListeners();
@@ -438,7 +419,6 @@ class UnifiedPrinterService extends ChangeNotifier {
   /// Perform health check on all printers
   Future<void> _performHealthCheck() async {
     try {
-      debugPrint('$_logTag 💗 Performing health check on ${_printers.length} printers...');
       
       for (final printer in _printers.where((p) => p.isActive)) {
         final isHealthy = await _checkPrinterHealth(printer);
@@ -447,7 +427,6 @@ class UnifiedPrinterService extends ChangeNotifier {
       
       notifyListeners();
     } catch (e) {
-      debugPrint('$_logTag ❌ Health check error: $e');
     }
   }
   
@@ -495,7 +474,6 @@ class UnifiedPrinterService extends ChangeNotifier {
         );
       }
     } catch (e) {
-      debugPrint('$_logTag ❌ Error updating printer status: $e');
     }
   }
   
@@ -503,7 +481,6 @@ class UnifiedPrinterService extends ChangeNotifier {
   void _startCloudSync() {
     if (!_cloudSyncEnabled || _cloudEndpoint == null) return;
     
-    debugPrint('$_logTag ☁️ Starting cloud synchronization...');
     
     // Initial sync
     _performCloudSync();
@@ -519,7 +496,6 @@ class UnifiedPrinterService extends ChangeNotifier {
     if (!_cloudSyncEnabled || _cloudEndpoint == null || _restaurantId == null) return;
     
     try {
-      debugPrint('$_logTag ☁️ Syncing to cloud...');
       
       // Prepare sync data
       final syncData = {
@@ -554,13 +530,11 @@ class UnifiedPrinterService extends ChangeNotifier {
       if (response.statusCode == 200) {
         _lastCloudSync = DateTime.now();
         await _updateCloudSyncMetadata('success', null);
-        debugPrint('$_logTag ✅ Cloud sync successful');
       } else {
         throw Exception('HTTP ${response.statusCode}: ${response.body}');
       }
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Cloud sync failed: $e');
       await _updateCloudSyncMetadata('failed', e.toString());
     }
     
@@ -593,7 +567,6 @@ class UnifiedPrinterService extends ChangeNotifier {
       ]);
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error updating sync metadata: $e');
     }
   }
   
@@ -625,10 +598,8 @@ class UnifiedPrinterService extends ChangeNotifier {
       _printers.add(printer);
       notifyListeners();
       
-      debugPrint('$_logTag ✅ Added printer: ${printer.name}');
       return true;
     } catch (e) {
-      debugPrint('$_logTag ❌ Error adding printer: $e');
       return false;
     }
   }
@@ -655,10 +626,8 @@ class UnifiedPrinterService extends ChangeNotifier {
       _rebuildAssignmentMaps();
       notifyListeners();
       
-      debugPrint('$_logTag ✅ Added assignment: ${assignment.targetName} → ${assignment.printerId}');
       return true;
     } catch (e) {
-      debugPrint('$_logTag ❌ Error adding assignment: $e');
       return false;
     }
   }
@@ -682,12 +651,10 @@ class UnifiedPrinterService extends ChangeNotifier {
       // Rebuild maps
       _rebuildAssignmentMaps();
       
-      debugPrint('$_logTag ✅ Assignment removed successfully');
       notifyListeners();
       return true;
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error removing assignment: $e');
       return false;
     }
   }
@@ -707,7 +674,6 @@ class UnifiedPrinterService extends ChangeNotifier {
     final results = <String, bool>{};
     
     try {
-      debugPrint('$_logTag 🖨️ Processing order ${order.orderNumber} with enhanced formatting...');
       
       // Group items by assigned printers
       final itemsByPrinter = <String, List<OrderItem>>{};
@@ -731,7 +697,6 @@ class UnifiedPrinterService extends ChangeNotifier {
         }
       }
       
-      debugPrint('$_logTag 📋 Order distributed to ${itemsByPrinter.length} printers');
       
       // Print to each assigned printer with sequential processing
       for (final entry in itemsByPrinter.entries) {
@@ -748,13 +713,11 @@ class UnifiedPrinterService extends ChangeNotifier {
           // Update statistics
           await _recordPrintStatistic(printerId, order.id, success, null);
           
-          debugPrint('$_logTag ${success ? "✅" : "❌"} ${printer.name}: ${items.length} items');
           
           // Small delay between printers to prevent conflicts
           await Future.delayed(const Duration(milliseconds: 500));
           
         } catch (e) {
-          debugPrint('$_logTag ❌ Error printing to ${printer.name}: $e');
           results[printerId] = false;
           await _recordPrintStatistic(printerId, order.id, false, e.toString());
         }
@@ -770,12 +733,10 @@ class UnifiedPrinterService extends ChangeNotifier {
       
       notifyListeners();
       
-      debugPrint('$_logTag 📊 Print completed: ${results.values.where((s) => s).length}/${results.length} successful');
       
       return results;
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error printing order: $e');
       _failedPrints++;
       notifyListeners();
       return results;
@@ -802,7 +763,6 @@ class UnifiedPrinterService extends ChangeNotifier {
       
       return true;
     } catch (e) {
-      debugPrint('$_logTag ❌ Error printing to ${printer.name}: $e');
       return false;
     }
   }
@@ -925,7 +885,6 @@ class UnifiedPrinterService extends ChangeNotifier {
       _printerStats[printerId] = (_printerStats[printerId] ?? 0) + 1;
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error recording print statistic: $e');
     }
   }
   
@@ -935,7 +894,6 @@ class UnifiedPrinterService extends ChangeNotifier {
       final printer = _printers.where((p) => p.id == printerId).firstOrNull;
       if (printer == null) return false;
       
-      debugPrint('$_logTag 🧪 Testing printer: ${printer.name}');
       
       final socket = await Socket.connect(
         printer.ipAddress, 
@@ -950,12 +908,10 @@ class UnifiedPrinterService extends ChangeNotifier {
       await socket.close();
       
       await _updatePrinterStatus(printerId, 'connected');
-      debugPrint('$_logTag ✅ Test successful: ${printer.name}');
       return true;
       
     } catch (e) {
       await _updatePrinterStatus(printerId, 'offline');
-      debugPrint('$_logTag ❌ Test failed: $e');
       return false;
     }
   }
@@ -1016,7 +972,6 @@ class UnifiedPrinterService extends ChangeNotifier {
 
   /// URGENT: Add known Epson TM-M30II printers directly
   Future<void> addKnownEpsonPrinters() async {
-    debugPrint('$_logTag 🚨 Adding known Epson TM-M30II printers directly...');
     
     try {
       // Your specific Epson TM-M30II printers
@@ -1063,16 +1018,12 @@ class UnifiedPrinterService extends ChangeNotifier {
         
         if (!exists) {
           await addPrinter(printer);
-          debugPrint('$_logTag ✅ Added Epson printer: ${printer.name}');
         } else {
-          debugPrint('$_logTag ℹ️ Epson printer already exists: ${printer.name}');
         }
       }
       
-      debugPrint('$_logTag 🎉 Epson TM-M30II printers setup complete');
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error adding Epson printers: $e');
       rethrow;
     }
   }
@@ -1130,7 +1081,6 @@ class UnifiedPrinterService extends ChangeNotifier {
       _assignments.removeWhere((a) => a.printerId == printerId);
       notifyListeners();
     } catch (e) {
-      debugPrint('$_logTag ❌ Error removing printer: $e');
     }
   }
   
@@ -1201,7 +1151,6 @@ class UnifiedPrinterService extends ChangeNotifier {
       final db = await _databaseService.database;
       await db?.insert('unified_assignments', assignment.toJson());
     } catch (e) {
-      debugPrint('$_logTag ❌ Error saving assignment: $e');
     }
   }
   

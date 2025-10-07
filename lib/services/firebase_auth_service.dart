@@ -25,7 +25,6 @@ class FirebaseAuthService extends ChangeNotifier {
     try {
       // Check if Firebase is initialized
       if (!FirebaseConfig.isInitialized) {
-        print('⚠️ Firebase not initialized - auth service will be limited');
         return;
       }
       
@@ -38,9 +37,7 @@ class FirebaseAuthService extends ChangeNotifier {
         await _loadUserProfile();
       }
       
-      print('✅ Firebase Auth Service initialized');
     } catch (e) {
-      print('❌ Firebase Auth Service initialization failed: $e');
       // Don't rethrow - allow app to continue in offline mode
     }
   }
@@ -63,7 +60,6 @@ class FirebaseAuthService extends ChangeNotifier {
       
       final usersCollection = FirebaseConfig.usersCollection;
       if (usersCollection == null) {
-        print('⚠️ Users collection not available');
         return;
       }
       
@@ -75,7 +71,6 @@ class FirebaseAuthService extends ChangeNotifier {
         }
       }
     } catch (e) {
-      print('❌ Error loading user profile: $e');
     }
   }
   
@@ -86,13 +81,11 @@ class FirebaseAuthService extends ChangeNotifier {
       
       final usersCollection = FirebaseConfig.usersCollection;
       if (usersCollection == null) {
-        print('⚠️ Users collection not available');
         return;
       }
       
       await usersCollection.doc(_userProfile!.id).set(_userProfile!.toJson());
     } catch (e) {
-      print('❌ Error saving user profile: $e');
     }
   }
   
@@ -117,7 +110,6 @@ class FirebaseAuthService extends ChangeNotifier {
       
       return credential;
     } catch (e) {
-      print('❌ Error signing in: $e');
       rethrow;
     }
   }
@@ -143,7 +135,6 @@ class FirebaseAuthService extends ChangeNotifier {
       
       return credential;
     } catch (e) {
-      print('❌ Error creating user: $e');
       rethrow;
     }
   }
@@ -159,7 +150,6 @@ class FirebaseAuthService extends ChangeNotifier {
       _userProfile = null;
       notifyListeners();
     } catch (e) {
-      print('❌ Error signing out: $e');
     }
   }
   
@@ -170,7 +160,6 @@ class FirebaseAuthService extends ChangeNotifier {
       await saveUserProfile();
       notifyListeners();
     } catch (e) {
-      print('❌ Error updating user profile: $e');
     }
   }
   
@@ -179,7 +168,6 @@ class FirebaseAuthService extends ChangeNotifier {
     try {
       final usersCollection = FirebaseConfig.usersCollection;
       if (usersCollection == null) {
-        print('⚠️ Users collection not available');
         return null;
       }
       
@@ -192,7 +180,6 @@ class FirebaseAuthService extends ChangeNotifier {
       }
       return null;
     } catch (e) {
-      print('❌ Error getting user: $e');
       return null;
     }
   }
@@ -202,7 +189,6 @@ class FirebaseAuthService extends ChangeNotifier {
     try {
       final usersCollection = FirebaseConfig.usersCollection;
       if (usersCollection == null) {
-        print('⚠️ Users collection not available');
         return [];
       }
       
@@ -219,7 +205,6 @@ class FirebaseAuthService extends ChangeNotifier {
           .cast<app_user.User>()
           .toList();
     } catch (e) {
-      print('❌ Error getting users: $e');
       return [];
     }
   }
@@ -229,7 +214,6 @@ class FirebaseAuthService extends ChangeNotifier {
     try {
       final usersCollection = FirebaseConfig.usersCollection;
       if (usersCollection == null) {
-        print('⚠️ Users collection not available');
         return [];
       }
       
@@ -249,7 +233,6 @@ class FirebaseAuthService extends ChangeNotifier {
           .cast<app_user.User>()
           .toList();
     } catch (e) {
-      print('❌ Error getting users by restaurant: $e');
       return [];
     }
   }
@@ -259,13 +242,11 @@ class FirebaseAuthService extends ChangeNotifier {
     try {
       final usersCollection = FirebaseConfig.usersCollection;
       if (usersCollection == null) {
-        print('⚠️ Users collection not available');
         return;
       }
       
       await usersCollection.doc(user.id).set(user.toJson());
     } catch (e) {
-      print('❌ Error saving user: $e');
     }
   }
   
@@ -274,15 +255,12 @@ class FirebaseAuthService extends ChangeNotifier {
     try {
       final usersCollection = FirebaseConfig.usersCollection;
       if (usersCollection == null) {
-        print('⚠️ Users collection not available');
         return false;
       }
       
       await usersCollection.doc(user.id).set(user.toJson());
-      print('✅ User created successfully');
       return true;
     } catch (e) {
-      print('❌ Error creating user: $e');
       return false;
     }
   }
@@ -292,7 +270,6 @@ class FirebaseAuthService extends ChangeNotifier {
     try {
       final usersCollection = FirebaseConfig.usersCollection;
       if (usersCollection == null) {
-        print('⚠️ Users collection not available');
         return;
       }
       
@@ -305,9 +282,7 @@ class FirebaseAuthService extends ChangeNotifier {
       );
       
       await usersCollection.doc(user.id).set(user.toJson());
-      print('✅ User created successfully');
     } catch (e) {
-      print('❌ Create user failed: $e');
       rethrow;
     }
   }
@@ -320,12 +295,10 @@ class FirebaseAuthService extends ChangeNotifier {
         _userProfile = user.copyWith(lastLogin: DateTime.now());
         await saveUserProfile();
         notifyListeners();
-        print('✅ PIN sign in successful');
         return user;
       }
       return null;
     } catch (e) {
-      print('❌ PIN sign in failed: $e');
       return null;
     }
   }

@@ -84,7 +84,6 @@ class TenantPrinterService extends ChangeNotifier {
   /// Initialize the tenant printer service
   Future<bool> initialize({required String tenantId, required String restaurantId}) async {
     try {
-      debugPrint('$_logTag 🚀 Initializing tenant printer service for tenant: $tenantId');
       
       _currentTenantId = tenantId;
       _currentRestaurantId = restaurantId;
@@ -115,11 +114,9 @@ class TenantPrinterService extends ChangeNotifier {
       _isInitialized = true;
       notifyListeners();
       
-      debugPrint('$_logTag ✅ Tenant printer service initialized successfully');
       return true;
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error initializing tenant printer service: $e');
       return false;
     }
   }
@@ -188,10 +185,8 @@ class TenantPrinterService extends ChangeNotifier {
         )
       ''');
       
-      debugPrint('$_logTag ✅ Tenant printer tables created successfully');
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error creating tenant printer tables: $e');
     }
   }
   
@@ -239,10 +234,8 @@ class TenantPrinterService extends ChangeNotifier {
           : {},
       )).toList();
       
-      debugPrint('$_logTag 📥 Loaded ${_tenantPrinters.length} tenant printers');
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error loading tenant printers: $e');
       _tenantPrinters = [];
     }
   }
@@ -275,10 +268,8 @@ class TenantPrinterService extends ChangeNotifier {
         isActive: (row['is_active'] as int? ?? 1) == 1,
       )).toList();
       
-      debugPrint('$_logTag 📥 Loaded ${_tenantAssignments.length} tenant assignments');
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error loading tenant assignments: $e');
       _tenantAssignments = [];
     }
   }
@@ -302,10 +293,8 @@ class TenantPrinterService extends ChangeNotifier {
         _printerPublicIPs[printerId] = publicIP;
       }
       
-      debugPrint('$_logTag 📥 Loaded ${_printerPublicIPs.length} printer public IP mappings');
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error loading printer public IPs: $e');
       _printerPublicIPs.clear();
     }
   }
@@ -313,7 +302,6 @@ class TenantPrinterService extends ChangeNotifier {
   /// Discover WiFi printers on tenant's network
   Future<List<DiscoveredPrinter>> discoverWiFiPrinters() async {
     if (_isScanning) {
-      debugPrint('$_logTag ⚠️ Already scanning for printers');
       return _discoveredPrinters;
     }
     
@@ -322,17 +310,14 @@ class TenantPrinterService extends ChangeNotifier {
     notifyListeners();
     
     try {
-      debugPrint('$_logTag 🔍 Starting WiFi printer discovery for tenant: $_currentTenantId');
       
       // Get current WiFi network info
       final wifiIP = await _getCurrentWiFiIP();
       if (wifiIP == null) {
-        debugPrint('$_logTag ⚠️ No WiFi connection detected');
         return [];
       }
       
       final subnet = wifiIP.split('.').take(3).join('.');
-      debugPrint('$_logTag 🌐 Scanning subnet: $subnet.x for tenant: $_currentTenantId');
       
       // Common printer ports
       const ports = [9100, 515, 631, 9101, 9102];
@@ -349,7 +334,6 @@ class TenantPrinterService extends ChangeNotifier {
       final yourIP = wifiIP.split('.').last;
       priorityIPs.removeWhere((ip) => ip.endsWith('.$yourIP'));
       
-      debugPrint('$_logTag 🔍 Scanning ${priorityIPs.length} priority IPs for tenant: $_currentTenantId');
       
       // Scan priority IPs
       for (final ip in priorityIPs) {
@@ -358,7 +342,6 @@ class TenantPrinterService extends ChangeNotifier {
             final printer = await _testPrinterConnection(ip, port);
             if (printer != null) {
               _discoveredPrinters.add(printer);
-              debugPrint('$_logTag 🖨️ Found printer: ${printer.name} at ${printer.ipAddress}:${printer.port} for tenant: $_currentTenantId');
             }
           } catch (e) {
             // Continue scanning
@@ -366,10 +349,8 @@ class TenantPrinterService extends ChangeNotifier {
         }
       }
       
-      debugPrint('$_logTag ✅ WiFi discovery completed. Found ${_discoveredPrinters.length} printers for tenant: $_currentTenantId');
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error during WiFi discovery: $e');
     } finally {
       _isScanning = false;
       notifyListeners();
@@ -452,7 +433,6 @@ class TenantPrinterService extends ChangeNotifier {
       }
       return null;
     } catch (e) {
-      debugPrint('$_logTag ❌ Error getting WiFi IP: $e');
       return null;
     }
   }
@@ -460,7 +440,6 @@ class TenantPrinterService extends ChangeNotifier {
   /// ENHANCED: Add discovered printer to tenant with Firebase sync
   Future<bool> addDiscoveredPrinter(DiscoveredPrinter printer) async {
     try {
-      debugPrint('$_logTag ➕ Adding discovered printer: ${printer.name} to tenant: $_currentTenantId');
       
       // Identify public IP for the printer
       final publicIP = await _identifyPublicIP(printer.ipAddress);
@@ -486,7 +465,6 @@ class TenantPrinterService extends ChangeNotifier {
       if (publicIP != null) {
         await _savePrinterPublicIP(config.id, printer.ipAddress, publicIP);
         _printerPublicIPs[config.id] = publicIP;
-        debugPrint('$_logTag 🌐 Identified public IP for printer: $publicIP');
       }
       
       // CRITICAL: Sync to Firebase for cross-device availability
@@ -497,11 +475,9 @@ class TenantPrinterService extends ChangeNotifier {
       
       notifyListeners();
       
-      debugPrint('$_logTag ✅ Successfully added printer: ${config.name} to tenant: $_currentTenantId and synced to Firebase');
       return true;
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error adding discovered printer: $e');
       return false;
     }
   }
@@ -517,7 +493,6 @@ class TenantPrinterService extends ChangeNotifier {
       
       if (response.statusCode == 200) {
         final publicIP = response.body.trim();
-        debugPrint('$_logTag 🌐 Identified public IP: $publicIP for local IP: $localIP');
         return publicIP;
       }
       
@@ -530,14 +505,12 @@ class TenantPrinterService extends ChangeNotifier {
       if (response2.statusCode == 200) {
         final data = jsonDecode(response2.body);
         final publicIP = data['origin'] as String;
-        debugPrint('$_logTag 🌐 Identified public IP (alt): $publicIP for local IP: $localIP');
         return publicIP;
       }
       
       return null;
       
     } catch (e) {
-      debugPrint('$_logTag ⚠️ Could not identify public IP for $localIP: $e');
       return null;
     }
   }
@@ -568,10 +541,8 @@ class TenantPrinterService extends ChangeNotifier {
         'updated_at': DateTime.now().toIso8601String(),
       });
       
-      debugPrint('$_logTag 💾 Saved tenant printer: ${config.name}');
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error saving tenant printer: $e');
     }
   }
   
@@ -590,17 +561,14 @@ class TenantPrinterService extends ChangeNotifier {
         'last_updated': DateTime.now().toIso8601String(),
       }, conflictAlgorithm: ConflictAlgorithm.replace);
       
-      debugPrint('$_logTag 💾 Saved printer public IP mapping: $printerId -> $publicIP');
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error saving printer public IP: $e');
     }
   }
   
   /// Assign category to printer for current tenant
   Future<bool> assignCategoryToPrinter(String categoryId, String categoryName, String printerId) async {
     try {
-      debugPrint('$_logTag 🎯 Assigning category: $categoryName to printer: $printerId for tenant: $_currentTenantId');
       
       final printer = _tenantPrinters.firstWhere((p) => p.id == printerId);
       
@@ -623,11 +591,9 @@ class TenantPrinterService extends ChangeNotifier {
       
       notifyListeners();
       
-      debugPrint('$_logTag ✅ Successfully assigned category: $categoryName to printer: ${printer.name}');
       return true;
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error assigning category to printer: $e');
       return false;
     }
   }
@@ -635,7 +601,6 @@ class TenantPrinterService extends ChangeNotifier {
   /// Assign menu item to printer for current tenant
   Future<bool> assignMenuItemToPrinter(String menuItemId, String menuItemName, String printerId) async {
     try {
-      debugPrint('$_logTag 🎯 Assigning menu item: $menuItemName to printer: $printerId for tenant: $_currentTenantId');
       
       final printer = _tenantPrinters.firstWhere((p) => p.id == printerId);
       
@@ -658,11 +623,9 @@ class TenantPrinterService extends ChangeNotifier {
       
       notifyListeners();
       
-      debugPrint('$_logTag ✅ Successfully assigned menu item: $menuItemName to printer: ${printer.name}');
       return true;
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error assigning menu item to printer: $e');
       return false;
     }
   }
@@ -692,10 +655,8 @@ class TenantPrinterService extends ChangeNotifier {
       // CRITICAL: Sync to Firebase for cross-device availability
       await _syncPrinterAssignmentToFirebase(assignment);
       
-      debugPrint('$_logTag 💾 Saved tenant assignment: ${assignment.targetName} -> ${assignment.printerName} and synced to Firebase');
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error saving tenant assignment: $e');
     }
   }
   
@@ -712,7 +673,6 @@ class TenantPrinterService extends ChangeNotifier {
     
     if (menuItemAssignments.isNotEmpty) {
       result.addAll(menuItemAssignments);
-      debugPrint('$_logTag 🎯 Found ${menuItemAssignments.length} specific assignments for menu item: $menuItemId');
     }
     
     // Priority 2: Category assignments (if no specific menu item assignments)
@@ -725,7 +685,6 @@ class TenantPrinterService extends ChangeNotifier {
       
       if (categoryAssignments.isNotEmpty) {
         result.addAll(categoryAssignments);
-        debugPrint('$_logTag 📂 Found ${categoryAssignments.length} category assignments for: $categoryId');
       }
     }
     
@@ -738,7 +697,6 @@ class TenantPrinterService extends ChangeNotifier {
   /// Print order to tenant's assigned printers
   Future<Map<String, bool>> printOrderToTenantPrinters(Order order) async {
     try {
-      debugPrint('$_logTag 🖨️ Printing order ${order.orderNumber} to tenant printers: $_currentTenantId');
       
       final Map<String, List<OrderItem>> itemsByPrinter = {};
       
@@ -757,19 +715,16 @@ class TenantPrinterService extends ChangeNotifier {
               itemsByPrinter[printerId] = [];
             }
             itemsByPrinter[printerId]!.add(item);
-            debugPrint('$_logTag 🎯 ${item.menuItem.name} assigned to printer: ${assignment.printerName}');
           }
         } else {
           // No assignment found - use default printer
           final defaultPrinter = _tenantPrinters.where((p) => p.isActive).firstOrNull;
           if (defaultPrinter != null) {
             itemsByPrinter.putIfAbsent(defaultPrinter.id, () => []).add(item);
-            debugPrint('$_logTag ⚠️ ${item.menuItem.name} using default printer: ${defaultPrinter.name}');
           }
         }
       }
       
-      debugPrint('$_logTag 📋 Order distributed to ${itemsByPrinter.length} printers');
       
       // Print to each assigned printer
       final results = <String, bool>{};
@@ -786,21 +741,16 @@ class TenantPrinterService extends ChangeNotifier {
           results[printerId] = printed;
           if (printed) {
             successCount++;
-            debugPrint('$_logTag ✅ Successfully printed to ${printer.name}');
           } else {
-            debugPrint('$_logTag ❌ Failed to print to ${printer.name}');
           }
         } catch (e) {
-          debugPrint('$_logTag ❌ Error printing to printer $printerId: $e');
           results[printerId] = false;
         }
       }
       
-      debugPrint('$_logTag 🎉 Printing complete: $successCount/${itemsByPrinter.length} printers successful');
       return results;
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error printing order to tenant printers: $e');
       return {};
     }
   }
@@ -817,16 +767,13 @@ class TenantPrinterService extends ChangeNotifier {
       if (printed) {
         // Update printer status
         _printerStatus[printer.id] = true;
-        debugPrint('$_logTag ✅ Printed ${items.length} items to ${printer.name}');
       } else {
         _printerStatus[printer.id] = false;
-        debugPrint('$_logTag ❌ Failed to print to ${printer.name}');
       }
       
       return printed;
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error printing to ${printer.name}: $e');
       _printerStatus[printer.id] = false;
       return false;
     }
@@ -861,7 +808,6 @@ class TenantPrinterService extends ChangeNotifier {
   Future<void> _syncPrinterToFirebase(models.PrinterConfiguration printer) async {
     try {
       if (_firestore == null) {
-        debugPrint('$_logTag ⚠️ Firebase not available for printer sync');
         return;
       }
       
@@ -888,10 +834,8 @@ class TenantPrinterService extends ChangeNotifier {
       };
       
       await printerDoc.set(printerData, SetOptions(merge: true));
-      debugPrint('$_logTag ☁️ Successfully synced printer ${printer.name} to Firebase');
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error syncing printer to Firebase: $e');
     }
   }
   
@@ -899,7 +843,6 @@ class TenantPrinterService extends ChangeNotifier {
   Future<void> _syncPrinterAssignmentToFirebase(PrinterAssignment assignment) async {
     try {
       if (_firestore == null) {
-        debugPrint('$_logTag ⚠️ Firebase not available for assignment sync');
         return;
       }
       
@@ -924,10 +867,8 @@ class TenantPrinterService extends ChangeNotifier {
       };
       
       await assignmentDoc.set(assignmentData, SetOptions(merge: true));
-      debugPrint('$_logTag ☁️ Successfully synced printer assignment to Firebase');
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error syncing printer assignment to Firebase: $e');
     }
   }
   
@@ -935,11 +876,9 @@ class TenantPrinterService extends ChangeNotifier {
   Future<void> _loadPrintersFromFirebase() async {
     try {
       if (_firestore == null) {
-        debugPrint('$_logTag ⚠️ Firebase not available for loading printers');
         return;
       }
       
-      debugPrint('$_logTag 🔄 Loading printers from Firebase for tenant: $_currentTenantId');
       
       final tenantDoc = _firestore!.collection('tenants').doc(_currentTenantId);
       final printerSnapshot = await tenantDoc.collection('printer_configurations').get();
@@ -984,18 +923,14 @@ class TenantPrinterService extends ChangeNotifier {
           if (!_tenantPrinters.any((p) => p.id == printer.id)) {
             _tenantPrinters.add(printer);
             loadedCount++;
-            debugPrint('$_logTag ✅ Loaded printer from Firebase: ${printer.name}');
           }
           
         } catch (e) {
-          debugPrint('$_logTag ⚠️ Error parsing printer data from Firebase: $e');
         }
       }
       
-      debugPrint('$_logTag ✅ Loaded $loadedCount printers from Firebase');
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error loading printers from Firebase: $e');
     }
   }
   
@@ -1003,11 +938,9 @@ class TenantPrinterService extends ChangeNotifier {
   Future<void> _loadAssignmentsFromFirebase() async {
     try {
       if (_firestore == null) {
-        debugPrint('$_logTag ⚠️ Firebase not available for loading assignments');
         return;
       }
       
-      debugPrint('$_logTag 🔄 Loading printer assignments from Firebase for tenant: $_currentTenantId');
       
       final tenantDoc = _firestore!.collection('tenants').doc(_currentTenantId);
       final assignmentSnapshot = await tenantDoc.collection('printer_assignments').get();
@@ -1048,18 +981,14 @@ class TenantPrinterService extends ChangeNotifier {
           if (!_tenantAssignments.any((a) => a.id == assignment.id)) {
             _tenantAssignments.add(assignment);
             loadedCount++;
-            debugPrint('$_logTag ✅ Loaded assignment from Firebase: ${assignment.targetName} -> ${assignment.printerName}');
           }
           
         } catch (e) {
-          debugPrint('$_logTag ⚠️ Error parsing assignment data from Firebase: $e');
         }
       }
       
-      debugPrint('$_logTag ✅ Loaded $loadedCount assignments from Firebase');
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error loading assignments from Firebase: $e');
     }
   }
   
@@ -1067,7 +996,6 @@ class TenantPrinterService extends ChangeNotifier {
   void _startFirebaseSync() {
     if (_firestore == null) return;
     
-    debugPrint('$_logTag 🔄 Starting real-time Firebase sync for cross-device updates');
     
     final tenantDoc = _firestore!.collection('tenants').doc(_currentTenantId);
     
@@ -1085,7 +1013,6 @@ class TenantPrinterService extends ChangeNotifier {
       _handleAssignmentChanges(snapshot);
     });
     
-    debugPrint('$_logTag ✅ Real-time Firebase sync started');
   }
   
   /// Handle printer configuration changes from Firebase
@@ -1111,7 +1038,6 @@ class TenantPrinterService extends ChangeNotifier {
             break;
         }
       } catch (e) {
-        debugPrint('$_logTag ⚠️ Error handling printer config change: $e');
       }
     }
   }
@@ -1139,7 +1065,6 @@ class TenantPrinterService extends ChangeNotifier {
             break;
         }
       } catch (e) {
-        debugPrint('$_logTag ⚠️ Error handling assignment change: $e');
       }
     }
   }
@@ -1174,11 +1099,9 @@ class TenantPrinterService extends ChangeNotifier {
       
       if (!_tenantPrinters.any((p) => p.id == printer.id)) {
         _tenantPrinters.add(printer);
-        debugPrint('$_logTag ➕ Added printer from Firebase: ${printer.name}');
         notifyListeners();
       }
     } catch (e) {
-      debugPrint('$_logTag ❌ Error adding printer from Firebase: $e');
     }
   }
   
@@ -1213,11 +1136,9 @@ class TenantPrinterService extends ChangeNotifier {
         );
         
         _tenantPrinters[index] = updatedPrinter;
-        debugPrint('$_logTag 🔄 Updated printer from Firebase: ${updatedPrinter.name}');
         notifyListeners();
       }
     } catch (e) {
-      debugPrint('$_logTag ❌ Error updating printer from Firebase: $e');
     }
   }
   
@@ -1226,7 +1147,6 @@ class TenantPrinterService extends ChangeNotifier {
     final index = _tenantPrinters.indexWhere((p) => p.id == printerId);
     if (index != -1) {
       final removedPrinter = _tenantPrinters.removeAt(index);
-      debugPrint('$_logTag ➖ Removed printer from Firebase: ${removedPrinter.name}');
       notifyListeners();
     }
   }
@@ -1257,11 +1177,9 @@ class TenantPrinterService extends ChangeNotifier {
       
       if (!_tenantAssignments.any((a) => a.id == assignment.id)) {
         _tenantAssignments.add(assignment);
-        debugPrint('$_logTag ➕ Added assignment from Firebase: ${assignment.targetName} -> ${assignment.printerName}');
         notifyListeners();
       }
     } catch (e) {
-      debugPrint('$_logTag ❌ Error adding assignment from Firebase: $e');
     }
   }
   
@@ -1292,11 +1210,9 @@ class TenantPrinterService extends ChangeNotifier {
         );
         
         _tenantAssignments[index] = updatedAssignment;
-        debugPrint('$_logTag 🔄 Updated assignment from Firebase: ${updatedAssignment.targetName} -> ${updatedAssignment.printerName}');
         notifyListeners();
       }
     } catch (e) {
-      debugPrint('$_logTag ❌ Error updating assignment from Firebase: $e');
     }
   }
   
@@ -1305,7 +1221,6 @@ class TenantPrinterService extends ChangeNotifier {
     final index = _tenantAssignments.indexWhere((a) => a.id == assignmentId);
     if (index != -1) {
       final removedAssignment = _tenantAssignments.removeAt(index);
-      debugPrint('$_logTag ➖ Removed assignment from Firebase: ${removedAssignment.targetName} -> ${removedAssignment.printerName}');
       notifyListeners();
     }
   }

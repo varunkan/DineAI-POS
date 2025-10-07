@@ -69,13 +69,11 @@ class _ComprehensivePrinterAssignmentScreenState extends State<ComprehensivePrin
         _isLoading = false;
       });
 
-      debugPrint('🖨️ Comprehensive Printer Assignment: Data loaded successfully');
     } catch (e) {
       setState(() {
         _isLoading = false;
         _errorMessage = 'Failed to load data: $e';
       });
-      debugPrint('❌ Error loading printer assignment data: $e');
     }
   }
 
@@ -90,7 +88,6 @@ class _ComprehensivePrinterAssignmentScreenState extends State<ComprehensivePrin
     // Add printers from UnifiedPrinterService (where Epson printers are discovered)
     if (unifiedPrinterService != null) {
       final unifiedPrinters = unifiedPrinterService.printers;
-      debugPrint('🚨 URGENT: Found ${unifiedPrinters.length} printers in UnifiedPrinterService');
       
       // Add printers that aren't already in the list (avoid duplicates)
       for (final unifiedPrinter in unifiedPrinters) {
@@ -98,12 +95,10 @@ class _ComprehensivePrinterAssignmentScreenState extends State<ComprehensivePrin
                                             (p.ipAddress == unifiedPrinter.ipAddress && p.port == unifiedPrinter.port));
         if (!exists) {
           _printers.add(unifiedPrinter);
-          debugPrint('🚨 URGENT: Added UnifiedPrinter to assignments: ${unifiedPrinter.name}');
         }
       }
     }
     
-    debugPrint('🚨 URGENT: Total printers available for assignment: ${_printers.length}');
   }
 
   Future<void> _loadCategories() async {
@@ -111,9 +106,7 @@ class _ComprehensivePrinterAssignmentScreenState extends State<ComprehensivePrin
     _categories = menuService.categories;
     
     // 🚨 URGENT: Debug category IDs to fix assignment issue
-    debugPrint('🔍 CATEGORIES DEBUG: Found ${_categories.length} categories:');
     for (final category in _categories) {
-      debugPrint('🔍 Category: ${category.name} (ID: ${category.id})');
     }
   }
 
@@ -851,12 +844,6 @@ class _ComprehensivePrinterAssignmentScreenState extends State<ComprehensivePrin
   Future<void> _assignToPrinter(String targetId, String targetName, AssignmentType assignmentType, PrinterConfiguration printer) async {
     try {
       // 🚨 URGENT: Debug assignment parameters
-      debugPrint('🎯 ASSIGNMENT DEBUG: Attempting to assign:');
-      debugPrint('🎯 Target ID: $targetId');
-      debugPrint('🎯 Target Name: $targetName');
-      debugPrint('🎯 Assignment Type: $assignmentType');
-      debugPrint('🎯 Printer ID: ${printer.id}');
-      debugPrint('🎯 Printer Name: ${printer.name}');
       
       final assignmentService = Provider.of<EnhancedPrinterAssignmentService>(context, listen: false);
       
@@ -886,7 +873,6 @@ class _ComprehensivePrinterAssignmentScreenState extends State<ComprehensivePrin
         throw Exception('Failed to create assignment');
       }
     } catch (e) {
-      debugPrint('❌ Error creating assignment: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -924,7 +910,6 @@ class _ComprehensivePrinterAssignmentScreenState extends State<ComprehensivePrin
         throw Exception('Failed to remove assignment');
       }
     } catch (e) {
-      debugPrint('❌ Error removing assignment: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

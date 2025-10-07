@@ -80,7 +80,6 @@ class TenantPrinterIntegrationService extends ChangeNotifier {
   /// Initialize the integration service
   Future<bool> initialize({required String tenantId, required String restaurantId}) async {
     try {
-      debugPrint('$_logTag 🚀 Initializing tenant printer integration service for tenant: $tenantId');
       
       _currentTenantId = tenantId;
       _currentRestaurantId = restaurantId;
@@ -92,18 +91,15 @@ class TenantPrinterIntegrationService extends ChangeNotifier {
       );
       
       if (!tenantInitialized) {
-        debugPrint('$_logTag ❌ Failed to initialize tenant printer service');
         return false;
       }
       
       _isInitialized = true;
       notifyListeners();
       
-      debugPrint('$_logTag ✅ Tenant printer integration service initialized successfully');
       return true;
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error initializing tenant printer integration service: $e');
       return false;
     }
   }
@@ -111,7 +107,6 @@ class TenantPrinterIntegrationService extends ChangeNotifier {
   /// Discover WiFi printers on tenant's network
   Future<List<DiscoveredPrinter>> discoverWiFiPrinters() async {
     if (_isDiscovering) {
-      debugPrint('$_logTag ⚠️ Already discovering printers');
       return _tenantPrinterService.discoveredPrinters;
     }
     
@@ -119,15 +114,12 @@ class TenantPrinterIntegrationService extends ChangeNotifier {
     notifyListeners();
     
     try {
-      debugPrint('$_logTag 🔍 Starting WiFi printer discovery for tenant: $_currentTenantId');
       
       final discovered = await _tenantPrinterService.discoverWiFiPrinters();
       
-      debugPrint('$_logTag ✅ WiFi discovery completed. Found ${discovered.length} printers for tenant: $_currentTenantId');
       return discovered;
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error during WiFi discovery: $e');
       return [];
     } finally {
       _isDiscovering = false;
@@ -138,12 +130,10 @@ class TenantPrinterIntegrationService extends ChangeNotifier {
   /// Add discovered printer to tenant with public IP identification
   Future<bool> addDiscoveredPrinter(DiscoveredPrinter printer) async {
     try {
-      debugPrint('$_logTag ➕ Adding discovered printer: ${printer.name} to tenant: $_currentTenantId');
       
       final added = await _tenantPrinterService.addDiscoveredPrinter(printer);
       
       if (added) {
-        debugPrint('$_logTag ✅ Successfully added printer: ${printer.name} to tenant: $_currentTenantId');
         
         // Notify assignment service about new printer
         await _syncPrinterToAssignmentService(printer);
@@ -152,7 +142,6 @@ class TenantPrinterIntegrationService extends ChangeNotifier {
       return added;
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error adding discovered printer: $e');
       return false;
     }
   }
@@ -162,17 +151,14 @@ class TenantPrinterIntegrationService extends ChangeNotifier {
     try {
       // This ensures the assignment service knows about the new printer
       // The assignment service will handle the rest of the integration
-      debugPrint('$_logTag 🔄 Syncing printer to assignment service: ${printer.name}');
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error syncing printer to assignment service: $e');
     }
   }
   
   /// Assign category to printer for current tenant
   Future<bool> assignCategoryToPrinter(String categoryId, String categoryName, String printerId) async {
     try {
-      debugPrint('$_logTag 🎯 Assigning category: $categoryName to printer: $printerId for tenant: $_currentTenantId');
       
       final assigned = await _tenantPrinterService.assignCategoryToPrinter(
         categoryId,
@@ -188,7 +174,6 @@ class TenantPrinterIntegrationService extends ChangeNotifier {
       return assigned;
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error assigning category to printer: $e');
       return false;
     }
   }
@@ -196,7 +181,6 @@ class TenantPrinterIntegrationService extends ChangeNotifier {
   /// Assign menu item to printer for current tenant
   Future<bool> assignMenuItemToPrinter(String menuItemId, String menuItemName, String printerId) async {
     try {
-      debugPrint('$_logTag 🎯 Assigning menu item: $menuItemName to printer: $printerId for tenant: $_currentTenantId');
       
       final assigned = await _tenantPrinterService.assignMenuItemToPrinter(
         menuItemId,
@@ -212,7 +196,6 @@ class TenantPrinterIntegrationService extends ChangeNotifier {
       return assigned;
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error assigning menu item to printer: $e');
       return false;
     }
   }
@@ -244,10 +227,8 @@ class TenantPrinterIntegrationService extends ChangeNotifier {
       
       // Add to enhanced service (if it supports this)
       // Note: This is for backward compatibility with existing code
-      debugPrint('$_logTag 🔄 Synced assignment to enhanced service: $targetName -> ${printer.name}');
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error syncing assignment to enhanced service: $e');
     }
   }
   
@@ -259,7 +240,6 @@ class TenantPrinterIntegrationService extends ChangeNotifier {
   /// Print order to tenant's assigned printers (with cloud/local fallback)
   Future<Map<String, bool>> printOrderToTenantPrinters(Order order) async {
     if (_isProcessing) {
-      debugPrint('$_logTag ⚠️ Already processing print job');
       return {};
     }
     
@@ -268,7 +248,6 @@ class TenantPrinterIntegrationService extends ChangeNotifier {
     notifyListeners();
     
     try {
-      debugPrint('$_logTag 🖨️ Printing order ${order.orderNumber} to tenant printers: $_currentTenantId');
       
       Map<String, bool> results = {};
       
@@ -282,21 +261,17 @@ class TenantPrinterIntegrationService extends ChangeNotifier {
         if (successCount > 0) {
           _localPrintJobs++;
           _successfulPrintJobs++;
-          debugPrint('$_logTag ✅ Local printing successful: $successCount/$totalCount printers');
         } else {
           _failedPrintJobs++;
-          debugPrint('$_logTag ❌ Local printing failed for all printers');
         }
         
       } catch (e) {
-        debugPrint('$_logTag ❌ Error in local printing: $e');
         _failedPrintJobs++;
       }
       
       return results;
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error printing order to tenant printers: $e');
       _failedPrintJobs++;
       return {};
     } finally {
@@ -326,17 +301,14 @@ class TenantPrinterIntegrationService extends ChangeNotifier {
   /// Remove printer assignment
   Future<bool> removePrinterAssignment(String assignmentId) async {
     try {
-      debugPrint('$_logTag 🗑️ Removing printer assignment: $assignmentId for tenant: $_currentTenantId');
       
       // Remove from tenant service - we'll implement this later
       // For now, just remove from local list
       _tenantPrinterService.tenantAssignments.removeWhere((a) => a.id == assignmentId);
       
-      debugPrint('$_logTag ✅ Successfully removed printer assignment: $assignmentId');
       return true;
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error removing printer assignment: $e');
       return false;
     }
   }
@@ -349,15 +321,12 @@ class TenantPrinterIntegrationService extends ChangeNotifier {
           .firstOrNull;
       if (printer == null) return false;
       
-      debugPrint('$_logTag 🔍 Testing connection to printer: ${printer.name}');
       
       // Test connection using the printing service - we'll implement this later
       // For now, just return true
-      debugPrint('$_logTag ✅ Printer connection test successful: ${printer.name}');
       return true;
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error testing printer connection: $e');
       return false;
     }
   }

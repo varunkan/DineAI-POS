@@ -92,9 +92,7 @@ class ActivityLogService extends ChangeNotifier {
       await _detectDeviceId();
       await _loadRecentLogs();
       _isInitialized = true;
-      debugPrint('✅ ActivityLogService initialized successfully');
     } catch (e) {
-      debugPrint('❌ Failed to initialize ActivityLogService: $e');
     }
   }
 
@@ -104,13 +102,11 @@ class ActivityLogService extends ChangeNotifier {
     _currentUserName = userName;
     _currentUserRole = userRole;
     _currentRestaurantId = restaurantId;
-    debugPrint('📝 ActivityLogService: Current user set to $userName ($userRole)');
   }
 
   /// Create the activity logs table
   Future<void> _createActivityLogsTable() async {
     if (_databaseService.isWeb) {
-      debugPrint('✅ Activity logs table created (web storage)');
       return;
     }
     
@@ -156,7 +152,6 @@ class ActivityLogService extends ChangeNotifier {
     await db.execute('CREATE INDEX IF NOT EXISTS idx_activity_logs_level ON activity_logs(level)');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_activity_logs_restaurant ON activity_logs(restaurant_id)');
 
-    debugPrint('✅ Activity logs table created with indexes');
   }
 
   /// Generate unique session ID
@@ -192,9 +187,7 @@ class ActivityLogService extends ChangeNotifier {
         // Load from SQLite
         await _loadSQLiteLogs();
       }
-      debugPrint('✅ Loaded ${_logs.length} activity logs from database');
     } catch (e) {
-      debugPrint('⚠️ Failed to load activity logs: $e');
     }
   }
 
@@ -249,7 +242,6 @@ class ActivityLogService extends ChangeNotifier {
         });
         _addLogToCache(log);
       } catch (e) {
-        debugPrint('⚠️ Failed to parse activity log: $e');
       }
     }
   }
@@ -330,10 +322,8 @@ class ActivityLogService extends ChangeNotifier {
         _triggerHapticFeedback();
       }
 
-      debugPrint('✅ Activity logged: ${log.actionDescription} by ${log.performedByName} (${log.performedByRole})');
       return log;
     } catch (e) {
-      debugPrint('❌ Failed to log activity: $e');
       rethrow;
     }
   }
@@ -668,10 +658,8 @@ class ActivityLogService extends ChangeNotifier {
         _userLogsCache[log.performedBy]!.add(log);
       }
 
-      debugPrint('✅ Cleaned up activity logs older than $daysToKeep days');
       notifyListeners();
     } catch (e) {
-      debugPrint('⚠️ Failed to cleanup old activity logs: $e');
     }
   }
 

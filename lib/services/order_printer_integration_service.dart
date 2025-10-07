@@ -18,7 +18,6 @@ class OrderPrinterIntegrationService {
 
   /// Process a new order and print to appropriate printers
   Future<Map<PrinterTypeCategory, bool>> processOrder(Order order) async {
-    debugPrint('🔄 Processing order ${order.id} with printer type integration...');
     
     try {
       // Initialize printer type service if needed
@@ -28,11 +27,9 @@ class OrderPrinterIntegrationService {
       
       // Print receipt first
       final receiptSuccess = await _printingService.printReceipt(order);
-      debugPrint('🧾 Receipt print: ${receiptSuccess ? '✅' : '❌'}');
       
       // Print kitchen orders to appropriate printers
       final kitchenResults = await _printingService.printKitchenOrders(order);
-      debugPrint('🍳 Kitchen print results: $kitchenResults');
       
       // Combine results
       final results = <PrinterTypeCategory, bool>{
@@ -45,7 +42,6 @@ class OrderPrinterIntegrationService {
       
       return results;
     } catch (e) {
-      debugPrint('❌ Error processing order: $e');
       return {};
     }
   }
@@ -53,19 +49,15 @@ class OrderPrinterIntegrationService {
   /// Initialize printer types with default configurations
   Future<void> _initializePrinterTypes() async {
     try {
-      debugPrint('🏗️ Initializing printer types...');
       
       final restaurantId = await _firebaseService.getCurrentRestaurantId();
       final userId = await _firebaseService.getCurrentUserId();
       
       if (restaurantId != null && userId != null) {
         await _printerTypeService.createDefaultConfigurations(restaurantId, userId);
-        debugPrint('✅ Printer types initialized');
       } else {
-        debugPrint('⚠️ Cannot initialize printer types: missing restaurant or user ID');
       }
     } catch (e) {
-      debugPrint('❌ Error initializing printer types: $e');
     }
   }
 
@@ -178,14 +170,11 @@ class OrderPrinterIntegrationService {
   /// Auto-assign items to printer types based on smart detection
   Future<void> autoAssignItemsToPrinterTypes() async {
     try {
-      debugPrint('🤖 Auto-assigning items to printer types...');
       
       // This would implement smart logic to automatically assign items
       // based on their names, categories, and characteristics
       
-      debugPrint('✅ Auto-assignment completed');
     } catch (e) {
-      debugPrint('❌ Error in auto-assignment: $e');
     }
   }
 
@@ -223,12 +212,10 @@ class OrderPrinterIntegrationService {
     final successCount = results.values.where((success) => success).length;
     final totalCount = results.length;
     
-    debugPrint('📊 Order ${order.id} print summary: $successCount/$totalCount successful');
     
     for (final entry in results.entries) {
       final printerType = entry.key;
       final success = entry.value;
-      debugPrint('${success ? '✅' : '❌'} ${printerType.displayName}: ${success ? 'Success' : 'Failed'}');
     }
   }
 

@@ -46,7 +46,6 @@ class EnhancedPrinterManager extends ChangeNotifier {
   
   /// Manual printer discovery - called from UI
   Future<List<PrinterConfiguration>> discoverPrinters() async {
-    debugPrint('$_logTag 🔍 Manual printer discovery triggered by user - delegating to UnifiedPrinterService');
     
     try {
       // Skip old service discovery - let UnifiedPrinterService handle it
@@ -55,18 +54,15 @@ class EnhancedPrinterManager extends ChangeNotifier {
       // Refresh available printers
       await _loadAvailablePrinters();
       
-      debugPrint('$_logTag ✅ Manual discovery completed - found ${_availablePrinters.length} printers');
       return _availablePrinters;
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Manual discovery failed: $e');
       return _availablePrinters;
     }
   }
   
   /// Initialize the enhanced printer manager
   Future<void> initialize() async {
-    debugPrint('$_logTag 🚀 Initializing Enhanced Printer Manager...');
     
     try {
       // Step 1: Initialize printer services
@@ -81,11 +77,8 @@ class EnhancedPrinterManager extends ChangeNotifier {
       _isInitialized = true;
       notifyListeners();
       
-      debugPrint('$_logTag ✅ Enhanced Printer Manager initialized');
-      debugPrint('$_logTag 📊 Status: ${_availablePrinters.length} printers, ${_menuItemAssignments.length} assignments');
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Initialization failed: $e');
       rethrow;
     }
   }
@@ -93,14 +86,12 @@ class EnhancedPrinterManager extends ChangeNotifier {
   /// Force discovery and configuration of all network printers
   /// FIXED: Removed automatic discovery - only manual discovery available
   Future<void> _forceDiscoverAndConfigurePrinters() async {
-    debugPrint('$_logTag 🔄 Automatic discovery disabled - only manual discovery available');
     // No automatic discovery - only manual discovery on user request
   }
   
   /// Manual network scan with immediate database saving
   /// FIXED: Removed automatic scanning - only manual discovery available
   Future<void> _manualNetworkScan() async {
-    debugPrint('$_logTag 🔄 Manual network scan disabled - only manual discovery available');
     // No automatic scanning - only manual discovery on user request
   }
   
@@ -109,7 +100,6 @@ class EnhancedPrinterManager extends ChangeNotifier {
     try {
       final db = await _databaseService.database;
       if (db?.isOpen != true) {
-        debugPrint('$_logTag ❌ Database not available');
         return;
       }
       
@@ -124,7 +114,6 @@ class EnhancedPrinterManager extends ChangeNotifier {
       );
       
       if (existing.isNotEmpty) {
-        debugPrint('$_logTag ℹ️ Printer already exists: $ip:$port');
         return;
       }
       
@@ -146,10 +135,8 @@ class EnhancedPrinterManager extends ChangeNotifier {
         'updated_at': DateTime.now().toIso8601String(),
       });
       
-      debugPrint('$_logTag ✅ Saved printer config: ${printerData['name']}');
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error saving printer: $e');
     }
   }
   
@@ -162,16 +149,13 @@ class EnhancedPrinterManager extends ChangeNotifier {
       await _printerConfigService.refreshConfigurations();
       _availablePrinters = _printerConfigService.activeConfigurations;
       
-      debugPrint('$_logTag 📂 Loaded ${_availablePrinters.length} printer configurations');
       
       if (_availablePrinters.isEmpty) {
-        debugPrint('$_logTag ⚠️ No printers found - skipping emergency discovery (UnifiedPrinterService will handle)');
         // Skip emergency discovery to avoid conflicts with UnifiedPrinterService
         // await _emergencyPrinterDiscovery();
       }
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error loading printers: $e');
     }
   }
   
@@ -204,16 +188,13 @@ class EnhancedPrinterManager extends ChangeNotifier {
         );
       }
       
-      debugPrint('$_logTag 🧹 Cleaned up dummy test printers and their assignments');
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error cleaning up dummy printers: $e');
     }
   }
   
   /// Emergency printer discovery if no printers found
   Future<void> _emergencyPrinterDiscovery() async {
-    debugPrint('$_logTag 🚨 Emergency printer discovery activated');
     
     try {
       // Force manual discovery
@@ -226,10 +207,8 @@ class EnhancedPrinterManager extends ChangeNotifier {
       await _printerConfigService.refreshConfigurations();
       _availablePrinters = _printerConfigService.activeConfigurations;
       
-      debugPrint('$_logTag 🚨 Emergency discovery complete: ${_availablePrinters.length} printers');
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Emergency discovery failed: $e');
     }
   }
   
@@ -247,7 +226,6 @@ class EnhancedPrinterManager extends ChangeNotifier {
       );
       
       if (tableExists.isEmpty) {
-        debugPrint('$_logTag ⚠️ menu_printer_assignments table does not exist, using in-memory assignments only');
         // Store in memory only for now
         _menuItemAssignments[menuItemId] = printerId;
         return true;
@@ -271,18 +249,14 @@ class EnhancedPrinterManager extends ChangeNotifier {
       });
       
       _menuItemAssignments[menuItemId] = printerId;
-      debugPrint('$_logTag ✅ Menu item $menuItemId assigned to printer $printerId');
       return true;
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error assigning menu item to printer: $e');
       // Fallback to in-memory assignment
       try {
         _menuItemAssignments[menuItemId] = printerId;
-        debugPrint('$_logTag ✅ Fallback: Stored assignment in memory only');
         return true;
       } catch (fallbackError) {
-        debugPrint('$_logTag ❌ Even fallback assignment failed: $fallbackError');
         return false;
       }
     }
@@ -291,12 +265,10 @@ class EnhancedPrinterManager extends ChangeNotifier {
   /// Print order to assigned printers
   Future<Map<String, bool>> printOrderToAssignedPrinters(Order order) async {
     if (!_isInitialized) {
-      debugPrint('$_logTag ⚠️ Manager not initialized, printing to all printers');
       return await _printToAllAvailablePrinters(order);
     }
     
     try {
-      debugPrint('$_logTag 🖨️ Processing order ${order.orderNumber} for multi-printer assignments');
       
       // Use the injected assignment service
       final assignmentService = _assignmentService;
@@ -305,11 +277,9 @@ class EnhancedPrinterManager extends ChangeNotifier {
       final itemsByPrinter = await _segregateOrderByAssignments(order, assignmentService);
       
       if (itemsByPrinter.isEmpty) {
-        debugPrint('$_logTag ⚠️ No printer assignments found, using fallback');
         return await _printToAllAvailablePrinters(order);
       }
       
-      debugPrint('$_logTag 📋 Order distributed to ${itemsByPrinter.length} printers');
       
       // Print to each assigned printer
       final results = <String, bool>{};
@@ -320,7 +290,6 @@ class EnhancedPrinterManager extends ChangeNotifier {
         final items = entry.value;
         
         try {
-          debugPrint('$_logTag 🖨️ Printing ${items.length} items to printer: $printerId');
           
           // Create partial order for this printer
           final partialOrder = Order(
@@ -353,9 +322,7 @@ class EnhancedPrinterManager extends ChangeNotifier {
           
           if (success) {
             successCount++;
-            debugPrint('$_logTag ✅ Successfully printed to printer: $printerId');
           } else {
-            debugPrint('$_logTag ❌ Failed to print to printer: $printerId');
           }
           
           // Small delay between printers to prevent connection conflicts
@@ -364,16 +331,13 @@ class EnhancedPrinterManager extends ChangeNotifier {
           }
           
         } catch (e) {
-          debugPrint('$_logTag ❌ Error printing to printer $printerId: $e');
           results[printerId] = false;
         }
       }
       
-      debugPrint('$_logTag 🎉 Multi-printer printing complete: $successCount/${itemsByPrinter.length} printers successful');
       return results;
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error in multi-printer printing: $e');
       return await _printToAllAvailablePrinters(order);
     }
   }
@@ -383,7 +347,6 @@ class EnhancedPrinterManager extends ChangeNotifier {
     final Map<String, List<OrderItem>> itemsByPrinter = {};
     
     try {
-      debugPrint('$_logTag 🔄 Segregating ${order.items.length} items by printer assignments');
       
       for (final item in order.items) {
         // Get all assignments for this menu item (supports multi-printer assignments)
@@ -400,7 +363,6 @@ class EnhancedPrinterManager extends ChangeNotifier {
               itemsByPrinter[printerId] = [];
             }
             itemsByPrinter[printerId]!.add(item);
-            debugPrint('$_logTag 🎯 ${item.menuItem.name} assigned to printer: ${assignment.printerName}');
           }
         } else {
           // No assignment found - use default printer
@@ -409,15 +371,12 @@ class EnhancedPrinterManager extends ChangeNotifier {
             itemsByPrinter[defaultPrinterId] = [];
           }
           itemsByPrinter[defaultPrinterId]!.add(item);
-          debugPrint('$_logTag ⚠️ ${item.menuItem.name} using default printer - no assignment found');
         }
       }
       
-      debugPrint('$_logTag 📊 Segregation complete: ${itemsByPrinter.length} printers, ${order.items.length} total items');
       return itemsByPrinter;
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error segregating items: $e');
       return {};
     }
   }
@@ -428,7 +387,6 @@ class EnhancedPrinterManager extends ChangeNotifier {
       // Get printer configuration
       final printerConfig = await _printerConfigService.getConfigurationById(printerId);
       if (printerConfig == null) {
-        debugPrint('$_logTag ❌ Printer configuration not found: $printerId');
         return false;
       }
       
@@ -439,15 +397,12 @@ class EnhancedPrinterManager extends ChangeNotifier {
       final success = await _sendToPrinter(printerConfig, kitchenTicket);
       
       if (success) {
-        debugPrint('$_logTag ✅ Sent ${kitchenTicket.length} bytes to ${printerConfig.name}');
       } else {
-        debugPrint('$_logTag ❌ Failed to send to ${printerConfig.name}');
       }
       
       return success;
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error printing to specific printer: $e');
       return false;
     }
   }
@@ -501,7 +456,6 @@ class EnhancedPrinterManager extends ChangeNotifier {
         config.type, // Use the actual printer type from configuration
       );
     } catch (e) {
-      debugPrint('$_logTag ❌ Error sending to printer: $e');
       return false;
     }
   }
@@ -519,11 +473,9 @@ class EnhancedPrinterManager extends ChangeNotifier {
         final success = await _printToPrinter(printer, ticket);
         results[printer.id] = success;
         
-        debugPrint('$_logTag ${success ? "✅" : "❌"} ${printer.name}');
         
       } catch (e) {
         results[printer.id] = false;
-        debugPrint('$_logTag ❌ Error printing to ${printer.name}: $e');
       }
     }
     
@@ -547,7 +499,6 @@ class EnhancedPrinterManager extends ChangeNotifier {
       return true;
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Connection failed to ${printer.name}: $e');
       return false;
     }
   }
@@ -583,10 +534,8 @@ Status: Connection Test
           );
         }
         
-        debugPrint('$_logTag ${success ? "✅" : "❌"} ${printer.name}: Status updated to ${success ? "connected" : "disconnected"}');
         
       } catch (e) {
-        debugPrint('$_logTag ❌ Error updating status for ${printer.name}: $e');
       }
     }
     
@@ -596,7 +545,6 @@ Status: Connection Test
   
   /// Refresh all printers (force rediscovery)
   Future<void> refreshPrinters() async {
-    debugPrint('$_logTag 🔄 Refreshing all printers...');
     
     try {
       await _forceDiscoverAndConfigurePrinters();
@@ -605,10 +553,8 @@ Status: Connection Test
       
       notifyListeners();
       
-      debugPrint('$_logTag ✅ Refresh complete: ${_availablePrinters.length} printers');
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Refresh failed: $e');
     }
   }
   
@@ -643,7 +589,6 @@ Status: Connection Test
       );
       
       if (tableExists.isEmpty) {
-        debugPrint('$_logTag ⚠️ menu_printer_assignments table does not exist, skipping load');
         return;
       }
       
@@ -654,10 +599,8 @@ Status: Connection Test
         _menuItemAssignments[row['menu_item_id'] as String] = row['printer_id'] as String;
       }
       
-      debugPrint('$_logTag 📋 Loaded ${_menuItemAssignments.length} menu assignments');
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error loading assignments: $e');
       // Continue without loading assignments - app should still work
     }
   }

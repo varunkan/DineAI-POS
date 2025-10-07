@@ -53,7 +53,6 @@ class RemotePrinterService extends ChangeNotifier {
   /// Initialize the remote printer service
   Future<bool> initialize(String restaurantId, String printerId) async {
     try {
-      debugPrint('$_logTag 🚀 Initializing remote printer service...');
       
       _restaurantId = restaurantId;
       _printerId = printerId;
@@ -61,14 +60,12 @@ class RemotePrinterService extends ChangeNotifier {
       // Test cloud connection
       final cloudConnected = await _testCloudConnection();
       if (!cloudConnected) {
-        debugPrint('$_logTag ❌ Failed to connect to cloud service');
         return false;
       }
       
       // Register printer with cloud service
       final registered = await _registerPrinter();
       if (!registered) {
-        debugPrint('$_logTag ❌ Failed to register printer with cloud service');
         return false;
       }
       
@@ -79,12 +76,10 @@ class RemotePrinterService extends ChangeNotifier {
       _isConnected = true;
       _lastActivity = DateTime.now();
       
-      debugPrint('$_logTag ✅ Remote printer service initialized successfully');
       notifyListeners();
       return true;
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error initializing remote printer service: $e');
       return false;
     }
   }
@@ -92,7 +87,6 @@ class RemotePrinterService extends ChangeNotifier {
   /// Send order to remote printer via cloud
   Future<bool> sendOrderToRemotePrinter(Order order, String targetPrinterId) async {
     try {
-      debugPrint('$_logTag 📤 Sending order ${order.id} to remote printer $targetPrinterId...');
       
       // Prepare order data
       final orderData = {
@@ -117,11 +111,9 @@ class RemotePrinterService extends ChangeNotifier {
       if (response.statusCode == 200) {
         _ordersSent++;
         _lastActivity = DateTime.now();
-        debugPrint('$_logTag ✅ Order sent successfully to remote printer');
         notifyListeners();
         return true;
       } else {
-        debugPrint('$_logTag ❌ Failed to send order: ${response.statusCode} - ${response.body}');
         
         // Add to pending queue for retry
         _pendingOrders.add(orderData);
@@ -131,7 +123,6 @@ class RemotePrinterService extends ChangeNotifier {
       }
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error sending order to remote printer: $e');
       
       // Add to pending queue for offline retry
       final orderData = {
@@ -154,7 +145,6 @@ class RemotePrinterService extends ChangeNotifier {
     if (_isPolling) return;
     
     _isPolling = true;
-    debugPrint('$_logTag 🔄 Starting order polling...');
     
     // Poll every 5 seconds for new orders
     _pollingTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
@@ -194,18 +184,15 @@ class RemotePrinterService extends ChangeNotifier {
         }
         
       } else if (response.statusCode != 204) {
-        debugPrint('$_logTag ⚠️ Polling failed: ${response.statusCode}');
       }
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error polling for orders: $e');
     }
   }
   
   /// Process incoming order from cloud
   Future<void> _processIncomingOrder(Map<String, dynamic> orderData) async {
     try {
-      debugPrint('$_logTag 📥 Processing incoming order: ${orderData['orderId']}');
       
       // Parse order data
       final order = Order.fromJson(orderData['orderData']);
@@ -215,23 +202,19 @@ class RemotePrinterService extends ChangeNotifier {
       
       if (printed) {
         _ordersReceived++;
-        debugPrint('$_logTag 🖨️ Order printed successfully');
       } else {
-        debugPrint('$_logTag ❌ Failed to print order');
       }
       
       _lastActivity = DateTime.now();
       notifyListeners();
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error processing incoming order: $e');
     }
   }
   
   /// Test connection to cloud service
   Future<bool> _testCloudConnection() async {
     try {
-      debugPrint('$_logTag 🔍 Testing cloud connection...');
       
       final response = await http.get(
         Uri.parse('$_cloudServiceUrl/health'),
@@ -239,15 +222,12 @@ class RemotePrinterService extends ChangeNotifier {
       ).timeout(const Duration(seconds: 10));
       
       if (response.statusCode == 200) {
-        debugPrint('$_logTag ✅ Cloud connection successful');
         return true;
       } else {
-        debugPrint('$_logTag ❌ Cloud connection failed: ${response.statusCode}');
         return false;
       }
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Cloud connection error: $e');
       return false;
     }
   }
@@ -255,7 +235,6 @@ class RemotePrinterService extends ChangeNotifier {
   /// Register printer with cloud service
   Future<bool> _registerPrinter() async {
     try {
-      debugPrint('$_logTag 📝 Registering printer with cloud service...');
       
       final registrationData = {
         'printerId': _printerId,
@@ -276,15 +255,12 @@ class RemotePrinterService extends ChangeNotifier {
       );
       
       if (response.statusCode == 200) {
-        debugPrint('$_logTag ✅ Printer registered successfully');
         return true;
       } else {
-        debugPrint('$_logTag ❌ Printer registration failed: ${response.statusCode}');
         return false;
       }
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error registering printer: $e');
       return false;
     }
   }
@@ -305,11 +281,9 @@ class RemotePrinterService extends ChangeNotifier {
       );
       
       if (response.statusCode != 200) {
-        debugPrint('$_logTag ⚠️ Failed to acknowledge orders: ${response.statusCode}');
       }
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error acknowledging orders: $e');
     }
   }
   
@@ -317,7 +291,6 @@ class RemotePrinterService extends ChangeNotifier {
   Future<void> _retryPendingOrders() async {
     if (_pendingOrders.isEmpty) return;
     
-    debugPrint('$_logTag 🔄 Retrying ${_pendingOrders.length} pending orders...');
     
     final ordersToRetry = List<Map<String, dynamic>>.from(_pendingOrders);
     _pendingOrders.clear();
@@ -334,7 +307,6 @@ class RemotePrinterService extends ChangeNotifier {
       
       if (response.statusCode == 200) {
         _ordersSent++;
-        debugPrint('$_logTag ✅ Retry successful for order ${orderData['orderId']}');
       } else {
         // Add back to pending queue
         _pendingOrders.add(orderData);
@@ -368,7 +340,6 @@ class RemotePrinterService extends ChangeNotifier {
     _isInitialized = false;
     _isConnected = false;
     
-    debugPrint('$_logTag 🛑 Remote printer service disposed');
     super.dispose();
   }
   
@@ -388,7 +359,6 @@ class RemotePrinterService extends ChangeNotifier {
   
   /// Manual sync trigger
   Future<void> manualSync() async {
-    debugPrint('$_logTag 🔄 Manual sync triggered');
     await _pollForOrders();
   }
   
@@ -399,26 +369,21 @@ class RemotePrinterService extends ChangeNotifier {
     _failedOrders = 0;
     _pendingOrders.clear();
     notifyListeners();
-    debugPrint('$_logTag 📊 Statistics reset');
   }
   
   /// Validate restaurant code (for backward compatibility)
   Future<bool> validateRestaurantCode(String code) async {
     try {
-      debugPrint('$_logTag 🔍 Validating restaurant code: $code');
       
       // For demo purposes, accept any 6-digit code
       // In production, this would validate against your cloud service
       if (code.length == 6 && RegExp(r'^\d{6}$').hasMatch(code)) {
-        debugPrint('$_logTag ✅ Restaurant code validated successfully');
         return true;
       }
       
-      debugPrint('$_logTag ❌ Invalid restaurant code format');
       return false;
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error validating restaurant code: $e');
       return false;
     }
   }
@@ -426,17 +391,14 @@ class RemotePrinterService extends ChangeNotifier {
   /// Test print connection (for backward compatibility)
   Future<bool> testPrintConnection(String restaurantCode, String printerName) async {
     try {
-      debugPrint('$_logTag 🖨️ Testing print connection for $printerName...');
       
       // For demo purposes, simulate a successful test
       // In production, this would test the actual connection
       await Future.delayed(const Duration(seconds: 2));
       
-      debugPrint('$_logTag ✅ Test print connection successful');
       return true;
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Test print connection failed: $e');
       return false;
     }
   }
@@ -460,24 +422,20 @@ class PrinterBridgeService extends ChangeNotifier {
   /// Start the printer bridge
   Future<bool> startBridge(String restaurantId, String printerId) async {
     try {
-      debugPrint('$_logTag 🌉 Starting printer bridge...');
       
       _bridgeId = 'bridge_${restaurantId}_${printerId}';
       
       // Initialize remote printer service
       final initialized = await _remotePrinterService.initialize(restaurantId, printerId);
       if (!initialized) {
-        debugPrint('$_logTag ❌ Failed to initialize remote printer service');
         return false;
       }
       
       _isRunning = true;
-      debugPrint('$_logTag ✅ Printer bridge started successfully');
       notifyListeners();
       return true;
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error starting printer bridge: $e');
       return false;
     }
   }
@@ -487,7 +445,6 @@ class PrinterBridgeService extends ChangeNotifier {
     _isRunning = false;
     _bridgeId = null;
     _remotePrinterService.dispose();
-    debugPrint('$_logTag 🛑 Printer bridge stopped');
     notifyListeners();
   }
 } 

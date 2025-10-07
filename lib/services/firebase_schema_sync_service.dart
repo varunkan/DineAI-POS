@@ -21,10 +21,8 @@ class FirebaseLocalSchemaSyncService {
     required DatabaseService localDatabase,
   }) async {
     try {
-      debugPrint('🔄 Initializing Firebase schema for tenant: $tenantId using local database structure...');
       
       if (!FirebaseConfig.isInitialized) {
-        debugPrint('⚠️ Firebase not initialized, skipping schema sync');
         return;
       }
 
@@ -43,9 +41,7 @@ class FirebaseLocalSchemaSyncService {
       // Initialize ALL collections using exact local database table structures
       await _initializeCollectionSchemas(tenantDoc, localDatabase);
 
-      debugPrint('✅ Firebase schema initialized for tenant: $tenantId using local structure');
     } catch (e) {
-      debugPrint('❌ Failed to initialize Firebase schema: $e');
       // Don't throw - Firebase sync is optional
     }
   }
@@ -72,10 +68,8 @@ class FirebaseLocalSchemaSyncService {
           'created_at': DateTime.now().toIso8601String(),
         });
 
-        debugPrint('✅ Initialized Firebase collection: $tableName with local schema');
       }
     } catch (e) {
-      debugPrint('❌ Failed to initialize collection schemas: $e');
     }
   }
 
@@ -107,13 +101,10 @@ class FirebaseLocalSchemaSyncService {
           // Get column information from local SQLite database
           final columns = await _getTableColumns(localDb, tableName);
           schemas[tableName] = columns;
-          debugPrint('📋 Captured local schema for table: $tableName (${columns.length} columns)');
         } catch (e) {
-          debugPrint('⚠️ Could not get schema for table $tableName: $e');
         }
       }
     } catch (e) {
-      debugPrint('❌ Failed to get local table schemas: $e');
     }
 
     return schemas;
@@ -134,7 +125,6 @@ class FirebaseLocalSchemaSyncService {
         columns[columnName] = columnType;
       }
     } catch (e) {
-      debugPrint('⚠️ Could not get columns for table $tableName: $e');
     }
 
     return columns;
@@ -147,10 +137,8 @@ class FirebaseLocalSchemaSyncService {
     required DatabaseService localDatabase,
   }) async {
     try {
-      debugPrint('🔄 Syncing local data to Firebase for tenant: $tenantId...');
       
       if (!FirebaseConfig.isInitialized) {
-        debugPrint('⚠️ Firebase not initialized, skipping sync');
         return;
       }
 
@@ -160,16 +148,13 @@ class FirebaseLocalSchemaSyncService {
       // Get local database instance
       final db = await localDatabase.customDatabase;
       if (db == null) {
-        debugPrint('❌ Local database not available for sync');
         return;
       }
 
       // Sync all tables using exact local schema
       await _syncAllTablesToFirebase(tenantDoc, db);
 
-      debugPrint('✅ Local data synced to Firebase for tenant: $tenantId');
     } catch (e) {
-      debugPrint('❌ Failed to sync local data to Firebase: $e');
       // Don't throw - Firebase sync is optional
     }
   }
@@ -195,7 +180,6 @@ class FirebaseLocalSchemaSyncService {
         await _syncTableToFirebase(tenantDoc, db, tableName);
       }
     } catch (e) {
-      debugPrint('❌ Failed to sync tables to Firebase: $e');
     }
   }
 
@@ -209,7 +193,6 @@ class FirebaseLocalSchemaSyncService {
       );
 
       if (tableExists.isEmpty) {
-        debugPrint('📭 No data to sync for table: $tableName');
         return;
       }
 
@@ -217,7 +200,6 @@ class FirebaseLocalSchemaSyncService {
       final localData = await db.query(tableName);
       
       if (localData.isEmpty) {
-        debugPrint('📭 No data to sync for table: $tableName');
         return;
       }
 
@@ -238,13 +220,10 @@ class FirebaseLocalSchemaSyncService {
         try {
           await collection.doc(documentId).set(firebaseData);
         } catch (e) {
-          debugPrint('❌ Failed to sync table $tableName to Firebase: $e');
         }
       }
 
-      debugPrint('✅ Synced ${localData.length} records from table: $tableName to Firebase');
     } catch (e) {
-      debugPrint('❌ Failed to sync table $tableName to Firebase: $e');
     }
   }
 
@@ -300,10 +279,8 @@ class FirebaseLocalSchemaSyncService {
     List<String>? specificTables,
   }) async {
     try {
-      debugPrint('🔄 Syncing Firebase data to local for tenant: $tenantId...');
       
       if (!FirebaseConfig.isInitialized) {
-        debugPrint('⚠️ Firebase not initialized, skipping data sync');
         return;
       }
 
@@ -327,9 +304,7 @@ class FirebaseLocalSchemaSyncService {
         await _syncFirebaseTableToLocal(tenantDoc, localDatabase, tableName);
       }
 
-      debugPrint('✅ Firebase data synced to local for tenant: $tenantId');
     } catch (e) {
-      debugPrint('❌ Failed to sync Firebase data to local: $e');
     }
   }
 
@@ -345,7 +320,6 @@ class FirebaseLocalSchemaSyncService {
       final snapshot = await collection.get();
       
       if (snapshot.docs.isEmpty) {
-        debugPrint('📭 No Firebase data to sync for collection: $tableName');
         return;
       }
 
@@ -364,9 +338,7 @@ class FirebaseLocalSchemaSyncService {
         await localDb.insert(tableName, localData);
       }
       
-      debugPrint('✅ Synced ${snapshot.docs.length - 1} records from Firebase collection: $tableName to local table');
     } catch (e) {
-      debugPrint('❌ Failed to sync Firebase collection $tableName to local: $e');
     }
   }
 

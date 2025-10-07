@@ -91,7 +91,6 @@ class _UnifiedPrinterDashboardState extends State<UnifiedPrinterDashboard>
       _categories = await menuService.getCategories();
       _menuItems = await menuService.getMenuItems();
     } catch (e) {
-      debugPrint('Error loading menu data: $e');
     }
   }
 
@@ -99,7 +98,6 @@ class _UnifiedPrinterDashboardState extends State<UnifiedPrinterDashboard>
     if (_printerService == null) return;
     
     try {
-      debugPrint('🚨 URGENT: Scan for printers called - using UnifiedPrinterService only');
       
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -111,11 +109,9 @@ class _UnifiedPrinterDashboardState extends State<UnifiedPrinterDashboard>
 
       // URGENT: First add known Epson printers directly
       await _printerService!.addKnownEpsonPrinters();
-      debugPrint('✅ Epson printers added via UnifiedPrinterService');
       
       // Then trigger UnifiedPrinterService discovery only
       await _printerService!.scanForPrinters();
-      debugPrint('✅ UnifiedPrinterService scan completed');
       
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -128,7 +124,6 @@ class _UnifiedPrinterDashboardState extends State<UnifiedPrinterDashboard>
       setState(() {}); // Refresh the UI
       
     } catch (e) {
-      debugPrint('❌ Scan failed: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('❌ Discovery failed: $e'),
@@ -152,7 +147,6 @@ class _UnifiedPrinterDashboardState extends State<UnifiedPrinterDashboard>
         ),
       );
 
-      debugPrint('🚨 URGENT: Adding Epson TM-M30II printers directly via UnifiedPrinterService');
 
       // URGENT: Use the direct method from UnifiedPrinterService
       await _printerService!.addKnownEpsonPrinters();
@@ -168,7 +162,6 @@ class _UnifiedPrinterDashboardState extends State<UnifiedPrinterDashboard>
       setState(() {}); // Refresh the UI
       
     } catch (e) {
-      debugPrint('❌ Failed to add Epson printers: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('❌ Failed to add Epson printers: $e'),

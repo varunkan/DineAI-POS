@@ -129,7 +129,6 @@ class _DineInSetupScreenState extends State<DineInSetupScreen>
       _tables = tables;
     });
     
-    debugPrint('Loaded ${tables.length} tables for dine-in setup');
   }
 
   void _selectTable(restaurant_table.Table table) {
@@ -192,7 +191,6 @@ class _DineInSetupScreenState extends State<DineInSetupScreen>
         ),
       );
     } catch (e) {
-      debugPrint('❌ Error showing snackbar: $e');
     }
   }
 
@@ -216,7 +214,6 @@ class _DineInSetupScreenState extends State<DineInSetupScreen>
         ),
       );
     } catch (e) {
-      debugPrint('❌ Error showing snackbar: $e');
     }
   }
 
@@ -301,7 +298,6 @@ class _DineInSetupScreenState extends State<DineInSetupScreen>
           ),
         );
       } catch (e) {
-        debugPrint('❌ Error navigating to order creation: $e');
         if (mounted) {
           _showErrorSnackBar('Failed to start order creation. Please try again.');
         }

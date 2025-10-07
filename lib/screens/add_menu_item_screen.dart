@@ -121,7 +121,6 @@ class _AddMenuItemScreenState extends State<AddMenuItemScreen> {
         updatedAt: DateTime.now(),
       );
       
-      debugPrint('🎯 Attempting to add menu item: ${newItem.name} with category: ${newItem.categoryId}');
       
       await menuService.addMenuItem(newItem);
       setState(() {
@@ -142,7 +141,6 @@ class _AddMenuItemScreenState extends State<AddMenuItemScreen> {
         _error = 'Error saving menu item: $e';
       });
       
-      debugPrint('❌ Menu item addition error: $e');
       
       if (mounted) {
         String errorMessage = 'Failed to save menu item: $e';

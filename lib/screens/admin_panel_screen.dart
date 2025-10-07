@@ -93,7 +93,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with TickerProvider
   void initState() {
     super.initState();
     _selectedIndex = widget.initialTabIndex;
-    debugPrint('ADMIN FLOW: AdminPanelScreen initState, initialTabIndex: $_selectedIndex');
     _verifyAdminAccess();
     _loadData();
     _logAdminPanelAccess();
@@ -101,18 +100,9 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with TickerProvider
   
   /// Verify that the user has proper admin access
   void _verifyAdminAccess() {
-    debugPrint('🔍 Verifying admin access for user: ${widget.user.name}');
-    debugPrint('🔑 User Role: ${widget.user.role}');
-    debugPrint('⚙️ Admin Panel Access: ${widget.user.adminPanelAccess}');
-    debugPrint('✅ User is Active: ${widget.user.isActive}');
     
     if (widget.user.role == UserRole.admin && widget.user.adminPanelAccess && widget.user.isActive) {
-      debugPrint('✅ User has full admin access');
     } else {
-      debugPrint('⚠️ Warning: User may not have proper admin access');
-      debugPrint('   • Role: ${widget.user.role} (should be admin)');
-      debugPrint('   • Admin Panel Access: ${widget.user.adminPanelAccess} (should be true)');
-      debugPrint('   • Active: ${widget.user.isActive} (should be true)');
     }
   }
 
@@ -127,7 +117,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with TickerProvider
         tabName: 'Tab $_selectedIndex',
       );
     } catch (e) {
-      debugPrint('⚠️ Failed to log admin panel access: $e');
     }
   }
 
@@ -155,9 +144,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with TickerProvider
         _isLoading = false;
       });
       
-      debugPrint('✅ Admin panel data loaded: ${_categories.length} categories, ${_menuItems.length} menu items');
     } catch (e) {
-      debugPrint('❌ Error loading admin panel data: $e');
       setState(() {
         _isLoading = false;
       });
@@ -170,9 +157,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with TickerProvider
     // try {
     //   final syncTriggerService = AutomaticSyncTriggerService();
     //   await syncTriggerService.triggerImmediateSyncOnInteraction();
-    //   debugPrint('🔄 Sync triggered on admin panel access');
     // } catch (e) {
-    //   debugPrint('⚠️ Failed to trigger sync on admin panel access: $e');
     // }
   }
 
@@ -181,7 +166,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with TickerProvider
     setState(() { _isLoading = true; });
     
     try {
-      debugPrint('🧪 Admin Panel: Adding test orphaned items...');
       
       final dbService = DatabaseService();
       final db = await dbService.database;
@@ -237,7 +221,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with TickerProvider
           totalItemsCreated++;
           totalValue += totalPrice;
           
-          debugPrint('✅ Created orphaned item: ${menuItem['name']} x$quantity = \$${totalPrice.toStringAsFixed(2)}');
         }
       }
       
@@ -258,7 +241,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with TickerProvider
       }
       
     } catch (e) {
-      debugPrint('❌ Error adding test orphaned items: $e');
       if (mounted) {
         await ErrorDialogHelper.showError(
           context,
@@ -278,15 +260,11 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with TickerProvider
     setState(() { _isLoading = true; });
     
     try {
-      debugPrint('🚀 Admin Panel: Starting order generation from order_items...');
       
       // Method 1: Use OrderService (recommended)
       final orderService = Provider.of<OrderService>(context, listen: false);
       final result = await orderService.generateOrdersFromItems();
       
-      debugPrint('🚀 Order generation result: ${result['success']}');
-      debugPrint('📊 Generated orders: ${result['generated']}');
-      debugPrint('💬 Message: ${result['message']}');
       
       if (mounted) {
         if (result['success'] == true) {
@@ -365,7 +343,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with TickerProvider
       }
       
     } catch (e) {
-      debugPrint('❌ Error during order generation: $e');
       if (mounted) {
         await ErrorDialogHelper.showError(
           context,
@@ -1114,20 +1091,16 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with TickerProvider
       });
 
       try {
-        debugPrint('🍽️ Admin: Starting Oh Bombay menu loading...');
         final menuService = Provider.of<MenuService>(context, listen: false);
         
         // Ensure menu service is properly initialized
         await menuService.ensureInitialized();
-        debugPrint('✅ Admin: Menu service initialized');
         
         // Load the Oh Bombay menu
         await menuService.loadOhBombayMenu();
-        debugPrint('✅ Admin: Oh Bombay menu loaded');
         
         // Reload local data
         await _loadData();
-        debugPrint('✅ Admin: UI data refreshed');
         
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -1139,8 +1112,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with TickerProvider
           );
         }
       } catch (e, stackTrace) {
-        debugPrint('❌ Admin: Error loading Oh Bombay menu: $e');
-        debugPrint('Stack trace: $stackTrace');
         
         if (mounted) {
           await ErrorDialogHelper.showError(
@@ -1163,22 +1134,16 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with TickerProvider
     setState(() { _isLoading = true; });
     
     try {
-      debugPrint('🧪 Testing menu service functionality...');
       final menuService = Provider.of<MenuService>(context, listen: false);
       
       // Test 1: Check service initialization
-      debugPrint('🔍 Test 1: Service initialization');
       await menuService.ensureInitialized();
-      debugPrint('✅ Menu service initialized successfully');
       
       // Test 2: Check current data
-      debugPrint('🔍 Test 2: Current menu data');
       final currentCategories = await menuService.getCategories();
       final currentMenuItems = await menuService.getMenuItems();
-      debugPrint('📊 Current: ${currentCategories.length} categories, ${currentMenuItems.length} items');
       
       // Test 3: Test database connectivity
-      debugPrint('🔍 Test 3: Database operations');
       // Try to create a test category
       final testCategory = pos_category.Category(
         name: 'Test Category ${DateTime.now().millisecondsSinceEpoch}',
@@ -1187,29 +1152,21 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with TickerProvider
       );
       
       await menuService.saveCategory(testCategory);
-      debugPrint('✅ Test category created successfully');
       
       // Clean up test category
       await menuService.deleteCategory(testCategory.id);
-      debugPrint('✅ Test category deleted successfully');
       
       // Test 4: Test Oh Bombay menu loading with detailed error checking
-      debugPrint('🔍 Test 4: Oh Bombay menu loading dry run');
       try {
         // This will test the actual loadOhBombayMenu method
         await menuService.clearAllData();
-        debugPrint('✅ Data cleared successfully');
         
         await menuService.loadOhBombayMenu();
-        debugPrint('✅ Oh Bombay menu loaded successfully');
         
         final finalCategories = await menuService.getCategories();
         final finalMenuItems = await menuService.getMenuItems();
-        debugPrint('📊 Final: ${finalCategories.length} categories, ${finalMenuItems.length} items');
         
       } catch (e, stackTrace) {
-        debugPrint('❌ Oh Bombay loading failed: $e');
-        debugPrint('Stack trace: $stackTrace');
         throw e;
       }
       
@@ -1227,8 +1184,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with TickerProvider
       }
       
     } catch (e, stackTrace) {
-      debugPrint('❌ Menu service test failed: $e');
-      debugPrint('Stack trace: $stackTrace');
       
       if (mounted) {
         await ErrorDialogHelper.showError(
@@ -1336,21 +1291,17 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with TickerProvider
           
           // Save the order (this should create audit logs)
           await orderService.saveOrder(order);
-          debugPrint('Created test order: ${order.orderNumber}');
           
           // Update status to create more audit logs
           await orderService.updateOrderStatus(order.id, 'confirmed');
-          debugPrint('Updated order ${order.orderNumber} to confirmed');
           
           if (i > 1) {
             await orderService.updateOrderStatus(order.id, 'preparing');
-            debugPrint('Updated order ${order.orderNumber} to preparing');
           }
         }
         
         // Check if logs were created
         final allLogs = orderLogService.allLogs;
-        debugPrint('Total audit logs created: ${allLogs.length}');
         
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -1361,7 +1312,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with TickerProvider
           );
         }
       } catch (e) {
-        debugPrint('Error creating test orders: $e');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -1457,8 +1407,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with TickerProvider
         final allLogs = activityLogService.allLogs;
         final recentLogs = activityLogService.recentLogs;
         
-        debugPrint('Total activity logs: ${allLogs.length}');
-        debugPrint('Recent activity logs: ${recentLogs.length}');
         
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -1469,7 +1417,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with TickerProvider
           );
         }
       } catch (e) {
-        debugPrint('Error generating test activity logs: $e');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -1732,7 +1679,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with TickerProvider
   }
 
   Widget _buildBody() {
-    debugPrint('ADMIN FLOW: Building tab content for index: $_selectedIndex');
     switch (_selectedIndex) {
       case 0:
         return _buildCategoriesTab();
@@ -2293,7 +2239,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with TickerProvider
   }
 
   Widget _buildManageUsersTab() {
-    debugPrint('ADMIN FLOW: _buildManageUsersTab called');
     return UserManagementScreen(currentUser: widget.user);
   }
 
@@ -3352,11 +3297,9 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with TickerProvider
           tabName: 'Force Cross-Platform Sync',
         );
       } catch (e) {
-        debugPrint('⚠️ Failed to log sync action: $e');
       }
 
     } catch (e) {
-      debugPrint('❌ Error during force sync: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -3496,21 +3439,16 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with TickerProvider
     setState(() { _isLoading = true; });
     
     try {
-      debugPrint('🍽️ Admin: Loading Oh Bombay menu...');
       final menuService = Provider.of<MenuService>(context, listen: false);
       
       // Clear existing data first to avoid conflicts
-      debugPrint('🗑️ Admin: Clearing existing menu data');
       await menuService.clearAllData();
       
       // Load Oh Bombay menu
-      debugPrint('📥 Admin: Loading Oh Bombay menu data');
       await menuService.loadOhBombayMenu();
-      debugPrint('✅ Admin: Oh Bombay menu loaded to database');
       
       // Reload local data
       await _loadData();
-      debugPrint('✅ Admin: UI data refreshed');
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -3522,8 +3460,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with TickerProvider
         );
       }
     } catch (e, stackTrace) {
-      debugPrint('❌ Admin: Error loading Oh Bombay menu: $e');
-      debugPrint('Stack trace: $stackTrace');
       
       if (mounted) {
         await ErrorDialogHelper.showError(
@@ -3588,7 +3524,6 @@ class _AddUserViewState extends State<_AddUserView> {
   @override
   void initState() {
     super.initState();
-    debugPrint('ADMIN FLOW: _AddUserView initState');
   }
 
   @override
@@ -3648,7 +3583,6 @@ class _AddUserViewState extends State<_AddUserView> {
 
   @override
   Widget build(BuildContext context) {
-    debugPrint('ADMIN FLOW: _AddUserView build called');
     return Form(
       key: _formKey,
       child: Column(
@@ -3742,7 +3676,6 @@ class _ExistingUsersViewState extends State<_ExistingUsersView> {
   @override
   void initState() {
     super.initState();
-    debugPrint('ADMIN FLOW: _ExistingUsersView initState');
     _loadUsers();
   }
 
@@ -3804,7 +3737,6 @@ class _ExistingUsersViewState extends State<_ExistingUsersView> {
 
   @override
   Widget build(BuildContext context) {
-    debugPrint('ADMIN FLOW: _ExistingUsersView build called');
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

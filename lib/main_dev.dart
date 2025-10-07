@@ -20,12 +20,6 @@ void main() async {
   
   // Enable development-specific features
   if (kDebugMode) {
-    debugPrint('🚀 Starting AI POS System in DEVELOPMENT mode');
-    debugPrint('📊 Environment: ${EnvironmentConfig.environment.name}');
-    debugPrint('🗄️ Database: ${EnvironmentConfig.databaseName}');
-    debugPrint('🔧 Debug Logs: ${EnvironmentConfig.enableDebugLogs}');
-    debugPrint('🧪 Test Data: ${EnvironmentConfig.enableTestData}');
-    debugPrint('🖨️ Printer Simulation: ${EnvironmentConfig.enablePrinterSimulation}');
   }
   
   // Set system UI overlay style for development

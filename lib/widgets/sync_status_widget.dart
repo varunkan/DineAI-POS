@@ -95,7 +95,6 @@ class _SyncStatusWidgetState extends State<SyncStatusWidget>
         }
       }
     } catch (e) {
-      debugPrint('Failed to load sync status: $e');
     }
   }
 

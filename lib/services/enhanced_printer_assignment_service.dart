@@ -47,7 +47,6 @@ class EnhancedPrinterAssignmentService extends ChangeNotifier {
   Future<void> initialize() async {
     if (_isInitialized) return;
     
-    debugPrint('$_logTag 🚀 Initializing enhanced printer assignment service...');
     
     try {
       _isLoading = true;
@@ -59,10 +58,8 @@ class EnhancedPrinterAssignmentService extends ChangeNotifier {
       await _startPersistenceMonitoring();
       
       _isInitialized = true;
-      debugPrint('$_logTag ✅ Enhanced printer assignment service initialized successfully');
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error initializing enhanced service: $e');
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -105,9 +102,7 @@ class EnhancedPrinterAssignmentService extends ChangeNotifier {
         ON enhanced_printer_assignments(printer_id)
       ''');
       
-      debugPrint('$_logTag ✅ Enhanced assignment tables created');
     } catch (e) {
-      debugPrint('$_logTag ❌ Error creating tables: $e');
     }
   }
   
@@ -126,7 +121,6 @@ class EnhancedPrinterAssignmentService extends ChangeNotifier {
         try {
           maps = await db.query('printer_assignments', orderBy: 'created_at ASC');
         } catch (fallbackError) {
-          debugPrint('$_logTag ⚠️ No assignment tables found - will create on first assignment');
           return;
         }
       }
@@ -140,23 +134,17 @@ class EnhancedPrinterAssignmentService extends ChangeNotifier {
             _assignments.add(assignment);
           }
         } catch (e) {
-          debugPrint('$_logTag ⚠️ Error parsing assignment: $e');
         }
       }
       
-      debugPrint('$_logTag 📋 Loaded ${_assignments.length} assignments from database');
       
       // Log persistent assignments
       if (_assignments.isNotEmpty) {
-        debugPrint('$_logTag 🔄 PERSISTENCE STATUS: Loaded ${_assignments.length} printer assignments from database');
-        debugPrint('$_logTag 📋 PERSISTENT ASSIGNMENTS LOADED:');
         for (final assignment in _assignments) {
-          debugPrint('$_logTag   - ${assignment.targetName} (${assignment.assignmentType.name}) → ${assignment.printerName}');
         }
       }
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error loading assignments: $e');
     }
   }
   
@@ -179,7 +167,6 @@ class EnhancedPrinterAssignmentService extends ChangeNotifier {
       }
     }
     
-    debugPrint('$_logTag 🗺️ Rebuilt assignment maps: ${_categoryToPrinters.length} categories, ${_menuItemToPrinters.length} menu items');
   }
   
   /// Start persistence monitoring
@@ -201,13 +188,11 @@ class EnhancedPrinterAssignmentService extends ChangeNotifier {
       final memoryCount = _assignments.where((a) => a.isActive).length;
       
       if (dbCount != memoryCount) {
-        debugPrint('$_logTag ⚠️ Persistence mismatch detected: DB=$dbCount, Memory=$memoryCount - reloading');
         await _loadAssignmentsFromDatabase();
         await _rebuildAssignmentMaps();
         notifyListeners();
       }
     } catch (e) {
-      debugPrint('$_logTag ❌ Error verifying persistence: $e');
     }
   }
   
@@ -220,7 +205,6 @@ class EnhancedPrinterAssignmentService extends ChangeNotifier {
     int priority = 0,
   }) async {
     try {
-      debugPrint('$_logTag 🎯 Adding assignment: $targetName → $printerId');
       
       // 🚨 URGENT: Get printer configuration from both services (old and new)
       PrinterConfiguration? printerConfig = await _printerConfigService.getConfigurationById(printerId);
@@ -228,11 +212,9 @@ class EnhancedPrinterAssignmentService extends ChangeNotifier {
       // If not found in old service, check UnifiedPrinterService
       if (printerConfig == null && _unifiedPrinterService != null) {
         printerConfig = _unifiedPrinterService!.printers.firstWhereOrNull((p) => p.id == printerId);
-        debugPrint('$_logTag 🚀 Found printer in UnifiedPrinterService: ${printerConfig?.name}');
       }
       
       if (printerConfig == null) {
-        debugPrint('$_logTag ❌ Printer configuration not found in both services: $printerId');
         return false;
       }
 
@@ -240,13 +222,11 @@ class EnhancedPrinterAssignmentService extends ChangeNotifier {
       if (assignmentType == AssignmentType.category) {
         final categoryExists = await _checkCategoryExists(targetId);
         if (!categoryExists) {
-          debugPrint('$_logTag ⚠️ Category not found: $targetId - creating placeholder category');
           await _createPlaceholderCategory(targetId, targetName);
         }
       } else if (assignmentType == AssignmentType.menuItem) {
         final itemExists = await _checkMenuItemExists(targetId);
         if (!itemExists) {
-          debugPrint('$_logTag ⚠️ Menu item not found: $targetId - creating placeholder item');
           await _createPlaceholderMenuItem(targetId, targetName);
         }
       }
@@ -259,7 +239,6 @@ class EnhancedPrinterAssignmentService extends ChangeNotifier {
           .firstOrNull;
       
       if (existingAssignment != null) {
-        debugPrint('$_logTag ⚠️ Assignment already exists: $targetName → ${printerConfig.name}');
         return false;
       }
       
@@ -296,7 +275,6 @@ class EnhancedPrinterAssignmentService extends ChangeNotifier {
           'updated_at': assignment.updatedAt.toIso8601String(),
         });
       } catch (e) {
-        debugPrint('$_logTag ❌ Error creating assignment: $e');
         // Don't throw - just return false to prevent breaking menu item addition
         return false;
       }
@@ -307,14 +285,11 @@ class EnhancedPrinterAssignmentService extends ChangeNotifier {
       // Update maps
       await _rebuildAssignmentMaps();
       
-      debugPrint('$_logTag ✅ PERSISTENT ASSIGNMENT SAVED: $targetName (${assignmentType.name}) → ${printerConfig.name}');
-      debugPrint('$_logTag 💾 Assignment will persist across app sessions and logouts');
       
       notifyListeners();
       return true;
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error adding assignment: $e');
       return false;
     }
   }
@@ -332,7 +307,6 @@ class EnhancedPrinterAssignmentService extends ChangeNotifier {
     
     if (menuItemAssignments.isNotEmpty) {
       result.addAll(menuItemAssignments);
-      debugPrint('$_logTag 🎯 Found ${menuItemAssignments.length} specific assignments for menu item: $menuItemId');
     }
     
     // Priority 2: Category assignments (if no specific menu item assignments)
@@ -345,7 +319,6 @@ class EnhancedPrinterAssignmentService extends ChangeNotifier {
       
       if (categoryAssignments.isNotEmpty) {
         result.addAll(categoryAssignments);
-        debugPrint('$_logTag 📂 Found ${categoryAssignments.length} category assignments for: $categoryId');
       }
     }
     
@@ -391,11 +364,9 @@ class EnhancedPrinterAssignmentService extends ChangeNotifier {
       _categoryToPrinters.clear();
       _menuItemToPrinters.clear();
       
-      debugPrint('$_logTag 🧹 Cleared all assignments from database and memory');
       notifyListeners();
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error clearing all assignments: $e');
     }
   }
   
@@ -404,7 +375,6 @@ class EnhancedPrinterAssignmentService extends ChangeNotifier {
     final Map<String, List<OrderItem>> itemsByPrinter = {};
     
     try {
-      debugPrint('$_logTag 🍽️ Segregating ${order.items.length} order items by printer assignments');
       
       // Group items by unique ID to handle duplicates properly
       final Map<String, List<OrderItem>> itemsByUniqueId = {};
@@ -437,7 +407,6 @@ class EnhancedPrinterAssignmentService extends ChangeNotifier {
             itemsByPrinter[assignment.printerId]!.addAll(items);
           }
           
-          debugPrint('$_logTag 🎯 ${firstItem.menuItem.name} (${items.length} instances) assigned to ${assignments.length} printers');
         } else {
           // No assignment found - use default printer
           const defaultPrinterId = 'default_printer';
@@ -446,19 +415,15 @@ class EnhancedPrinterAssignmentService extends ChangeNotifier {
           }
           itemsByPrinter[defaultPrinterId]!.addAll(items);
           
-          debugPrint('$_logTag ⚠️ ${firstItem.menuItem.name} (${items.length} instances) using default printer - no assignment found');
         }
       }
       
-      debugPrint('$_logTag 📊 Order segregated across ${itemsByPrinter.length} printers');
       for (final entry in itemsByPrinter.entries) {
-        debugPrint('$_logTag   - Printer ${entry.key}: ${entry.value.length} items');
       }
       
       return itemsByPrinter;
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error segregating order items: $e');
       // Fallback: return all items for default printer
       return {'default_printer': order.items};
     }
@@ -483,12 +448,10 @@ class EnhancedPrinterAssignmentService extends ChangeNotifier {
       // Update maps
       await _rebuildAssignmentMaps();
       
-      debugPrint('$_logTag ✅ Assignment removed successfully');
       notifyListeners();
       return true;
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error removing assignment: $e');
       return false;
     }
   }
@@ -513,7 +476,6 @@ class EnhancedPrinterAssignmentService extends ChangeNotifier {
         updatedAt: DateTime.tryParse(map['updated_at'] ?? '') ?? DateTime.now(),
       );
     } catch (e) {
-      debugPrint('$_logTag ❌ Error parsing assignment from map: $e');
       return null;
     }
   }
@@ -523,7 +485,6 @@ class EnhancedPrinterAssignmentService extends ChangeNotifier {
     try {
       final db = await _databaseService.database;
       if (db == null) {
-        debugPrint('$_logTag ❌ Database not available for category check');
         return false;
       }
       final result = await db.query(
@@ -534,7 +495,6 @@ class EnhancedPrinterAssignmentService extends ChangeNotifier {
       );
       return result.isNotEmpty;
     } catch (e) {
-      debugPrint('$_logTag ❌ Error checking category existence: $e');
       return false;
     }
   }
@@ -544,7 +504,6 @@ class EnhancedPrinterAssignmentService extends ChangeNotifier {
     try {
       final db = await _databaseService.database;
       if (db == null) {
-        debugPrint('$_logTag ❌ Database not available for menu item check');
         return false;
       }
       final result = await db.query(
@@ -555,7 +514,6 @@ class EnhancedPrinterAssignmentService extends ChangeNotifier {
       );
       return result.isNotEmpty;
     } catch (e) {
-      debugPrint('$_logTag ❌ Error checking menu item existence: $e');
       return false;
     }
   }
@@ -579,9 +537,7 @@ class EnhancedPrinterAssignmentService extends ChangeNotifier {
         },
         conflictAlgorithm: ConflictAlgorithm.ignore, // Don't fail if already exists
       );
-      debugPrint('$_logTag ✅ Created placeholder category: $categoryName ($categoryId)');
     } catch (e) {
-      debugPrint('$_logTag ❌ Error creating placeholder category: $e');
     }
   }
 
@@ -620,9 +576,7 @@ class EnhancedPrinterAssignmentService extends ChangeNotifier {
         },
         conflictAlgorithm: ConflictAlgorithm.ignore, // Don't fail if already exists
       );
-      debugPrint('$_logTag ✅ Created placeholder menu item: $itemName ($itemId)');
     } catch (e) {
-      debugPrint('$_logTag ❌ Error creating placeholder menu item: $e');
     }
   }
 

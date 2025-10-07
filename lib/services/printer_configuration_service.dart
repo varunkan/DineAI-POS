@@ -44,7 +44,6 @@ class PrinterConfigurationService extends ChangeNotifier {
   
   /// Initialize the service with REAL printer discovery
   Future<void> initialize() async {
-    debugPrint('$_logTag 🚀 Initializing REAL printer configuration service...');
     
     try {
       await _createPrinterConfigurationsTable();
@@ -52,14 +51,11 @@ class PrinterConfigurationService extends ChangeNotifier {
       
       // FIXED: Don't start automatic printer discovery immediately to prevent hanging
       // await _startAutomaticDiscovery();
-      debugPrint('$_logTag 🔄 Automatic printer discovery disabled during initialization to prevent hanging');
       
       _isInitialized = true;
       notifyListeners();
       
-      debugPrint('$_logTag ✅ REAL printer service initialized successfully');
     } catch (e) {
-      debugPrint('$_logTag ❌ Error initializing printer service: $e');
     }
   }
   
@@ -86,9 +82,7 @@ class PrinterConfigurationService extends ChangeNotifier {
         )
       ''');
       
-      debugPrint('$_logTag ✅ Printer configurations table created');
     } catch (e) {
-      debugPrint('$_logTag ❌ Error creating table: $e');
     }
   }
   
@@ -101,10 +95,8 @@ class PrinterConfigurationService extends ChangeNotifier {
       final List<Map<String, dynamic>> maps = await db!.query('printer_configurations');
       _configurations = maps.map((map) => _configFromDbMap(map)).toList();
       
-      debugPrint('$_logTag 📂 Loaded ${_configurations.length} saved printer configurations');
       notifyListeners();
     } catch (e) {
-      debugPrint('$_logTag ❌ Error loading configurations: $e');
     }
   }
   
@@ -136,7 +128,6 @@ class PrinterConfigurationService extends ChangeNotifier {
       }
       return null;
     } catch (e) {
-      debugPrint('$_logTag ❌ Error getting configuration by ID: $e');
       return null;
     }
   }
@@ -177,7 +168,6 @@ class PrinterConfigurationService extends ChangeNotifier {
       }
       return saved;
     } catch (e) {
-      debugPrint('$_logTag ❌ Failed to add bar printer $ip:$port → $e');
       return false;
     }
   }
@@ -202,7 +192,6 @@ class PrinterConfigurationService extends ChangeNotifier {
       }
       return saved;
     } catch (e) {
-      debugPrint('$_logTag ❌ Failed to add sweet counter printer $ip:$port → $e');
       return false;
     }
   }
@@ -221,11 +210,9 @@ class PrinterConfigurationService extends ChangeNotifier {
       );
       
       await _loadSavedConfigurations();
-      debugPrint('$_logTag ✅ Updated printer configuration: ${config.name}');
       return true;
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error updating configuration: $e');
       return false;
     }
   }
@@ -248,15 +235,12 @@ class PrinterConfigurationService extends ChangeNotifier {
         whereArgs: [configId],
       );
       
-      debugPrint('$_logTag ✅ Updated last test print for configuration: $configId');
     } catch (e) {
-      debugPrint('$_logTag ❌ Error updating last test print: $e');
     }
   }
   
   /// Manually trigger printer discovery (can be called from UI)
   Future<void> manualDiscovery() async {
-    debugPrint('$_logTag 🔍 Manual printer discovery triggered by user');
     
     // Clear previous discoveries
     _discoveredPrinters.clear();
@@ -269,7 +253,6 @@ class PrinterConfigurationService extends ChangeNotifier {
   /// Start automatic printer discovery on local network
   /// FIXED: Removed automatic discovery - only manual discovery available
   Future<void> _startAutomaticDiscovery() async {
-    debugPrint('$_logTag 🔄 Automatic discovery disabled - only manual discovery available');
     // No automatic discovery - only manual discovery on user request
   }
   
@@ -280,12 +263,10 @@ class PrinterConfigurationService extends ChangeNotifier {
     _isScanning = true;
     notifyListeners();
     
-    debugPrint('$_logTag 🔍 Quick scanning for thermal printers...');
     
     try {
       // Get local network range
       final networkRange = await _getNetworkRange();
-      debugPrint('$_logTag 🌐 Scanning network range: $networkRange');
       
       // Quick scan of common printer IPs only
       final commonIPs = <String>[];
@@ -295,7 +276,6 @@ class PrinterConfigurationService extends ChangeNotifier {
       for (int i = 150; i <= 170; i++) commonIPs.add('$networkRange.$i');
       for (int i = 10; i <= 30; i++) commonIPs.add('$networkRange.$i');
       
-      debugPrint('$_logTag 🔍 Scanning ${commonIPs.length} common printer IPs...');
       
       // Scan with timeout
       final scanTimeout = const Duration(seconds: 15);
@@ -303,7 +283,6 @@ class PrinterConfigurationService extends ChangeNotifier {
       
       for (final ip in commonIPs) {
         if (stopwatch.elapsed > scanTimeout) {
-          debugPrint('$_logTag ⏰ Scan timeout reached');
           break;
         }
         
@@ -312,7 +291,6 @@ class PrinterConfigurationService extends ChangeNotifier {
             final printer = await _testPrinterConnection(ip, port);
             if (printer != null) {
               _discoveredPrinters.add(printer);
-              debugPrint('$_logTag 🖨️ Found printer: ${printer.name} at ${printer.ipAddress}:${printer.port}');
               await _autoAddDiscoveredPrinter(printer);
             }
           } catch (e) {
@@ -322,10 +300,8 @@ class PrinterConfigurationService extends ChangeNotifier {
       }
       
       stopwatch.stop();
-      debugPrint('$_logTag ✅ Quick scan completed in ${stopwatch.elapsedMilliseconds}ms. Found ${_discoveredPrinters.length} printers');
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error during quick printer scan: $e');
     } finally {
       _isScanning = false;
       notifyListeners();
@@ -351,7 +327,6 @@ class PrinterConfigurationService extends ChangeNotifier {
       // Default to common network range
       return '192.168.1';
     } catch (e) {
-      debugPrint('$_logTag ⚠️ Could not determine network range, using default: $e');
       return '192.168.1';
     }
   }
@@ -452,7 +427,6 @@ class PrinterConfigurationService extends ChangeNotifier {
       return await _saveConfiguration(config);
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error adding discovered printer: $e');
       return false;
     }
   }
@@ -463,7 +437,6 @@ class PrinterConfigurationService extends ChangeNotifier {
       // Check if we already have a configuration for this printer
       final existing = getConfigurationByIP(printer.ipAddress, printer.port);
       if (existing != null) {
-        debugPrint('$_logTag ℹ️ Printer already exists in configurations: ${printer.name}');
         return;
       }
       
@@ -480,13 +453,10 @@ class PrinterConfigurationService extends ChangeNotifier {
       
       final success = await _saveConfiguration(config);
       if (success) {
-        debugPrint('$_logTag ✅ Auto-added discovered printer: ${printer.name} at ${printer.ipAddress}:${printer.port}');
       } else {
-        debugPrint('$_logTag ❌ Failed to auto-add discovered printer: ${printer.name}');
       }
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error auto-adding discovered printer: $e');
     }
   }
   
@@ -511,22 +481,17 @@ class PrinterConfigurationService extends ChangeNotifier {
     try {
       final db = await _databaseService.database;
       if (db?.isOpen != true) {
-        debugPrint('$_logTag ❌ Database not available for saving configuration');
         return false;
       }
       
       final configMap = _configToDbMap(config);
-      debugPrint('$_logTag 💾 Saving configuration with data: ${configMap.keys.toList()}');
       
       await db!.insert('printer_configurations', configMap);
       await _loadSavedConfigurations();
       
-      debugPrint('$_logTag ✅ Saved printer configuration: ${config.name} (${config.ipAddress}:${config.port})');
       return true;
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error saving configuration: $e');
-      debugPrint('$_logTag 📋 Config details: ${config.name} at ${config.ipAddress}:${config.port}');
       return false;
     }
   }
@@ -539,18 +504,15 @@ class PrinterConfigurationService extends ChangeNotifier {
       // If passed a String ID, look up the configuration
       config = await getConfigurationById(configOrId);
       if (config == null) {
-        debugPrint('$_logTag ❌ Configuration not found for ID: $configOrId');
         return false;
       }
     } else if (configOrId is PrinterConfiguration) {
       config = configOrId;
     } else {
-      debugPrint('$_logTag ❌ Invalid parameter type for testConnection');
       return false;
     }
     
     try {
-      debugPrint('$_logTag 🔧 Testing connection to ${config.name}...');
       
       final socket = await Socket.connect(
         config.ipAddress, 
@@ -564,11 +526,9 @@ class PrinterConfigurationService extends ChangeNotifier {
       
       await socket.close();
       
-      debugPrint('$_logTag ✅ Connection test successful for ${config.name}');
       return true;
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Connection test failed for ${config.name}: $e');
       return false;
     }
   }
@@ -605,7 +565,6 @@ POS System: AI Restaurant
     String description = '',
   }) async {
     try {
-      debugPrint('$_logTag 🔧 Adding manual printer: $name at $ipAddress:$port');
       
       // Test connection first
       final socket = await Socket.connect(ipAddress, port, timeout: const Duration(seconds: 5));
@@ -624,7 +583,6 @@ POS System: AI Restaurant
       return await _saveConfiguration(config);
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error adding manual printer: $e');
       return false;
     }
   }
@@ -638,11 +596,9 @@ POS System: AI Restaurant
       await db!.delete('printer_configurations', where: 'id = ?', whereArgs: [configId]);
       await _loadSavedConfigurations();
       
-      debugPrint('$_logTag ✅ Removed printer configuration');
       return true;
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error removing configuration: $e');
       return false;
     }
   }
@@ -724,11 +680,9 @@ POS System: AI Restaurant
         notifyListeners();
       }
       
-      debugPrint('$_logTag ✅ Updated connection status for $configId to $status');
       return true;
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error updating connection status: $e');
       return false;
     }
   }

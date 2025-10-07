@@ -18,26 +18,19 @@ class IndianRestaurantMenuLoader {
     bool clearExisting = false,
   }) async {
     try {
-      debugPrint('🇮🇳 Loading popular Indian restaurant menu...');
       
       if (clearExisting) {
         await menuService.clearAllData();
-        debugPrint('🗑️ Cleared existing menu data');
       }
       
       // Create popular Indian restaurant categories
       final categories = await _createIndianCategories(menuService);
-      debugPrint('✅ Created ${categories.length} Indian categories');
       
       // Create popular Indian menu items
       final menuItems = await _createIndianMenuItems(menuService, categories);
-      debugPrint('✅ Created ${menuItems.length} Indian menu items');
       
-      debugPrint('🇮🇳 Successfully loaded popular Indian restaurant menu');
-      debugPrint('📊 Summary: ${categories.length} categories, ${menuItems.length} items');
       
     } catch (e) {
-      debugPrint('❌ Failed to load Indian restaurant menu: $e');
       rethrow;
     }
   }
@@ -103,7 +96,6 @@ class IndianRestaurantMenuLoader {
       savedCategories.add(category);
     }
 
-    debugPrint('✅ Created ${savedCategories.length} Indian restaurant categories');
     return savedCategories;
   }
 
@@ -563,7 +555,6 @@ class IndianRestaurantMenuLoader {
       savedMenuItems.add(item);
     }
 
-    debugPrint('✅ Created ${savedMenuItems.length} Indian restaurant menu items');
     return savedMenuItems;
   }
 
@@ -575,7 +566,6 @@ class IndianRestaurantMenuLoader {
     bool clearExisting = false,
   }) async {
     try {
-      debugPrint('🏢 Loading Indian menu for tenant: $tenantId');
       
       await loadPopularIndianMenu(
         databaseService: databaseService,
@@ -583,10 +573,8 @@ class IndianRestaurantMenuLoader {
         clearExisting: clearExisting,
       );
       
-      debugPrint('✅ Successfully loaded Indian menu for tenant: $tenantId');
       
     } catch (e) {
-      debugPrint('❌ Failed to load Indian menu for tenant $tenantId: $e');
       rethrow;
     }
   }
@@ -598,7 +586,6 @@ class IndianRestaurantMenuLoader {
     bool clearExisting = false,
   }) async {
     try {
-      debugPrint('🌍 Loading popular Indian menu for all tenant instances...');
       
       await loadPopularIndianMenu(
         databaseService: databaseService,
@@ -606,10 +593,8 @@ class IndianRestaurantMenuLoader {
         clearExisting: clearExisting,
       );
       
-      debugPrint('✅ Successfully loaded Indian menu for all tenant instances');
       
     } catch (e) {
-      debugPrint('❌ Failed to load Indian menu for all tenants: $e');
       rethrow;
     }
   }

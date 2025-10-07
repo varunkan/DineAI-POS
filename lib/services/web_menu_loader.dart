@@ -17,7 +17,6 @@ class WebMenuLoader {
   /// Initialize Hive boxes for web storage
   Future<void> initialize() async {
     try {
-      debugPrint('🌐 Initializing WebMenuLoader...');
       
       if (!Hive.isBoxOpen(_categoriesBoxName)) {
         _categoriesBox = await Hive.openBox<Map>(_categoriesBoxName);
@@ -31,9 +30,7 @@ class WebMenuLoader {
         _menuItemsBox = Hive.box<Map>(_menuItemsBoxName);
       }
       
-      debugPrint('✅ WebMenuLoader initialized successfully');
     } catch (e) {
-      debugPrint('❌ Failed to initialize WebMenuLoader: $e');
       rethrow;
     }
   }
@@ -45,7 +42,6 @@ class WebMenuLoader {
       final menuItemsCount = _menuItemsBox?.length ?? 0;
       return categoriesCount == 0 && menuItemsCount == 0;
     } catch (e) {
-      debugPrint('❌ Error checking if web storage is empty: $e');
       return true;
     }
   }
@@ -96,7 +92,6 @@ class WebMenuLoader {
   /// Load the Oh Bombay Milton menu specifically
   Future<void> loadOhBombayMiltonMenu() async {
     try {
-      debugPrint('🍽️ Loading Oh Bombay Milton menu...');
       
       // Oh Bombay Milton categories
       final categories = [
@@ -271,10 +266,8 @@ class WebMenuLoader {
         await _menuItemsBox!.put(item.id, item.toJson());
       }
       
-      debugPrint('✅ Oh Bombay Milton menu loaded: ${categories.length} categories, ${menuItems.length} items');
       
     } catch (e) {
-      debugPrint('❌ Failed to load Oh Bombay Milton menu: $e');
       rethrow;
     }
   }
@@ -286,11 +279,9 @@ class WebMenuLoader {
       
       // Check if menu already exists
       if (_categoriesBox!.isNotEmpty && _menuItemsBox!.isNotEmpty) {
-        debugPrint('📋 Menu already loaded, skipping sample data');
         return;
       }
       
-      debugPrint('🍽️ Loading sample menu for web...');
       
       // Sample categories
       final categories = [
@@ -473,10 +464,8 @@ class WebMenuLoader {
         await _menuItemsBox!.put(item.id, item.toJson());
       }
       
-      debugPrint('✅ Sample menu loaded: ${categories.length} categories, ${menuItems.length} items');
       
     } catch (e) {
-      debugPrint('❌ Failed to load sample menu: $e');
       rethrow;
     }
   }
@@ -497,11 +486,9 @@ class WebMenuLoader {
       // Sort by sortOrder
       categories.sort((a, b) => (a['sort_order'] as int).compareTo(b['sort_order'] as int));
       
-      debugPrint('📋 Loaded ${categories.length} categories from web storage');
       return categories;
       
     } catch (e) {
-      debugPrint('❌ Failed to get categories: $e');
       return [];
     }
   }
@@ -519,11 +506,9 @@ class WebMenuLoader {
         }
       }
       
-      debugPrint('🍽️ Loaded ${menuItems.length} menu items from web storage');
       return menuItems;
       
     } catch (e) {
-      debugPrint('❌ Failed to get menu items: $e');
       return [];
     }
   }
@@ -534,11 +519,9 @@ class WebMenuLoader {
       final allItems = await getMenuItems();
       final categoryItems = allItems.where((item) => item['category_id'] == categoryId).toList();
       
-      debugPrint('📋 Found ${categoryItems.length} items for category $categoryId');
       return categoryItems;
       
     } catch (e) {
-      debugPrint('❌ Failed to get menu items by category: $e');
       return [];
     }
   }
@@ -548,10 +531,8 @@ class WebMenuLoader {
     try {
       await initialize();
       await _categoriesBox!.put(category['id'], category);
-      debugPrint('✅ Category saved: ${category['name']}');
       return true;
     } catch (e) {
-      debugPrint('❌ Failed to save category: $e');
       return false;
     }
   }
@@ -561,10 +542,8 @@ class WebMenuLoader {
     try {
       await initialize();
       await _menuItemsBox!.put(item['id'], item);
-      debugPrint('✅ Menu item saved: ${item['name']}');
       return true;
     } catch (e) {
-      debugPrint('❌ Failed to save menu item: $e');
       return false;
     }
   }
@@ -574,10 +553,8 @@ class WebMenuLoader {
     try {
       await initialize();
       await _categoriesBox!.delete(categoryId);
-      debugPrint('✅ Category deleted: $categoryId');
       return true;
     } catch (e) {
-      debugPrint('❌ Failed to delete category: $e');
       return false;
     }
   }
@@ -587,10 +564,8 @@ class WebMenuLoader {
     try {
       await initialize();
       await _menuItemsBox!.delete(itemId);
-      debugPrint('✅ Menu item deleted: $itemId');
       return true;
     } catch (e) {
-      debugPrint('❌ Failed to delete menu item: $e');
       return false;
     }
   }
@@ -601,9 +576,7 @@ class WebMenuLoader {
       await initialize();
       await _categoriesBox!.clear();
       await _menuItemsBox!.clear();
-      debugPrint('✅ All menu data cleared');
     } catch (e) {
-      debugPrint('❌ Failed to clear menu data: $e');
     }
   }
 
@@ -620,7 +593,6 @@ class WebMenuLoader {
         'availableItems': menuItems.where((i) => (i['is_available'] as bool? ?? true)).length,
       };
     } catch (e) {
-      debugPrint('❌ Failed to get menu stats: $e');
       return {
         'categories': 0,
         'menuItems': 0,

@@ -11,13 +11,11 @@ class BluetoothPermissionService {
   /// Check and request all necessary Bluetooth permissions
   static Future<bool> requestBluetoothPermissions() async {
     try {
-      debugPrint('$_logTag 🔐 Requesting Bluetooth permissions...');
       
       // Check Android version
       final androidInfo = await _getAndroidVersion();
       final isAndroid12Plus = androidInfo >= 31; // API level 31 = Android 12
       
-      debugPrint('$_logTag 📱 Android version: $androidInfo (12+: $isAndroid12Plus)');
       
       if (isAndroid12Plus) {
         return await _requestAndroid12PlusPermissions();
@@ -26,14 +24,12 @@ class BluetoothPermissionService {
       }
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error requesting permissions: $e');
       return false;
     }
   }
   
   /// Request permissions for Android 12+ (API 31+)
   static Future<bool> _requestAndroid12PlusPermissions() async {
-    debugPrint('$_logTag 🔐 Requesting Android 12+ permissions...');
     
     final permissions = [
       Permission.bluetoothScan,
@@ -49,17 +45,12 @@ class BluetoothPermissionService {
     final connectGranted = statuses[Permission.bluetoothConnect]?.isGranted ?? false;
     final locationGranted = statuses[Permission.location]?.isGranted ?? false;
     
-    debugPrint('$_logTag 📊 Permission results:');
-    debugPrint('$_logTag   - BLUETOOTH_SCAN: $scanGranted');
-    debugPrint('$_logTag   - BLUETOOTH_CONNECT: $connectGranted');
-    debugPrint('$_logTag   - LOCATION: $locationGranted');
     
     return scanGranted && connectGranted && locationGranted;
   }
   
   /// Request permissions for Android 11 and below
   static Future<bool> _requestLegacyPermissions() async {
-    debugPrint('$_logTag 🔐 Requesting legacy permissions...');
     
     final permissions = [
       Permission.bluetooth,
@@ -73,9 +64,6 @@ class BluetoothPermissionService {
     final bluetoothGranted = statuses[Permission.bluetooth]?.isGranted ?? false;
     final locationGranted = statuses[Permission.location]?.isGranted ?? false;
     
-    debugPrint('$_logTag 📊 Permission results:');
-    debugPrint('$_logTag   - BLUETOOTH: $bluetoothGranted');
-    debugPrint('$_logTag   - LOCATION: $locationGranted');
     
     return bluetoothGranted && locationGranted;
   }
@@ -99,7 +87,6 @@ class BluetoothPermissionService {
         return bluetoothGranted && locationGranted;
       }
     } catch (e) {
-      debugPrint('$_logTag ❌ Error checking permissions: $e');
       return false;
     }
   }
@@ -111,7 +98,6 @@ class BluetoothPermissionService {
       // For now, we'll assume Android 12+ for testing
       return 33; // Android 13
     } catch (e) {
-      debugPrint('$_logTag ⚠️ Could not determine Android version, assuming 12+: $e');
       return 31; // Default to Android 12
     }
   }
@@ -124,16 +110,12 @@ class BluetoothPermissionService {
       final isAvailable = await bluetooth.isAvailable ?? false;
       final isEnabled = await bluetooth.isEnabled ?? false;
       
-      debugPrint('$_logTag 📱 Bluetooth status:');
-      debugPrint('$_logTag   - Available: $isAvailable');
-      debugPrint('$_logTag   - Enabled: $isEnabled');
       
       return {
         'available': isAvailable,
         'enabled': isEnabled,
       };
     } catch (e) {
-      debugPrint('$_logTag ❌ Error checking Bluetooth status: $e');
       return {
         'available': false,
         'enabled': false,
@@ -148,22 +130,18 @@ class BluetoothPermissionService {
       
       final isEnabled = await bluetooth.isEnabled ?? false;
       if (isEnabled) {
-        debugPrint('$_logTag ✅ Bluetooth already enabled');
         return true;
       }
       
-      debugPrint('$_logTag 🔄 Enabling Bluetooth...');
       await bluetooth.requestEnable();
       
       // Wait a bit for Bluetooth to enable
       await Future.delayed(const Duration(seconds: 2));
       
       final newStatus = await bluetooth.isEnabled ?? false;
-      debugPrint('$_logTag 📱 Bluetooth enabled: $newStatus');
       
       return newStatus;
     } catch (e) {
-      debugPrint('$_logTag ❌ Error enabling Bluetooth: $e');
       return false;
     }
   }
@@ -171,43 +149,34 @@ class BluetoothPermissionService {
   /// Get all available Bluetooth devices (both bonded and discovered)
   static Future<List<BluetoothDevice>> getAllBluetoothDevices() async {
     try {
-      debugPrint('$_logTag 🔍 Getting all Bluetooth devices...');
       
       final bluetooth = FlutterBluetoothSerial.instance;
       final List<BluetoothDevice> allDevices = [];
       
       // Get bonded devices
       final bondedDevices = await bluetooth.getBondedDevices();
-      debugPrint('$_logTag 📱 Found ${bondedDevices.length} bonded devices');
       allDevices.addAll(bondedDevices);
       
       // Try to discover new devices
       try {
-        debugPrint('$_logTag 🔍 Starting device discovery...');
         await bluetooth.startDiscovery();
         
         // Listen for discovered devices
         bluetooth.onStateChanged().listen((BluetoothState state) {
-          debugPrint('$_logTag 📡 Bluetooth state: $state');
         });
         
         // Wait for discovery
         await Future.delayed(const Duration(seconds: 15));
         
-        debugPrint('$_logTag ⏹️ Discovery completed');
         
       } catch (e) {
-        debugPrint('$_logTag ⚠️ Discovery failed: $e');
       }
       
-      debugPrint('$_logTag 📱 Total devices found: ${allDevices.length}');
       for (final device in allDevices) {
-        debugPrint('$_logTag   - ${device.name} (${device.address})');
       }
       
       return allDevices;
     } catch (e) {
-      debugPrint('$_logTag ❌ Error getting Bluetooth devices: $e');
       return [];
     }
   }

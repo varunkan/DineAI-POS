@@ -79,9 +79,7 @@ class _PrinterTypeManagementScreenState extends State<PrinterTypeManagementScree
       final itemData = await _databaseService.getAllData('menu_items');
       _availableItems = itemData.map((data) => MenuItem.fromJson(data)).toList();
       
-      debugPrint('📊 Loaded ${_availablePrinters.length} printers, ${_availableCategories.length} categories, ${_availableItems.length} items');
     } catch (e) {
-      debugPrint('❌ Error loading available data: $e');
     }
   }
 

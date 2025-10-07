@@ -72,7 +72,6 @@ class LoyaltyService extends ChangeNotifier {
         return await getCustomerProfile(phone);
       }
     } catch (e) {
-      debugPrint('Error registering customer: $e');
       rethrow;
     }
   }
@@ -118,7 +117,6 @@ class LoyaltyService extends ChangeNotifier {
         'redemption_options': _getRedemptionOptions((customer['loyalty_points'] ?? 0) as int),
       };
     } catch (e) {
-      debugPrint('Error getting customer profile: $e');
       rethrow;
     }
   }
@@ -156,7 +154,6 @@ class LoyaltyService extends ChangeNotifier {
       
       notifyListeners();
     } catch (e) {
-      debugPrint('Error awarding points: $e');
       rethrow;
     }
   }
@@ -209,7 +206,6 @@ class LoyaltyService extends ChangeNotifier {
         'remaining_points': currentPoints - pointsToRedeem,
       };
     } catch (e) {
-      debugPrint('Error redeeming points: $e');
       rethrow;
     }
   }
@@ -377,7 +373,6 @@ class LoyaltyService extends ChangeNotifier {
         whereArgs: [phone],
       );
     } catch (e) {
-      debugPrint('Error updating customer tier: $e');
     }
   }
 
@@ -396,7 +391,6 @@ class LoyaltyService extends ChangeNotifier {
         'created_at': DateTime.now().toIso8601String(),
       });
     } catch (e) {
-      debugPrint('Error logging points transaction: $e');
     }
   }
 
@@ -445,7 +439,6 @@ class LoyaltyService extends ChangeNotifier {
         'top_customers': topCustomers,
       };
     } catch (e) {
-      debugPrint('Error getting loyalty analytics: $e');
       rethrow;
     }
   }
@@ -466,7 +459,6 @@ class LoyaltyService extends ChangeNotifier {
       }
       return null;
     } catch (e) {
-      debugPrint('Error getting customer by phone: $e');
       return null;
     }
   }
@@ -484,7 +476,6 @@ class LoyaltyService extends ChangeNotifier {
         notifyListeners();
       }
     } catch (e) {
-      debugPrint('Error updating customer: $e');
     }
   }
 
@@ -496,7 +487,6 @@ class LoyaltyService extends ChangeNotifier {
         notifyListeners();
       }
     } catch (e) {
-      debugPrint('Error creating customer: $e');
     }
   }
 
@@ -514,7 +504,6 @@ class LoyaltyService extends ChangeNotifier {
       }
       return [];
     } catch (e) {
-      debugPrint('Error getting top customers: $e');
       return [];
     }
   }
@@ -534,7 +523,6 @@ class LoyaltyService extends ChangeNotifier {
       }
       return [];
     } catch (e) {
-      debugPrint('Error searching customers: $e');
       return [];
     }
   }
@@ -552,7 +540,6 @@ class LoyaltyService extends ChangeNotifier {
       }
       return [];
     } catch (e) {
-      debugPrint('Error getting all customers: $e');
       return [];
     }
   }
@@ -572,7 +559,6 @@ class LoyaltyService extends ChangeNotifier {
         notifyListeners();
       }
     } catch (e) {
-      debugPrint('Error adding loyalty points: $e');
     }
   }
 
@@ -591,7 +577,6 @@ class LoyaltyService extends ChangeNotifier {
       }
       return [];
     } catch (e) {
-      debugPrint('Error getting loyalty history: $e');
       return [];
     }
   }
@@ -611,7 +596,6 @@ class LoyaltyService extends ChangeNotifier {
         notifyListeners();
       }
     } catch (e) {
-      debugPrint('Error redeeming loyalty points: $e');
     }
   }
 
@@ -637,7 +621,6 @@ class LoyaltyService extends ChangeNotifier {
         'average_points': 0.0,
       };
     } catch (e) {
-      debugPrint('Error getting loyalty stats: $e');
       return {
         'total_customers': 0,
         'total_points': 0.0,
@@ -708,7 +691,6 @@ class LoyaltyService extends ChangeNotifier {
       
       notifyListeners();
     } catch (e) {
-      debugPrint('Error updating customer from order: $e');
     }
   }
 
@@ -733,7 +715,6 @@ class LoyaltyService extends ChangeNotifier {
         await db.insert('loyalty_transactions', transaction.toJson());
       }
     } catch (e) {
-      debugPrint('Error adding loyalty transaction: $e');
     }
   }
 
@@ -751,7 +732,6 @@ class LoyaltyService extends ChangeNotifier {
       }
       return [];
     } catch (e) {
-      debugPrint('Error getting available rewards: $e');
       return [];
     }
   }
@@ -773,7 +753,6 @@ class LoyaltyService extends ChangeNotifier {
       }
       return [];
     } catch (e) {
-      debugPrint('Error getting eligible rewards: $e');
       return [];
     }
   }
@@ -816,7 +795,6 @@ class LoyaltyService extends ChangeNotifier {
       
       return true;
     } catch (e) {
-      debugPrint('Error redeeming reward: $e');
       return false;
     }
   }

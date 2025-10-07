@@ -14,10 +14,8 @@ mixin InstantSyncMixin<T extends StatefulWidget> on State<T> {
   /// Trigger instant sync on any user interaction
   Future<void> triggerInstantSync() async {
     try {
-      debugPrint('⚡ INSTANT SYNC: Triggered from ${widget.runtimeType}');
       await _syncService?.triggerInstantSync();
     } catch (e) {
-      debugPrint('❌ INSTANT SYNC failed: $e');
     }
   }
 

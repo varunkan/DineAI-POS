@@ -30,11 +30,9 @@ class TableService with ChangeNotifier {
         try {
           notifyListeners();
         } catch (e) {
-          debugPrint('Error notifying listeners during load tables: $e');
         }
       });
     } catch (e) {
-      debugPrint('Error scheduling notification during load tables: $e');
     }
   }
 
@@ -59,7 +57,6 @@ class TableService with ChangeNotifier {
       final unifiedSyncService = UnifiedSyncService.instance;
       await unifiedSyncService.syncTableToFirebase(table, 'created');
     } catch (e) {
-      debugPrint('⚠️ Failed to sync table creation to Firebase: $e');
     }
     
     // Safely notify listeners
@@ -68,11 +65,9 @@ class TableService with ChangeNotifier {
         try {
           notifyListeners();
         } catch (e) {
-          debugPrint('Error notifying listeners during add table: $e');
         }
       });
     } catch (e) {
-      debugPrint('Error scheduling notification during add table: $e');
     }
   }
 
@@ -142,11 +137,9 @@ class TableService with ChangeNotifier {
           try {
             notifyListeners();
           } catch (e) {
-            debugPrint('Error notifying listeners during release table: $e');
           }
         });
       } catch (e) {
-        debugPrint('Error scheduling notification during release table: $e');
       }
     }
   }
@@ -171,11 +164,9 @@ class TableService with ChangeNotifier {
           try {
             notifyListeners();
           } catch (e) {
-            debugPrint('Error notifying listeners during free table: $e');
           }
         });
       } catch (e) {
-        debugPrint('Error scheduling notification during free table: $e');
       }
     }
   }
@@ -191,7 +182,6 @@ class TableService with ChangeNotifier {
         final unifiedSyncService = UnifiedSyncService.instance;
         await unifiedSyncService.syncTableToFirebase(table, 'deleted');
       } catch (e) {
-        debugPrint('⚠️ Failed to sync table deletion to Firebase: $e');
       }
       
       // Safely notify listeners
@@ -200,11 +190,9 @@ class TableService with ChangeNotifier {
           try {
             notifyListeners();
           } catch (e) {
-            debugPrint('Error notifying listeners during delete table: $e');
           }
         });
       } catch (e) {
-        debugPrint('Error scheduling notification during delete table: $e');
       }
     }
   }
@@ -221,7 +209,6 @@ class TableService with ChangeNotifier {
         final unifiedSyncService = UnifiedSyncService.instance;
         await unifiedSyncService.syncTableToFirebase(table, 'updated');
       } catch (e) {
-        debugPrint('⚠️ Failed to sync table update to Firebase: $e');
       }
       
       // Safely notify listeners
@@ -230,11 +217,9 @@ class TableService with ChangeNotifier {
           try {
             notifyListeners();
           } catch (e) {
-            debugPrint('Error notifying listeners during update table: $e');
           }
         });
       } catch (e) {
-        debugPrint('Error scheduling notification during update table: $e');
       }
     }
   }
@@ -242,7 +227,6 @@ class TableService with ChangeNotifier {
   /// Update table from Firebase (for cross-device sync)
   Future<void> updateTableFromFirebase(restaurant_table.Table firebaseTable) async {
     try {
-      debugPrint('🔄 Updating table from Firebase: ${firebaseTable.number}');
       
       // Check if table already exists locally
       final existingIndex = _tables.indexWhere((table) => table.id == firebaseTable.id);
@@ -250,20 +234,16 @@ class TableService with ChangeNotifier {
       if (existingIndex != -1) {
         // Update existing table
         _tables[existingIndex] = firebaseTable;
-        debugPrint('🔄 Updated existing table from Firebase: ${firebaseTable.number}');
       } else {
         // Add new table from Firebase
         _tables.add(firebaseTable);
-        debugPrint('➕ Added new table from Firebase: ${firebaseTable.number}');
       }
       
       // Save to local storage
       await _saveTables();
       
-      debugPrint('✅ Table updated from Firebase: ${firebaseTable.number}');
       notifyListeners();
     } catch (e) {
-      debugPrint('❌ Failed to update table from Firebase: $e');
     }
   }
 
@@ -277,18 +257,15 @@ class TableService with ChangeNotifier {
         try {
           notifyListeners();
         } catch (e) {
-          debugPrint('Error notifying listeners during clear user tables: $e');
         }
       });
     } catch (e) {
-      debugPrint('Error scheduling notification during clear user tables: $e');
     }
   }
 
   /// Clear all tables from memory and database
   Future<void> clearAllTables() async {
     try {
-      debugPrint('🗑️ Clearing all tables...');
       
       // Clear from memory
       _tables.clear();
@@ -296,10 +273,8 @@ class TableService with ChangeNotifier {
       // Clear from SharedPreferences
       await _prefs.remove(_tablesKey);
       
-      debugPrint('✅ All tables cleared');
       notifyListeners();
     } catch (e) {
-      debugPrint('❌ Error clearing tables: $e');
       rethrow;
     }
   }
@@ -374,11 +349,9 @@ class TableService with ChangeNotifier {
         try {
           notifyListeners();
         } catch (e) {
-          debugPrint('Error notifying listeners during add item to order: $e');
         }
       });
     } catch (e) {
-      debugPrint('Error scheduling notification during add item to order: $e');
     }
   }
 
@@ -413,11 +386,9 @@ class TableService with ChangeNotifier {
         try {
           notifyListeners();
         } catch (e) {
-          debugPrint('Error notifying listeners during remove item from order: $e');
         }
       });
     } catch (e) {
-      debugPrint('Error scheduling notification during remove item from order: $e');
     }
   }
 
@@ -460,11 +431,9 @@ class TableService with ChangeNotifier {
           try {
             notifyListeners();
           } catch (e) {
-            debugPrint('Error notifying listeners during update item quantity: $e');
           }
         });
       } catch (e) {
-        debugPrint('Error scheduling notification during update item quantity: $e');
       }
     }
   }
@@ -486,11 +455,9 @@ class TableService with ChangeNotifier {
         try {
           notifyListeners();
         } catch (e) {
-          debugPrint('Error notifying listeners during clear order: $e');
         }
       });
     } catch (e) {
-      debugPrint('Error scheduling notification during clear order: $e');
     }
   }
 
@@ -524,11 +491,9 @@ class TableService with ChangeNotifier {
         try {
           notifyListeners();
         } catch (e) {
-          debugPrint('Error notifying listeners during reset tables to default: $e');
         }
       });
     } catch (e) {
-      debugPrint('Error scheduling notification during reset tables to default: $e');
     }
   }
 } 

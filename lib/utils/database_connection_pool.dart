@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:collection';
-import 'dart:developer' as developer;
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
@@ -33,13 +32,11 @@ class DatabaseConnectionPool {
   Future<void> initialize() async {
     if (_isInitialized) return;
 
-    debugPrint('📊 Initializing Database Connection Pool...');
     
     // Start health check timer
     _startHealthCheck();
     
     _isInitialized = true;
-    debugPrint('✅ Database Connection Pool initialized');
   }
 
   /// Get a database connection from the pool
@@ -50,7 +47,6 @@ class DatabaseConnectionPool {
 
     // Check if there's a pending connection for this database
     if (_pendingConnections.containsKey(databaseName)) {
-      debugPrint('⏳ Waiting for pending connection to $databaseName');
       return await _pendingConnections[databaseName]!.future;
     }
 
@@ -73,13 +69,11 @@ class DatabaseConnectionPool {
     final pool = _pools.remove(databaseName);
     if (pool != null) {
       await pool.close();
-      debugPrint('🗑️ Closed connection pool for database: $databaseName');
     }
   }
 
   /// Close all connection pools
   Future<void> closeAllPools() async {
-    debugPrint('🗑️ Closing all database connection pools...');
     
     final futures = <Future>[];
     for (final pool in _pools.values) {
@@ -93,7 +87,6 @@ class DatabaseConnectionPool {
     _healthCheckTimer = null;
     
     _isInitialized = false;
-    debugPrint('✅ All database connection pools closed');
   }
 
   /// Get connection pool statistics
@@ -126,7 +119,6 @@ class DatabaseConnectionPool {
         await pool._performHealthCheck();
       }
     } catch (e) {
-      debugPrint('❌ Health check failed: $e');
     }
   }
 }
@@ -156,7 +148,6 @@ class _ConnectionPool {
       _activeConnections.add(connection);
       _connectionLastUsed[connection] = DateTime.now();
       
-      debugPrint('♻️ Reusing connection for $databaseName (active: ${_activeConnections.length})');
       return connection;
     }
 
@@ -167,12 +158,10 @@ class _ConnectionPool {
       _connectionLastUsed[connection] = DateTime.now();
       _totalCreated++;
       
-      debugPrint('🆕 Created new connection for $databaseName (active: ${_activeConnections.length})');
       return connection;
     }
 
     // Wait for a connection to become available
-    debugPrint('⏳ Connection pool full for $databaseName, waiting...');
     final completer = Completer<Database>();
     _waitingQueue.add(completer);
     
@@ -218,11 +207,9 @@ class _ConnectionPool {
     if (_idleConnections.length < DatabaseConnectionPool._minConnections) {
       _idleConnections.add(connection);
       _connectionLastUsed[connection] = DateTime.now();
-      debugPrint('💤 Returned connection to idle pool for $databaseName (idle: ${_idleConnections.length})');
     } else {
       await connection.close();
       _connectionLastUsed.remove(connection);
-      debugPrint('🗑️ Closed excess connection for $databaseName');
     }
   }
 
@@ -279,12 +266,10 @@ class _ConnectionPool {
       _idleConnections.remove(connection);
       _connectionLastUsed.remove(connection);
       await connection.close();
-      debugPrint('⏰ Closed expired connection for $databaseName');
     }
 
     // Log pool statistics
     if (kDebugMode) {
-      developer.log(
         'Pool stats for $databaseName: Active: ${_activeConnections.length}, '
         'Idle: ${_idleConnections.length}, Total created: $_totalCreated',
         name: 'DatabasePool'
@@ -315,7 +300,6 @@ class _ConnectionPool {
     final futures = allConnections.map((db) => db.close());
     await Future.wait(futures);
 
-    debugPrint('🗑️ Closed all connections for pool: $databaseName');
   }
 }
 

@@ -46,7 +46,6 @@ class SyncFixService {
   /// Initialize the sync fix service
   Future<void> initialize() async {
     try {
-      debugPrint('🔧 Initializing Sync Fix Service...');
       
       // Initialize Firebase if available
       if (FirebaseConfig.isInitialized) {
@@ -62,9 +61,7 @@ class SyncFixService {
       // Start connectivity monitoring
       _startConnectivityMonitoring();
       
-      debugPrint('✅ Sync Fix Service initialized');
     } catch (e) {
-      debugPrint('❌ Failed to initialize Sync Fix Service: $e');
     }
   }
   
@@ -75,7 +72,6 @@ class SyncFixService {
       _isOnline = result != ConnectivityResult.none;
       
       if (!wasOnline && _isOnline) {
-        debugPrint('🌐 Connection restored - triggering sync fix');
         _addFixLog('🌐 Connection restored - triggering sync fix');
         // Auto-fix when connection is restored
         unawaited(fixAllSyncIssues());
@@ -88,7 +84,6 @@ class SyncFixService {
     final timestamp = DateTime.now().toIso8601String();
     final logMessage = '[$timestamp] $message';
     _fixLog.add(logMessage);
-    debugPrint(logMessage);
     
     // Keep only last 100 log entries
     if (_fixLog.length > 100) {
@@ -136,7 +131,6 @@ class SyncFixService {
       
     } catch (e) {
       _addFixLog('❌ Sync fix failed: $e');
-      debugPrint('❌ Sync fix error: $e');
       return false;
     } finally {
       _isFixing = false;

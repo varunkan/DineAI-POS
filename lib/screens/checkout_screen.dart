@@ -199,54 +199,44 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       final printingService = Provider.of<PrintingService>(context, listen: false);
       final inventoryService = Provider.of<InventoryService>(context, listen: false);
 
-      // Update order with tip and payment info
-      final updatedOrder = widget.order.copyWith(
+      // First update order with payment info before completion
+      final paymentUpdatedOrder = widget.order.copyWith(
         tipAmount: _tipAmount,
         paymentMethod: _selectedPaymentMethod,
         paymentStatus: PaymentStatus.paid,
-        status: OrderStatus.completed,
-        completedTime: DateTime.now(),
         totalAmount: _finalTotal, // Include tip in total
         updatedAt: DateTime.now(),
       );
 
-      debugPrint('💳 Processing payment for order: ${updatedOrder.orderNumber}');
-      debugPrint('💳 Payment method: $_selectedPaymentMethod');
-      debugPrint('💳 Amount: \$${_finalTotal.toStringAsFixed(2)}');
-      debugPrint('💳 Tip: \$${_tipAmount.toStringAsFixed(2)}');
-      debugPrint('💳 Amount tendered: \$${_amountTendered.toStringAsFixed(2)}');
 
       // Process payment
       await paymentService.processPayment(
-        order: updatedOrder,
+        order: paymentUpdatedOrder,
         method: _selectedPaymentMethod,
         amount: _finalTotal,
       );
 
       // Log payment processing
-      _logPaymentProcessed(updatedOrder, _finalTotal, _selectedPaymentMethod);
+      _logPaymentProcessed(paymentUpdatedOrder, _finalTotal, _selectedPaymentMethod);
 
-      // Save updated order with payment completion log
-      final orderSaved = await orderService.saveOrder(updatedOrder);
-      if (!orderSaved) {
-        throw Exception('Failed to save order to database');
+      // CRITICAL: Use completeOrder method for proper completion with all required fields and immediate Firebase sync
+      final completionResult = await orderService.completeOrder(paymentUpdatedOrder);
+      if (!completionResult['success']) {
+        throw Exception(completionResult['message'] ?? 'Failed to complete order');
       }
 
 
 
       // Log order completion
-      _logOrderCompleted(updatedOrder);
+      _logOrderCompleted(paymentUpdatedOrder);
 
-      debugPrint('✅ Order ${updatedOrder.orderNumber} successfully saved as completed');
 
       // Free up table if dine-in
       if (widget.order.type == OrderType.dineIn && widget.table != null) {
         try {
           final tableService = Provider.of<TableService>(context, listen: false);
           await tableService.freeTable(widget.table!.id);
-          debugPrint('✅ Table ${widget.table!.id} freed successfully');
         } catch (e) {
-          debugPrint('⚠️ Failed to free table: $e');
           // Continue with checkout even if table freeing fails
         }
       }
@@ -254,24 +244,19 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       // Print receipt
       try {
         await _showReceiptPreview();
-        debugPrint('✅ Receipt preview shown (and printed if confirmed)');
       } catch (e) {
-        debugPrint('⚠️ Failed to show receipt preview: $e');
         // Continue with checkout even if preview/printing fails
       }
 
       // CRITICAL FIX: Maintain printer connections during order completion
       try {
         await printingService.maintainConnectionsDuringOrderCompletion();
-        debugPrint('🔌 Printer connections maintained during checkout');
       } catch (e) {
-        debugPrint('⚠️ Failed to maintain printer connections: $e');
         // Continue with checkout even if connection maintenance fails
       }
       
       // CRITICAL FIX: Don't clear current order state to maintain kitchen printing functionality
       // orderService.clearCurrentOrder(); // REMOVED: This was breaking kitchen printing
-      debugPrint('⚠️ Maintaining current order state for kitchen printing functionality');
 
       // CRITICAL FIX: Check if widget is still mounted before setState
       if (mounted) {
@@ -1108,7 +1093,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         widget.user.id,
       );
     } catch (e) {
-      debugPrint('Failed to log payment processing: $e');
     }
   }
 
@@ -1120,7 +1104,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         widget.user.id,
       );
     } catch (e) {
-      debugPrint('Failed to log order completion: $e');
     }
   }
 } 

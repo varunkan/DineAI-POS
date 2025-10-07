@@ -270,9 +270,7 @@ class _ServerOrdersScreenState extends State<ServerOrdersScreen>
             opacity: _animationController.value,
             child: GestureDetector(
               onTap: () {
-                debugPrint('🔍 ORDER TILE CLICKED: ${order.orderNumber}, status: ${order.status}, isActive: $isActive');
                 if (isActive) {
-                  debugPrint('✅ Navigating to EditActiveOrderScreen for order ${order.orderNumber}');
                   Navigator.push(
                     context,
                     MaterialPageRoute(
@@ -283,7 +281,6 @@ class _ServerOrdersScreenState extends State<ServerOrdersScreen>
                     ),
                   );
                 } else {
-                  debugPrint('⚠️ Order ${order.orderNumber} is not active (status: ${order.status}), cannot edit');
                 }
               },
               child: Container(

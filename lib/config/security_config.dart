@@ -23,7 +23,6 @@ class SecurityConfig {
     try {
       return BCrypt.checkpw(pin, hash);
     } catch (e) {
-      debugPrint('❌ Error verifying PIN: $e');
       return false;
     }
   }
@@ -38,7 +37,6 @@ class SecurityConfig {
     
     // CRITICAL FIX: Always provide fallback PIN for development and testing
     // This prevents the app from crashing when ADMIN_PIN is not set
-    debugPrint('⚠️ Using fallback admin PIN - change in production!');
     return '7165'; // Fallback default - CHANGE THIS IN PRODUCTION
   }
   
@@ -62,7 +60,6 @@ class SecurityConfig {
       
       return false;
     } catch (e) {
-      debugPrint('❌ Error validating admin credentials: $e');
       return false;
     }
   }
@@ -86,7 +83,6 @@ class SecurityConfig {
   /// Log security events (without exposing sensitive data)
   static void logSecurityEvent(String event, {Map<String, dynamic>? metadata}) {
     if (kDebugMode) {
-      debugPrint('🔒 Security Event: $event');
       if (metadata != null) {
         // Remove sensitive fields before logging
         final safeMetadata = Map<String, dynamic>.from(metadata);
@@ -96,7 +92,6 @@ class SecurityConfig {
           key.toLowerCase().contains('hash'));
         
         if (safeMetadata.isNotEmpty) {
-          debugPrint('   Metadata: $safeMetadata');
         }
       }
     }

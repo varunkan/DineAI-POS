@@ -62,24 +62,18 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
       final authService = Provider.of<MultiTenantAuthService>(context, listen: false);
       final currentRestaurant = authService.currentRestaurant;
       if (currentRestaurant != null) {
-        debugPrint('🏪 Admin Orders Screen: Loading orders for restaurant: ${currentRestaurant.name} (${currentRestaurant.email})');
-        debugPrint('🏪 Admin Orders Screen: Using tenant database: ${currentRestaurant.databaseName}');
       } else {
-        debugPrint('⚠️ Admin Orders Screen: No current restaurant - using default database');
       }
       
       // 🚫 CRITICAL FIX: Use existing orders if available to avoid ghost order cleanup interference
       List<Order> orders;
       if (orderService.allOrders.isNotEmpty) {
-        debugPrint('📋 Admin Orders Screen: Using existing loaded orders (${orderService.allOrders.length}) to avoid reload interference');
         orders = orderService.allOrders;
       } else {
-        debugPrint('📋 Admin Orders Screen: Loading orders from database (first time)');
         await orderService.loadOrders();
         orders = orderService.allOrders;
       }
       
-      debugPrint('📋 Admin Orders Screen: Using ${orders.length} orders for admin panel');
       
       if (mounted) {
         setState(() {
@@ -108,7 +102,6 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
     try {
       final unifiedSyncService = Provider.of<UnifiedSyncService>(context, listen: false);
       
-      debugPrint('🔄 Admin Orders Screen: Triggering manual sync...');
       await unifiedSyncService.manualSync();
       
       // Reload orders after sync
@@ -265,7 +258,6 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
         return;
       }
       
-      debugPrint('🔍 ADMIN: Editing order ${order.orderNumber} with user ${orderUser.name} (${orderUser.id})');
       
       final result = await Navigator.push(
         context,
@@ -284,7 +276,6 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
 
       if (result != null) {
         // Refresh orders if order was modified
-        debugPrint('🔄 ADMIN: Returned from edit order, reloading orders...');
         await _loadOrders();
         
         // If coming from send to kitchen, show a success message
@@ -299,7 +290,6 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
         }
       }
     } catch (e) {
-      debugPrint('❌ Error editing order: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('❌ Unable to edit order. Please try again.'),
@@ -354,29 +344,12 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
         _isLoading = true;
       });
 
-      // Update order status to cancelled using the proper method
+      // Cancel the order using the proper service method (handles all field updates and Firebase sync)
       final orderService = Provider.of<OrderService>(context, listen: false);
-      final success = await orderService.updateOrderStatus(order.id, 'cancelled');
-      
-      if (!success) {
-        throw Exception('Failed to update order status to cancelled');
-      }
-      
-      // Also update the completed_time for cancelled orders
-      try {
-        final databaseService = Provider.of<DatabaseService>(context, listen: false);
-        final database = await databaseService.database;
-        if (database != null) {
-          await database.update(
-            'orders',
-            {'completed_time': DateTime.now().toIso8601String()},
-            where: 'id = ?',
-            whereArgs: [order.id],
-          );
-        }
-      } catch (e) {
-        debugPrint('⚠️ Failed to update completed_time: $e');
-        // Don't fail the cancellation if this fails
+      final result = await orderService.cancelOrder(order);
+
+      if (!result['success']) {
+        throw Exception(result['message'] ?? 'Failed to cancel order');
       }
       // Reload local orders list only
       await _loadOrders();

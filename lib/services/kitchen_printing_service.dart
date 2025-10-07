@@ -71,7 +71,6 @@ class KitchenPrintingService extends ChangeNotifier {
     if (_isInitialized) return;
     
     try {
-      debugPrint('$_logTag 🚀 Initializing kitchen printing service...');
       
       // Load configuration
       final prefs = await SharedPreferences.getInstance();
@@ -79,11 +78,8 @@ class KitchenPrintingService extends ChangeNotifier {
       _maxRetries = prefs.getInt('kitchen_max_retries') ?? 3;
       
       _isInitialized = true;
-      debugPrint('$_logTag ✅ Kitchen printing service initialized');
-      debugPrint('$_logTag ⚙️ Auto-print: $_autoPrintEnabled, Max retries: $_maxRetries');
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Failed to initialize kitchen printing service: $e');
       // Continue anyway - service can work with defaults
       _isInitialized = true;
     }
@@ -93,19 +89,16 @@ class KitchenPrintingService extends ChangeNotifier {
   /// This method does NOT interfere with order creation or Firebase sync
   Future<Map<String, dynamic>> printKitchenTicket(Order order) async {
     if (!_isInitialized) {
-      debugPrint('$_logTag ⚠️ Service not initialized, initializing now...');
       await initialize();
     }
     
     try {
-      debugPrint('$_logTag 🖨️ Printing kitchen ticket for order: ${order.orderNumber}');
       
       // Increment total prints counter
       _totalPrints++;
       
       // Check if auto-print is enabled
       if (!_autoPrintEnabled) {
-        debugPrint('$_logTag ⏸️ Auto-print disabled, adding to queue');
         _addToPrintQueue(order, 'auto_print_disabled');
         return {
           'success': false,
@@ -118,7 +111,6 @@ class KitchenPrintingService extends ChangeNotifier {
       // Get printer assignments for order items
       final itemsByPrinter = await _getItemsByPrinter(order);
       if (itemsByPrinter.isEmpty) {
-        debugPrint('$_logTag ⚠️ No printer assignments found, adding to queue');
         _addToPrintQueue(order, 'no_printer_assignments');
         return {
           'success': false,
@@ -147,7 +139,6 @@ class KitchenPrintingService extends ChangeNotifier {
             _failedPrintsCount++;
           }
         } catch (e) {
-          debugPrint('$_logTag ❌ Error printing to printer $printerId: $e');
           printResults.add({
             'printerId': printerId,
             'success': false,
@@ -159,7 +150,6 @@ class KitchenPrintingService extends ChangeNotifier {
       
       // If any print succeeded, consider it a success
       if (anySuccess) {
-        debugPrint('$_logTag ✅ Kitchen ticket printed successfully for order: ${order.orderNumber}');
         return {
           'success': true,
           'message': 'Kitchen ticket printed',
@@ -168,7 +158,6 @@ class KitchenPrintingService extends ChangeNotifier {
         };
       } else {
         // All prints failed, add to queue for retry
-        debugPrint('$_logTag ⚠️ All prints failed, adding to queue for retry');
         _addToPrintQueue(order, 'all_prints_failed');
         return {
           'success': false,
@@ -180,7 +169,6 @@ class KitchenPrintingService extends ChangeNotifier {
       }
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error printing kitchen ticket: $e');
       _failedPrintsCount++;
       
       // Add to queue for retry
@@ -276,11 +264,9 @@ class KitchenPrintingService extends ChangeNotifier {
       final newItems = order.items.where((item) => !item.sentToKitchen).toList();
       
       if (newItems.isEmpty) {
-        debugPrint('$_logTag ⚠️ No new items to print - all items already sent to kitchen');
         return {};
       }
       
-      debugPrint('$_logTag 🔍 Found ${newItems.length} new items to print (${order.items.length} total items)');
       
       for (final item in newItems) {
         final assignments = await _assignmentService.getAssignmentsForMenuItem(item.menuItem.id, item.menuItem.categoryId ?? '');
@@ -296,7 +282,6 @@ class KitchenPrintingService extends ChangeNotifier {
       
       return itemsByPrinter;
     } catch (e) {
-      debugPrint('$_logTag ❌ Error getting printer assignments: $e');
       return {};
     }
   }
@@ -313,8 +298,6 @@ class KitchenPrintingService extends ChangeNotifier {
     _printQueue.add(queueItem);
     _queuedPrints++;
     
-    debugPrint('$_logTag 📋 Added to print queue: ${order.orderNumber} (Reason: $reason)');
-    debugPrint('$_logTag 📊 Queue status: ${_printQueue.length} queued, ${_failedPrints.length} failed');
     
     notifyListeners();
   }
@@ -327,7 +310,6 @@ class KitchenPrintingService extends ChangeNotifier {
     notifyListeners();
     
     try {
-      debugPrint('$_logTag 🔄 Processing print queue (${_printQueue.length} items)...');
       
       final itemsToProcess = List<Map<String, dynamic>>.from(_printQueue);
       _printQueue.clear();
@@ -341,7 +323,6 @@ class KitchenPrintingService extends ChangeNotifier {
           if (retryCount >= _maxRetries) {
             // Max retries exceeded, move to failed prints
             _failedPrints.add(queueItem);
-            debugPrint('$_logTag ❌ Max retries exceeded for order: ${order.orderNumber}');
             continue;
           }
           
@@ -359,7 +340,6 @@ class KitchenPrintingService extends ChangeNotifier {
           await Future.delayed(const Duration(milliseconds: 100));
           
         } catch (e) {
-          debugPrint('$_logTag ❌ Error processing queue item: $e');
           // Re-queue with incremented retry count
           final retryCount = queueItem['retryCount'] as int;
           if (retryCount < _maxRetries) {
@@ -372,10 +352,8 @@ class KitchenPrintingService extends ChangeNotifier {
         }
       }
       
-      debugPrint('$_logTag ✅ Print queue processed: ${itemsToProcess.length} items');
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error processing print queue: $e');
     } finally {
       _isPrinting = false;
       notifyListeners();
@@ -389,9 +367,7 @@ class KitchenPrintingService extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool('kitchen_auto_print_enabled', enabled);
-      debugPrint('$_logTag ⚙️ Auto-print ${enabled ? 'enabled' : 'disabled'}');
     } catch (e) {
-      debugPrint('$_logTag ⚠️ Failed to save auto-print setting: $e');
     }
     
     notifyListeners();
@@ -401,14 +377,12 @@ class KitchenPrintingService extends ChangeNotifier {
   void clearFailedPrints() {
     _failedPrints.clear();
     notifyListeners();
-    debugPrint('$_logTag 🧹 Cleared failed prints');
   }
   
   /// Retry failed print
   Future<void> retryFailedPrint(Map<String, dynamic> failedPrint) async {
     try {
       final order = Order.fromJson(failedPrint['order']);
-      debugPrint('$_logTag 🔄 Retrying failed print for order: ${order.orderNumber}');
       
       // Remove from failed prints
       _failedPrints.remove(failedPrint);
@@ -417,7 +391,6 @@ class KitchenPrintingService extends ChangeNotifier {
       _addToPrintQueue(order, 'manual_retry');
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error retrying failed print: $e');
     }
   }
   

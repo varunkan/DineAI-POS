@@ -16,14 +16,12 @@ class FirebaseConnectionTest {
     };
 
     try {
-      debugPrint('$_logTag 🔍 Testing Firebase connection...');
       
       // Test Firestore connection
       final firestore = FirebaseFirestore.instance;
       await firestore.collection('test').limit(1).get().timeout(
         const Duration(seconds: 5),
         onTimeout: () {
-          debugPrint('$_logTag ⚠️ Firestore connection timed out');
           results['connection_timeout'] = true;
           throw TimeoutException('Firestore connection timed out', const Duration(seconds: 5));
         },
@@ -31,10 +29,8 @@ class FirebaseConnectionTest {
       
       results['firebase_initialized'] = true;
       results['firestore_available'] = true;
-      debugPrint('$_logTag ✅ Firebase connection successful');
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Firebase connection failed: $e');
       results['error'] = e.toString();
     }
     
@@ -43,12 +39,7 @@ class FirebaseConnectionTest {
 
   /// Print connection test results
   static void printResults(Map<String, dynamic> results) {
-    debugPrint('$_logTag 📊 Connection Test Results:');
-    debugPrint('   Firebase Initialized: ${results['firebase_initialized']}');
-    debugPrint('   Firestore Available: ${results['firestore_available']}');
-    debugPrint('   Connection Timeout: ${results['connection_timeout']}');
     if (results['error'] != null) {
-      debugPrint('   Error: ${results['error']}');
     }
   }
 } 

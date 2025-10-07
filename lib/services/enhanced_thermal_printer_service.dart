@@ -78,16 +78,13 @@ class EnhancedThermalPrinterService extends ChangeNotifier {
     try {
       _firestore = FirebaseFirestore.instance;
       _auth = FirebaseAuth.instance;
-      debugPrint('$_logTag ✅ Firebase services initialized');
     } catch (e) {
-      debugPrint('$_logTag ❌ Error initializing Firebase: $e');
     }
   }
   
   /// Initialize the service for a specific tenant
   Future<bool> initialize({required String tenantId, required String restaurantId}) async {
     try {
-      debugPrint('$_logTag 🚀 Initializing thermal printer service for tenant: $tenantId');
       
       _currentTenantId = tenantId;
       _currentRestaurantId = restaurantId;
@@ -101,11 +98,9 @@ class EnhancedThermalPrinterService extends ChangeNotifier {
       // Load settings from SharedPreferences
       await _loadSettings();
       
-      debugPrint('$_logTag ✅ Thermal printer service initialized successfully');
       return true;
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error initializing thermal printer service: $e');
       _lastError = e.toString();
       return false;
     }
@@ -116,7 +111,6 @@ class EnhancedThermalPrinterService extends ChangeNotifier {
     try {
       if (_firestore == null || _currentTenantId.isEmpty) return;
       
-      debugPrint('$_logTag 🔄 Loading printer configurations from Firebase...');
       
       final tenantDoc = _firestore!.collection('tenants').doc(_currentTenantId);
       final printerSnapshot = await tenantDoc.collection('printer_configurations').get();
@@ -135,18 +129,14 @@ class EnhancedThermalPrinterService extends ChangeNotifier {
           // Only add Epson or network-capable printers for this service
           if (printer.model.displayName.toLowerCase().contains('epson')) {
             _availablePrinters.add(printer);
-            debugPrint('$_logTag ✅ Loaded thermal printer: ${printer.name}');
           }
         } catch (e) {
-          debugPrint('$_logTag ⚠️ Error parsing printer config: $e');
         }
       }
       
-      debugPrint('$_logTag 📊 Loaded ${_availablePrinters.length} thermal printers');
       notifyListeners();
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error loading printer configs from Firebase: $e');
       _lastError = e.toString();
     }
   }
@@ -155,7 +145,6 @@ class EnhancedThermalPrinterService extends ChangeNotifier {
   void _startRealTimeSync() {
     if (_firestore == null || _currentTenantId.isEmpty) return;
     
-    debugPrint('$_logTag 🔄 Starting real-time Firebase sync...');
     
     final tenantDoc = _firestore!.collection('tenants').doc(_currentTenantId);
     
@@ -173,7 +162,6 @@ class EnhancedThermalPrinterService extends ChangeNotifier {
       _handlePrinterAssignmentChanges(snapshot);
     });
     
-    debugPrint('$_logTag ✅ Real-time Firebase sync started');
   }
   
   /// Handle printer configuration changes from Firebase
@@ -189,23 +177,19 @@ class EnhancedThermalPrinterService extends ChangeNotifier {
           case DocumentChangeType.added:
             if (!_availablePrinters.any((p) => p.id == printer.id)) {
               _availablePrinters.add(printer);
-              debugPrint('$_logTag ➕ Printer added from Firebase: ${printer.name}');
             }
             break;
           case DocumentChangeType.modified:
             final index = _availablePrinters.indexWhere((p) => p.id == printer.id);
             if (index != -1) {
               _availablePrinters[index] = printer;
-              debugPrint('$_logTag 🔄 Printer updated from Firebase: ${printer.name}');
             }
             break;
           case DocumentChangeType.removed:
             _availablePrinters.removeWhere((p) => p.id == printer.id);
-            debugPrint('$_logTag ➖ Printer removed from Firebase: ${printer.name}');
             break;
         }
       } catch (e) {
-        debugPrint('$_logTag ❌ Error handling printer config change: $e');
       }
     }
     
@@ -215,7 +199,6 @@ class EnhancedThermalPrinterService extends ChangeNotifier {
   /// Handle printer assignment changes from Firebase
   void _handlePrinterAssignmentChanges(QuerySnapshot snapshot) {
     // Handle assignment changes if needed
-    debugPrint('$_logTag 🔄 Printer assignments updated from Firebase');
   }
   
   /// Load settings from SharedPreferences
@@ -233,10 +216,8 @@ class EnhancedThermalPrinterService extends ChangeNotifier {
       _autoFeed = prefs.getBool('thermal_auto_feed') ?? true;
       _feedLines = prefs.getInt('thermal_feed_lines') ?? 3;
       
-      debugPrint('$_logTag ✅ Settings loaded from SharedPreferences');
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error loading settings: $e');
     }
   }
   
@@ -252,10 +233,8 @@ class EnhancedThermalPrinterService extends ChangeNotifier {
       await prefs.setBool('thermal_auto_feed', _autoFeed);
       await prefs.setInt('thermal_feed_lines', _feedLines);
       
-      debugPrint('$_logTag ✅ Settings saved to SharedPreferences');
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error saving settings: $e');
     }
   }
   
@@ -278,7 +257,6 @@ class EnhancedThermalPrinterService extends ChangeNotifier {
     await _saveSettings();
     notifyListeners();
     
-    debugPrint('$_logTag ✅ Print settings updated');
   }
   
   /// Select active printer
@@ -288,7 +266,6 @@ class EnhancedThermalPrinterService extends ChangeNotifier {
       
       if (!printer.isReadyForPrinting) {
         _lastError = 'Printer ${printer.name} is not ready for printing';
-        debugPrint('$_logTag ❌ Printer not ready: ${printer.name}');
         return false;
       }
       
@@ -296,13 +273,11 @@ class EnhancedThermalPrinterService extends ChangeNotifier {
       _isConnected = true;
       _lastError = null;
       
-      debugPrint('$_logTag ✅ Selected printer: ${printer.name}');
       notifyListeners();
       return true;
       
     } catch (e) {
       _lastError = 'Printer not found: $printerId';
-      debugPrint('$_logTag ❌ Error selecting printer: $e');
       return false;
     }
   }
@@ -323,7 +298,6 @@ class EnhancedThermalPrinterService extends ChangeNotifier {
       _isPrinting = true;
       notifyListeners();
       
-      debugPrint('$_logTag 🖨️ Starting print job for order: ${order.orderNumber}');
       
       // Generate ESC/POS commands for thermal printer
       final commands = _generateThermalReceiptCommands(order, items);
@@ -332,7 +306,6 @@ class EnhancedThermalPrinterService extends ChangeNotifier {
       final success = await _sendCommandsToPrinter(commands);
       
       if (success) {
-        debugPrint('$_logTag ✅ Print job completed successfully');
         _lastError = null;
       } else {
         _lastError = 'Failed to send print commands to printer';
@@ -342,7 +315,6 @@ class EnhancedThermalPrinterService extends ChangeNotifier {
       
     } catch (e) {
       _lastError = 'Print error: $e';
-      debugPrint('$_logTag ❌ Print error: $e');
       return false;
     } finally {
       _isPrinting = false;
@@ -523,12 +495,10 @@ class EnhancedThermalPrinterService extends ChangeNotifier {
       } else if (printer.isBluetoothPrinter) {
         return await _sendToBluetoothPrinter(printer, commands);
       } else {
-        debugPrint('$_logTag ❌ Unsupported printer type: ${printer.type}');
         return false;
       }
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error sending commands to printer: $e');
       return false;
     }
   }
@@ -546,11 +516,9 @@ class EnhancedThermalPrinterService extends ChangeNotifier {
       await socket.flush();
       await socket.close();
       
-      debugPrint('$_logTag ✅ Commands sent to network printer: ${printer.name}');
       return true;
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error sending to network printer: $e');
       return false;
     }
   }
@@ -560,11 +528,9 @@ class EnhancedThermalPrinterService extends ChangeNotifier {
     try {
       // TODO: Implement Bluetooth printing using flutter_bluetooth_serial_plus
       // For now, return false as Bluetooth printing needs additional implementation
-      debugPrint('$_logTag ⚠️ Bluetooth printing not yet implemented');
       return false;
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error sending to Bluetooth printer: $e');
       return false;
     }
   }
@@ -579,19 +545,16 @@ class EnhancedThermalPrinterService extends ChangeNotifier {
     try {
       final printer = _availablePrinters.firstWhere((p) => p.id == printerId);
       
-      debugPrint('$_logTag 🔍 Testing printer connection: ${printer.name}');
       
       if (printer.isNetworkPrinter) {
         return await _testNetworkPrinter(printer);
       } else if (printer.isBluetoothPrinter) {
         return await _testBluetoothPrinter(printer);
       } else {
-        debugPrint('$_logTag ❌ Unsupported printer type for testing: ${printer.type}');
         return false;
       }
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error testing printer connection: $e');
       return false;
     }
   }
@@ -614,15 +577,12 @@ class EnhancedThermalPrinterService extends ChangeNotifier {
       await socket.close();
       
       if (response.isNotEmpty) {
-        debugPrint('$_logTag ✅ Network printer test successful: ${printer.name}');
         return true;
       } else {
-        debugPrint('$_logTag ⚠️ Network printer test: No response from ${printer.name}');
         return false;
       }
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Network printer test failed: ${printer.name} - $e');
       return false;
     }
   }
@@ -631,11 +591,9 @@ class EnhancedThermalPrinterService extends ChangeNotifier {
   Future<bool> _testBluetoothPrinter(PrinterConfiguration printer) async {
     try {
       // TODO: Implement Bluetooth printer testing
-      debugPrint('$_logTag ⚠️ Bluetooth printer testing not yet implemented');
       return false;
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error testing Bluetooth printer: $e');
       return false;
     }
   }

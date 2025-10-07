@@ -52,16 +52,12 @@ Future<void> main() async {
 
   // 🔧 GLOBAL ERROR HANDLING: Set up global error handlers to prevent app crashes
   FlutterError.onError = (FlutterErrorDetails details) {
-    debugPrint('🚨 FLUTTER ERROR CAUGHT: ${details.exception}');
-    debugPrint('Stack trace: ${details.stack}');
     // CRITICAL: This catches Flutter framework errors but app continues running
     // Production apps should send to crash reporting service like Sentry/Crashlytics
   };
 
   // Handle platform errors (Android/iOS specific)
   PlatformDispatcher.instance.onError = (error, stack) {
-    debugPrint('🚨 PLATFORM ERROR CAUGHT: $error');
-    debugPrint('Stack trace: $stack');
     // CRITICAL: Return true prevents the error from crashing the app
     // This catches Android/iOS level errors that would normally terminate the app
     return true;
@@ -76,22 +72,16 @@ Future<void> main() async {
   // Disable Provider debug check to allow nullable service types
   Provider.debugCheckInvalidValueType = null;
   
-  debugPrint('🚀 Starting Multi-Tenant AI POS System...');
-  debugPrint('🌍 Environment: ${EnvironmentConfig.environment.name.toUpperCase()}');
-  debugPrint('🗄️ Database: ${EnvironmentConfig.databaseName}');
   
   // Initialize Firebase first (with error handling)
-  debugPrint('🔥 Initializing Firebase...');
   try {
     await FirebaseConfig.initialize();
     
       // Test Firebase connection (with timeout and fallback)
-  debugPrint('🔍 Testing Firebase connection...');
   try {
     final connectionResults = await FirebaseConnectionTest.testConnection().timeout(
       const Duration(seconds: 10),
       onTimeout: () {
-        debugPrint('⚠️ Firebase connection test timed out, continuing...');
         return <String, dynamic>{
           'firebase_initialized': true,
           'firestore_available': false,
@@ -101,10 +91,8 @@ Future<void> main() async {
     );
     FirebaseConnectionTest.printResults(connectionResults);
   } catch (e) {
-    debugPrint('⚠️ Firebase connection test failed, continuing in offline mode: $e');
   }
   } catch (e) {
-    debugPrint('⚠️ Firebase initialization failed, continuing in offline mode: $e');
   }
   
   // Initialize Flutter services
@@ -117,17 +105,14 @@ Future<void> main() async {
     await authService.initialize().timeout(
       const Duration(seconds: 30),
       onTimeout: () {
-        debugPrint('⚠️ Auth service initialization timed out, continuing...');
       },
     );
   } catch (e) {
-    debugPrint('⚠️ Auth service initialization failed, continuing: $e');
   }
   
   // Connect progress service to auth service
   authService.setProgressService(progressService);
   
-  debugPrint('🚪 Starting with normal session behavior');
   
   runApp(MyApp(
     authService: authService,
@@ -137,8 +122,6 @@ Future<void> main() async {
 
   }, (error, stackTrace) {
     // Handle uncaught asynchronous errors
-    debugPrint('🚨 UNCAUGHT ASYNC ERROR: $error');
-    debugPrint('Stack trace: $stackTrace');
 
     // In a production app, you might want to:
     // 1. Report the error to a crash reporting service
@@ -248,7 +231,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
   @override
   void dispose() {
-    debugPrint('🧹 Starting comprehensive cleanup of all resources...');
 
     // Remove lifecycle observer
     WidgetsBinding.instance.removeObserver(this);
@@ -271,14 +253,12 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     // Stop background sync if active
     _isBackgroundSyncActive = false;
 
-    debugPrint('✅ All timers and background operations cancelled');
 
     // CRITICAL FIX: Do NOT dispose services here!
     // Services should remain available throughout app lifecycle
     // Only dispose when truly shutting down the app
 
     super.dispose();
-    debugPrint('🧹 Resource cleanup completed');
   }
 
   /// 🔧 Cancel all active background operations
@@ -287,16 +267,13 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       // Mark all active operations as cancelled
       for (final operation in _activeBackgroundOperations) {
         // Note: We can't actually cancel Futures, but we can track them
-        debugPrint('⚠️ Background operation may still be running: $operation');
       }
       _activeBackgroundOperations.clear();
 
       // Cancel any pending sync operations in services
       _cancelServiceBackgroundOperations();
 
-      debugPrint('✅ Background operations cleanup completed');
     } catch (e) {
-      debugPrint('⚠️ Error during background operation cleanup: $e');
     }
   }
 
@@ -306,37 +283,30 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       // Cancel order service background operations
       if (_orderService != null) {
         // Add cancellation logic to order service if needed
-        debugPrint('📋 Order service background operations cancelled');
       }
 
       // Cancel menu service background operations
       if (_menuService != null) {
-        debugPrint('🍽️ Menu service background operations cancelled');
       }
 
       // Cancel user service background operations
       if (_userService != null) {
-        debugPrint('👥 User service background operations cancelled');
       }
     } catch (e) {
-      debugPrint('⚠️ Error cancelling service background operations: $e');
     }
   }
 
   /// Handle authentication state changes
   void _onAuthStateChanged() {
-    debugPrint('🔄 Auth state changed - isAuthenticated: ${widget.authService.isAuthenticated}');
     
     if (mounted) {
       setState(() {
         if (widget.authService.isAuthenticated) {
-          debugPrint('🔓 Authentication state changed - initializing services...');
           // Use post frame callback to ensure widget tree is ready
           WidgetsBinding.instance.addPostFrameCallback((_) {
             _initializeServicesAfterAuth();
           });
         } else {
-          debugPrint('🔒 Authentication state changed - user logged out');
           // Only cleanup if we were previously authenticated
           if (_servicesInitialized) {
             _cleanupServices();
@@ -349,18 +319,14 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   /// Cleanup services when logging out
   void _cleanupServices() async {
     try {
-      debugPrint('🧹 Starting service cleanup after logout...');
       
       // Clear all services for proper isolation
       await _clearAllServicesForIsolation();
       
       // Preserve service instances and order data for next login
       // This prevents data loss during quick logout/login cycles
-      debugPrint('📋 Preserving service instances and order data for next login...');
       
-      debugPrint('✅ Service cleanup completed - all services preserved');
     } catch (e) {
-      debugPrint('❌ Service cleanup failed: $e');
     }
   }
 
@@ -369,12 +335,10 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
     
-    debugPrint('📱 App lifecycle state changed: $state');
     
     // Only logout when app is truly being closed or detached
     // Do NOT logout for inactive/hidden states (these are normal during app switching)
     if (state == AppLifecycleState.detached) {
-      debugPrint('🚪 App truly closing - logging out for security...');
       _logoutOnAppClose();
     }
     // Note: We don't logout on paused/hidden/inactive as these are normal app lifecycle events
@@ -388,10 +352,8 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         await widget.prefs.setBool('app_explicitly_closed', true);
         
         await widget.authService.logout();
-        debugPrint('✅ Auto-logout completed due to app close');
       }
     } catch (e) {
-      debugPrint('❌ Error during auto-logout: $e');
     }
   }
 
@@ -404,32 +366,26 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     _loyaltyService = LoyaltyService(dummyDb);
     _inventoryService = InventoryService();
     _orderService = OrderService(dummyDb, _orderLogService!, _inventoryService!);
-    debugPrint('✅ Core services initialized with dummy instances (MenuService will be reinitialized after auth)');
   }
 
   /// Initialize services that can be created synchronously (before SharedPreferences)
   void _initializeServiceInstancesSync() {
     // All services are already initialized in _initializeCoreServices()
-    debugPrint('✅ Sync service instances ready');
   }
   
   /// Initialize services that require SharedPreferences asynchronously
   void _initializeServiceInstancesAsync() async {
     // This will be called after SharedPreferences is available
-    debugPrint('✅ Async service instances ready');
   }
 
   /// Initialize services after authentication
   Future<void> _initializeServicesAfterAuth() async {
-    debugPrint('🔧 _initializeServicesAfterAuth called - isInitializing: $_isInitializing, servicesInitialized: $_servicesInitialized');
 
     if (_isInitializing) {
-      debugPrint('⚠️ Service initialization already in progress');
       return;
     }
 
     if (_servicesInitialized) {
-      debugPrint('⚠️ Services already initialized');
       return;
     }
 
@@ -437,65 +393,49 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
     // 🔧 ERROR BOUNDARY: Wrap entire initialization in try-catch to prevent app hanging
     try {
-      debugPrint('🔧 Starting POS service initialization after authentication...');
       
       final tenantDatabase = widget.authService.tenantDatabase;
       if (tenantDatabase == null) {
         throw Exception('Tenant database not available after authentication');
       }
       
-      debugPrint('✅ Using tenant database: ${tenantDatabase.runtimeType}');
       
       // Get shared preferences
       final prefs = await SharedPreferences.getInstance();
-      debugPrint('✅ SharedPreferences initialized');
       
       // Initialize unified Firebase sync service
       widget.progressService.addMessage('🔄 Initializing unified sync service...');
       _unifiedSyncService = UnifiedSyncService.instance;
       await _unifiedSyncService!.initialize();
-      debugPrint('✅ Unified Firebase sync service initialized');
-      debugPrint('✅ Automatic sync trigger service initialized');
       
       // Reset disposal state for core services before reinitialization
       try {
         _orderService?.resetDisposalState();
         _menuService?.resetDisposalState();
       } catch (e) {
-        debugPrint('⚠️ Could not reset service disposal states: $e');
       }
       
       // Initialize all services with proper tenant database
       await _initializeAllServices(prefs, tenantDatabase);
       
       _servicesInitialized = true;
-      debugPrint('🎉 All POS services initialized successfully');
-      debugPrint('🔍 BUILD: _servicesInitialized set to true, about to trigger UI rebuild');
 
       // Trigger UI rebuild
       if (mounted) {
-        debugPrint('🔍 BUILD: Widget is mounted, calling setState()');
         setState(() {});
-        debugPrint('🔍 BUILD: setState() called successfully');
       } else {
-        debugPrint('⚠️ BUILD: Widget not mounted, cannot call setState()');
       }
 
       // 🚀 LIGHTNING FAST: Start background sync operations immediately after UI is available
       _startLightningFastBackgroundSync();
       
     } catch (e, stackTrace) {
-      debugPrint('❌ Failed to initialize services after auth: $e');
-      debugPrint('Stack trace: $stackTrace');
       
       // CRITICAL FIX: Try to reinitialize services if they fail
       try {
-        debugPrint('🔄 Attempting to reinitialize failed services...');
         await _reinitializeFailedServices();
         _servicesInitialized = true;
-        debugPrint('✅ Services reinitialized successfully');
       } catch (reinitError) {
-        debugPrint('❌ Failed to reinitialize services: $reinitError');
         
         // Show error to user - FIXED: Use safer approach with proper context check
         if (mounted && context.mounted) {
@@ -511,65 +451,52 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
                 ),
               );
             } else {
-              debugPrint('⚠️ ScaffoldMessenger not available - skipping error display');
             }
           } catch (scaffoldError) {
-            debugPrint('⚠️ Could not show error snackbar: $scaffoldError');
             // Fallback: just log the error
           }
         } else {
-          debugPrint('⚠️ Context not mounted - skipping error display');
         }
 
         // 🔧 ERROR RECOVERY: Attempt to recover from initialization failures
-        debugPrint('🔄 Attempting to recover from initialization failure...');
         await _attemptInitializationRecovery();
 
       } catch (recoveryError) {
-        debugPrint('🚨 Recovery also failed: $recoveryError');
         // At this point, the app might be in a bad state, but we'll let it continue
         // with whatever services did initialize successfully
       }
     } finally {
       _isInitializing = false;
-      debugPrint('🔧 Service initialization process completed (with or without errors)');
     }
   }
   
   /// Attempt to recover from initialization failures
   Future<void> _attemptInitializationRecovery() async {
     try {
-      debugPrint('🔧 Starting initialization recovery process...');
 
       // Step 1: Check which services failed to initialize
       final failedServices = await _identifyFailedServices();
       if (failedServices.isEmpty) {
-        debugPrint('✅ No services identified as failed - recovery not needed');
         return;
       }
 
-      debugPrint('📋 Found ${failedServices.length} failed services: $failedServices');
 
       // Step 2: Attempt to recover each failed service individually
       for (final serviceName in failedServices) {
         try {
           await _recoverService(serviceName);
-          debugPrint('✅ Successfully recovered service: $serviceName');
         } catch (serviceError) {
-          debugPrint('⚠️ Failed to recover service $serviceName: $serviceError');
           // Continue with other services even if one fails
         }
       }
 
       // Step 3: Re-attempt full initialization if any services were recovered
       if (failedServices.isNotEmpty) {
-        debugPrint('🔄 Re-attempting full initialization after recovery...');
         await Future.delayed(const Duration(seconds: 2)); // Brief pause
         await _initializeServicesAfterAuth();
       }
 
     } catch (e) {
-      debugPrint('🚨 Initialization recovery failed: $e');
       // Don't rethrow - we want the app to continue even if recovery fails
     }
   }
@@ -605,7 +532,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       }
 
     } catch (e) {
-      debugPrint('⚠️ Error identifying failed services: $e');
     }
 
     return failedServices;
@@ -630,25 +556,21 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         await _recoverPrintingService();
         break;
       default:
-        debugPrint('⚠️ Unknown service for recovery: $serviceName');
     }
   }
 
   /// Recover database service
   Future<void> _recoverDatabaseService() async {
     try {
-      debugPrint('🔄 Recovering DatabaseService...');
       final prefs = await SharedPreferences.getInstance();
       final tenantDatabase = widget.authService.tenantDatabase;
 
       if (tenantDatabase != null) {
         _databaseService = tenantDatabase;
-        debugPrint('✅ DatabaseService recovered');
       } else {
         throw Exception('No tenant database available for recovery');
       }
     } catch (e) {
-      debugPrint('⚠️ DatabaseService recovery failed: $e');
       rethrow;
     }
   }
@@ -656,15 +578,12 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   /// Recover order service
   Future<void> _recoverOrderService() async {
     try {
-      debugPrint('🔄 Recovering OrderService...');
       if (_databaseService != null && _orderLogService != null && _inventoryService != null) {
         _orderService = OrderService(_databaseService!, _orderLogService!, _inventoryService!);
-        debugPrint('✅ OrderService recovered');
       } else {
         throw Exception('Required services not available for OrderService recovery');
       }
     } catch (e) {
-      debugPrint('⚠️ OrderService recovery failed: $e');
       rethrow;
     }
   }
@@ -672,16 +591,13 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   /// Recover menu service
   Future<void> _recoverMenuService() async {
     try {
-      debugPrint('🔄 Recovering MenuService...');
       if (_databaseService != null) {
         _menuService = MenuService(_databaseService!);
         await _menuService!.initialize();
-        debugPrint('✅ MenuService recovered');
       } else {
         throw Exception('DatabaseService not available for MenuService recovery');
       }
     } catch (e) {
-      debugPrint('⚠️ MenuService recovery failed: $e');
       rethrow;
     }
   }
@@ -689,16 +605,13 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   /// Recover user service
   Future<void> _recoverUserService() async {
     try {
-      debugPrint('🔄 Recovering UserService...');
       final prefs = await SharedPreferences.getInstance();
       if (_databaseService != null) {
         _userService = UserService(prefs, _databaseService!);
-        debugPrint('✅ UserService recovered');
       } else {
         throw Exception('DatabaseService not available for UserService recovery');
       }
     } catch (e) {
-      debugPrint('⚠️ UserService recovery failed: $e');
       rethrow;
     }
   }
@@ -706,13 +619,10 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   /// Recover printing service
   Future<void> _recoverPrintingService() async {
     try {
-      debugPrint('🔄 Recovering PrintingService...');
       if (_printingService != null) {
         await _printingService!.reinitializeIfNeeded();
-        debugPrint('✅ PrintingService recovered');
       }
     } catch (e) {
-      debugPrint('⚠️ PrintingService recovery failed: $e');
       rethrow;
     }
   }
@@ -720,23 +630,18 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   /// Reinitialize failed services
   Future<void> _reinitializeFailedServices() async {
     try {
-      debugPrint('🔄 Reinitializing failed services...');
       
       // Check which services need reinitialization
       if (_printingService != null && !_printingService!.isHealthy) {
-        debugPrint('🔄 Reinitializing printing service...');
         await _printingService!.reinitializeIfNeeded();
       }
       
       if (_robustKitchenService != null && !_robustKitchenService!.isHealthy) {
-        debugPrint('🔄 Reinitializing robust kitchen service...');
         await _robustKitchenService!.reinitializeIfNeeded();
       }
       
       // Reinitialize other critical services as needed
-      debugPrint('✅ Failed services reinitialized');
     } catch (e) {
-      debugPrint('❌ Error reinitializing failed services: $e');
       throw e;
     }
   }
@@ -752,23 +657,19 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         _userService = UserService(prefs, tenantDatabase);
         // UserService loads users automatically in constructor, wait for it to complete
         await Future.delayed(const Duration(milliseconds: 500));
-        debugPrint('✅ UserService initialized with ${_userService!.users.length} users');
         
         // CRITICAL: Set Admin as current user immediately after UserService is initialized
         try {
           final users = _userService!.users;
           User? admin;
           
-          debugPrint('🔍 ADMIN SETUP: Found ${users.length} users in UserService');
           for (int i = 0; i < users.length; i++) {
-            debugPrint('🔍 ADMIN SETUP: User $i: id=${users[i].id}, name=${users[i].name}, role=${users[i].role}, isActive=${users[i].isActive}');
           }
           
           // First try to find an active admin user
           for (final u in users) {
             if (u.role == UserRole.admin && u.isActive) {
               admin = u;
-              debugPrint('🔍 ADMIN SETUP: Found active admin user: ${u.name} (${u.id})');
               break;
             }
           }
@@ -777,7 +678,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           if (admin == null) {
             admin = users.where((u) => u.id == 'admin').cast<User?>().firstOrNull;
             if (admin != null) {
-              debugPrint('🔍 ADMIN SETUP: Found user with id "admin": ${admin.name}');
             }
           }
           
@@ -785,26 +685,20 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           if (admin == null) {
             admin = users.isNotEmpty ? users.first : null;
             if (admin != null) {
-              debugPrint('🔍 ADMIN SETUP: Using first user as fallback: ${admin.name} (${admin.id})');
             }
           }
           
           if (admin != null) {
-            debugPrint('🔍 ADMIN SETUP: About to set current user: ${admin.name} (${admin.id})');
             _userService!.setCurrentUser(admin);
-            debugPrint('✅ Set Admin as current user: ${admin.name} (${admin.role})');
             
             // Verify the current user was set
             final currentUser = _userService!.currentUser;
-            debugPrint('🔍 ADMIN SETUP: Verification - currentUser after setting: ${currentUser?.name ?? 'NULL'}');
             
             // Also set OrderLogService context if available
             if (_orderLogService != null) {
               _orderLogService!.setCurrentUser(admin.id, admin.name);
-              debugPrint('✅ OrderLogService context set for admin user');
             }
           } else {
-            debugPrint('⚠️ No users available to set as current user - will create default admin');
             
             // Create default admin user if none exists
             final adminUser = User(
@@ -817,14 +711,11 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
               createdAt: DateTime.now(),
             );
             
-            debugPrint('🔍 ADMIN SETUP: Creating default admin user');
             await _userService!.addUser(adminUser);
             _userService!.setCurrentUser(adminUser);
-            debugPrint('✅ Created and set default admin user as current');
             
             // Verify the current user was set
             final currentUser = _userService!.currentUser;
-            debugPrint('🔍 ADMIN SETUP: Verification - currentUser after creating: ${currentUser?.name ?? 'NULL'}');
             
             // Set OrderLogService context for new admin
             if (_orderLogService != null) {
@@ -832,12 +723,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
             }
           }
         } catch (e, stackTrace) {
-          debugPrint('⚠️ Unable to set Admin as current user: $e');
-          debugPrint('⚠️ Stack trace: $stackTrace');
         }
         
       } catch (e) {
-        debugPrint('❌ UserService initialization failed: $e');
         // Continue anyway - app can work without users initially
       }
       
@@ -846,34 +734,27 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       // Initialize TableService early (needed for orders)
       widget.progressService.addMessage('🍽️ Setting up table management...');
       _tableService = TableService(prefs);
-      debugPrint('✅ TableService initialized');
       
       // Initialize PaymentService early (needed for UI)
       widget.progressService.addMessage('💳 Setting up payment processing...');
       if (_orderService != null && _inventoryService != null) {
         _paymentService = PaymentService(_orderService!, _inventoryService!);
-        debugPrint('✅ PaymentService initialized');
       } else {
-        debugPrint('⚠️ PaymentService initialization skipped - dependencies not ready');
       }
       
       // Initialize PrintingService early (needed for UI)
       widget.progressService.addMessage('🖨️ Configuring printing services...');
       final networkInfo = await _getNetworkInfo();
       _printingService = PrintingService(prefs, networkInfo);
-      debugPrint('✅ PrintingService initialized');
       
       // ENABLE: Trigger immediate auto-reconnect to previously connected printers
       widget.progressService.addMessage('🔗 Reconnecting to previously connected printers...');
       try {
         // Wait a bit for the printing service to fully initialize
         await Future.delayed(const Duration(seconds: 2));
-        debugPrint('🚀 Triggering immediate auto-reconnect to previously connected printers...');
         // Call immediate auto-reconnect for faster reconnection after login
         await _printingService!.immediateAutoReconnect();
-        debugPrint('✅ Immediate auto-reconnect process completed');
       } catch (e) {
-        debugPrint('⚠️ Immediate auto-reconnect failed: $e');
       }
       
       // Trigger UI rebuild with basic services ready
@@ -893,15 +774,11 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           final cu = _userService?.currentUser;
           if (cu != null) {
             _orderLogService!.setCurrentUser(cu.id, cu.name);
-            debugPrint('✅ OrderLogService user context set: ${cu.name}');
           }
         } catch (e) {
-          debugPrint('⚠️ Could not set OrderLogService user context: $e');
         }
         
-        debugPrint('✅ OrderService reinitialized with existing orders');
       } else {
-        debugPrint('⚠️ OrderService initialization failed - dependencies not ready');
       }
       
       // Create new MenuService instance with updated database
@@ -909,14 +786,12 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       _menuService = MenuService(tenantDatabase);
       
       // CRITICAL: Ensure MenuService is fully initialized before proceeding
-      debugPrint('🔧 Ensuring MenuService is fully initialized with tenant database...');
       await _menuService!.ensureInitialized();
       await _menuService!.ensureReceiptsCategoryExists();
       
       // Wait a moment for any pending database operations
       await Future.delayed(const Duration(milliseconds: 100));
       
-      debugPrint('✅ MenuService reinitialized with ${_menuService!.categories.length} categories and ${_menuService!.menuItems.length} items');
       
       // CRITICAL FIX: Set global MenuService reference for direct reload after sync
       MultiTenantAuthService.setGlobalMenuService(_menuService!);
@@ -924,9 +799,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       // CRITICAL FIX: Set callback to reload MenuService when categories are synced from Firebase
       widget.authService.setCategoriesSyncedCallback(() async {
         if (_menuService != null) {
-          debugPrint('🔄 Categories synced from Firebase - reloading MenuService...');
           await _menuService!.reloadMenuData();
-          debugPrint('✅ MenuService reloaded after Firebase sync: ${_menuService!.categories.length} categories, ${_menuService!.menuItems.length} items');
         }
       });
       
@@ -946,7 +819,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         );
       }
       
-      debugPrint('✅ ActivityLogService reinitialized');
       
       // Log successful authentication
       try {
@@ -964,7 +836,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           );
         }
       } catch (e) {
-        debugPrint('⚠️ Failed to log authentication: $e');
       }
       
       widget.progressService.addMessage('🔧 Setting up printer configurations...');
@@ -974,22 +845,17 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         await _printerConfigurationService!.initializeTable().timeout(
           const Duration(seconds: 5),
           onTimeout: () {
-            debugPrint('⚠️ PrinterConfigurationService initialization timed out, continuing...');
             return;
           },
         );
-        debugPrint('✅ PrinterConfigurationService initialized');
 
         // Auto-add Bar Printer if missing
         try {
           final existing = _printerConfigurationService!.getConfigurationByIP('192.168.0.204', 9100);
           if (existing == null) {
             final added = await _printerConfigurationService!.addBarPrinterByIP('192.168.0.204', port: 9100);
-            debugPrint(added
-              ? '✅ Auto-added Bar Printer (192.168.0.204:9100)'
-              : '⚠️ Failed to auto-add Bar Printer');
+            // Auto-add successful
           } else {
-            debugPrint('ℹ️ Bar Printer already configured: ${existing.fullAddress}');
           }
 
           // Auto-add Sweet Counter printer if missing (same IP:port, different name)
@@ -998,19 +864,14 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           );
           if (!sweetExists) {
             final addedSweet = await _printerConfigurationService!.addSweetCounterPrinterByIP('192.168.0.181', port: 9100);
-            debugPrint(addedSweet
-              ? '✅ Auto-added Sweet Counter Receipt (192.168.0.181:9100)'
-              : '⚠️ Failed to auto-add Sweet Counter Receipt');
+            // Auto-add successful
           } else {
-            debugPrint('ℹ️ Sweet Counter Receipt already configured at 192.168.0.181:9100');
           }
 
           await _printerConfigurationService!.refreshConfigurations();
         } catch (e) {
-          debugPrint('⚠️ Auto-add Bar/Sweet printers failed: $e');
         }
       } catch (e) {
-        debugPrint('⚠️ PrinterConfigurationService initialization failed, continuing: $e');
       }
       
       // 🚨 URGENT: Initialize UnifiedPrinterService for Epson printer discovery
@@ -1020,13 +881,10 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         await _unifiedPrinterService!.initialize().timeout(
           const Duration(seconds: 10),
           onTimeout: () {
-            debugPrint('⚠️ UnifiedPrinterService initialization timed out, continuing...');
             return false;
           },
         );
-        debugPrint('✅ UnifiedPrinterService initialized');
       } catch (e) {
-        debugPrint('⚠️ UnifiedPrinterService initialization failed, continuing: $e');
       }
       
       widget.progressService.addMessage('🎛️ Setting up printer assignments...');
@@ -1041,7 +899,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       
       // Initialize the enhanced assignment service
       await _enhancedPrinterAssignmentService!.initialize();
-      debugPrint('✅ EnhancedPrinterAssignmentService initialized with multi-printer support');
       
       // Initialize cross-platform printer sync service
       widget.progressService.addMessage('🌐 Setting up cross-platform sync...');
@@ -1050,7 +907,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         assignmentService: _enhancedPrinterAssignmentService!,
       );
       await _crossPlatformPrinterSyncService!.initialize();
-      debugPrint('✅ CrossPlatformPrinterSyncService initialized with automatic persistence');
       
       // Initialize enhanced printer manager (handles all printer functionality)
       widget.progressService.addMessage('🚀 Setting up Enhanced Printer Management System...');
@@ -1067,16 +923,12 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           await _enhancedPrinterManager!.initialize().timeout(
             const Duration(seconds: 10),
             onTimeout: () {
-              debugPrint('⚠️ EnhancedPrinterManager initialization timed out, continuing...');
               return;
             },
           );
-          debugPrint('✅ EnhancedPrinterManager initialized - manual discovery only');
         } catch (e) {
-          debugPrint('⚠️ EnhancedPrinterManager initialization failed, continuing: $e');
         }
       } else {
-        debugPrint('⚠️ Could not initialize EnhancedPrinterManager - required services not available');
       }
       
       // Initialize printer validation service (requires all printer services)
@@ -1088,9 +940,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           assignmentService: _enhancedPrinterAssignmentService!,
           printerManager: _enhancedPrinterManager!,
         );
-        debugPrint('✅ PrinterValidationService initialized - kitchen validation system ready');
       } else {
-        debugPrint('⚠️ Could not initialize PrinterValidationService - required services not available');
       }
       
       // Initialize robust kitchen service (unifies all send to kitchen operations)
@@ -1103,9 +953,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           printerConfigService: _printerConfigurationService!,
           orderLogService: _orderLogService,
         );
-        debugPrint('✅ RobustKitchenService initialized - comprehensive send to kitchen system ready');
       } else {
-        debugPrint('⚠️ Could not initialize RobustKitchenService - required services not available');
       }
       
       // Free cloud printing service removed
@@ -1119,18 +967,14 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         );
         if (_kitchenPrintingService != null) {
           await _kitchenPrintingService!.initialize();
-          debugPrint('✅ KitchenPrintingService initialized');
         } else {
-          debugPrint('⚠️ KitchenPrintingService creation failed');
         }
       } else {
-        debugPrint('⚠️ Could not initialize KitchenPrintingService - required services not available');
       }
       
       // Initialize LoyaltyService
       widget.progressService.addMessage('💰 Setting up loyalty service...');
       _loyaltyService = LoyaltyService(tenantDatabase);
-      debugPrint('✅ LoyaltyService initialized');
       
       // Initialize tenant-specific printer services
       widget.progressService.addMessage('🏪 Setting up tenant-specific printer system...');
@@ -1151,7 +995,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         //   printingService: _printingService!,
         //   authService: widget.authService,
         // );
-        debugPrint('⚠️ TenantCloudPrintingService DISABLED to prevent spinner issues');
         
         // Initialize tenant printer integration service - FIXED: Add null check
         if (_tenantPrinterService != null) {
@@ -1175,21 +1018,13 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
             );
             
             if (tenantInitialized) {
-              debugPrint('✅ Tenant printer system initialized successfully for tenant: $tenantId');
             } else {
-              debugPrint('⚠️ Tenant printer system initialization failed, continuing with local printing only');
             }
           } else {
-            debugPrint('⚠️ No current session - tenant printer system will be initialized on login');
           }
         } else {
-          debugPrint('⚠️ TenantPrinterService initialization failed - skipping tenant printer integration');
         }
       } else {
-        debugPrint('⚠️ Could not initialize tenant printer services - required services not available');
-        debugPrint('⚠️ _printingService: ${_printingService != null}');
-        debugPrint('⚠️ _enhancedPrinterAssignmentService: ${_enhancedPrinterAssignmentService != null}');
-        debugPrint('⚠️ _printerConfigurationService: ${_printerConfigurationService != null}');
       }
       
       // Connect unified sync service to restaurant
@@ -1200,7 +1035,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
             widget.authService.currentRestaurant!,
             widget.authService.currentSession!,
           );
-          debugPrint('✅ Unified sync service connected to restaurant');
           
           // CRITICAL FIX: Set required services for category sync to work
           _unifiedSyncService!.setServices(
@@ -1211,36 +1045,28 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
             inventoryService: _inventoryService,
             tableService: _tableService,
           );
-          debugPrint('✅ Unified sync service configured with all required services');
           
           // FIXED: Proper Firebase sync with DEBOUNCED UI updates to prevent infinite loops
           _unifiedSyncService!.setCallbacks(
             onOrdersUpdated: () {
-              debugPrint('🔄 Orders updated from Firebase - DEBOUNCED refresh');
               // Use debounced refresh to prevent infinite loops
               _debouncedRefresh();
             },
             onMenuItemsUpdated: () {
-              debugPrint('🔄 Menu items updated from Firebase - DEBOUNCED refresh');
               _debouncedRefresh();
             },
             onUsersUpdated: () {
-              debugPrint('🔄 Users updated from Firebase - DEBOUNCED refresh');
               _debouncedRefresh();
             },
             onInventoryUpdated: () {
-              debugPrint('🔄 Inventory updated from Firebase - DEBOUNCED refresh');
               _debouncedRefresh();
             },
             onTablesUpdated: () {
-              debugPrint('🔄 Tables updated from Firebase - DEBOUNCED refresh');
               _debouncedRefresh();
             },
             onSyncProgress: (message) {
-              debugPrint('🔄 Sync progress: $message');
             },
             onSyncError: (error) {
-              debugPrint('❌ Sync error: $error');
             },
           );
 
@@ -1261,14 +1087,11 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
               }
             } catch (_) {}
           } catch (e) {
-            debugPrint('⚠️ Initial reconcile trigger failed: $e');
           }
         } catch (e) {
-          debugPrint('❌ Failed to connect unified sync service: $e');
           // Don't fail initialization - continue in offline mode
         }
       } else {
-        debugPrint('⚠️ Unified sync service or restaurant/session not available');
       }
       
       // Initialize cloud sync service for real-time updates across devices
@@ -1281,18 +1104,14 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           // Use the already initialized unified sync service
           if (_unifiedSyncService != null) {
             await _unifiedSyncService!.connectToRestaurant(currentRestaurant, currentUserSession);
-            debugPrint('✅ Unified Firebase sync connected to restaurant');
             widget.progressService.addMessage('✅ Real-time synchronization active');
           } else {
-            debugPrint('⚠️ Unified sync service not available');
             widget.progressService.addMessage('⚠️ Unified sync service not available');
           }
         } catch (e) {
-          debugPrint('❌ Failed to connect unified sync: $e');
           widget.progressService.addMessage('⚠️ Unified sync connection failed - continuing in local mode');
         }
       } else {
-        debugPrint('⚠️ No restaurant or user session available for multi-device sync initialization');
         widget.progressService.addMessage('⚠️ Multi-device sync requires restaurant and user session');
       }
       
@@ -1301,12 +1120,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       if (_printingService != null && _printerConfigurationService != null && _enhancedPrinterAssignmentService != null) {
         // Removed: MultiPrinterManager and AutoPrinterDiscoveryService (redundant)
         // Functionality moved to unified printer service
-        debugPrint('ℹ️ Printer discovery will be handled by unified printer service');
       } else {
-        debugPrint('⚠️ Printer services not available - will be handled by unified service');
       }
       
-      debugPrint('🎉 All POS services initialized successfully');
       
       // CREATE DUMMY DATA FOR TESTING (only if no existing data)
       // ENABLED: Test data creation for registration
@@ -1315,12 +1131,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         widget.progressService.addMessage('🎯 Creating demo servers and orders...');
         await _createDummyData();
       } else {
-        debugPrint('📋 Found $existingOrderCount existing orders - skipping dummy data creation');
       }
       
     } catch (e, stackTrace) {
-      debugPrint('❌ Error initializing services: $e');
-      debugPrint('Stack trace: $stackTrace');
       rethrow;
     }
   }
@@ -1334,26 +1147,21 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   /// Create dummy data for testing
   Future<void> _createDummyData() async {
     try {
-      debugPrint('🎯 Creating demo data for testing...');
       
       // Check if we already have users (don't clear existing users!)
       final existingUserCount = _userService?.users.length ?? 0;
       if (existingUserCount > 0) {
-        debugPrint('👥 Found $existingUserCount existing users - preserving them and skipping user creation');
         
         // Only create demo orders if none exist
         final existingOrderCount = _orderService?.allOrders.length ?? 0;
         if (existingOrderCount == 0) {
-          debugPrint('📋 No existing orders - creating demo order...');
           await _createDemoOrder();
         } else {
-          debugPrint('📋 Found $existingOrderCount existing orders - skipping demo order creation');
         }
         return;
       }
       
       // Only if NO users exist, create the default admin user
-      debugPrint('🔧 No users found - creating default admin user...');
       
       // Create default admin user
       final adminUser = User(
@@ -1367,15 +1175,12 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       );
       
       await _userService!.addUser(adminUser);
-      debugPrint('✅ Default admin user created');
       
       // Create a sample order for testing with admin user
       await _createDemoOrder();
       
-      debugPrint('🎉 Demo data created with default admin user!');
       
     } catch (e) {
-      debugPrint('⚠️ Error creating demo data (not critical): $e');
       // Don't throw error - demo data creation failure shouldn't stop the app
     }
   }
@@ -1404,17 +1209,14 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         );
         
         await _orderService!.saveOrder(updatedOrder);
-        debugPrint('✅ Demo order created with admin user');
       }
     } catch (e) {
-      debugPrint('⚠️ Could not create demo order: $e');
     }
   }
   
   /// Clear all services and cached data for restaurant isolation
   Future<void> _clearAllServicesForIsolation() async {
     try {
-      debugPrint('🧹 Clearing all services for restaurant isolation...');
       
       // Clear all service instances
       _orderService = null;
@@ -1447,9 +1249,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       _servicesInitialized = false;
       _isInitializing = false;
       
-      debugPrint('✅ All services cleared for isolation');
     } catch (e) {
-      debugPrint('❌ Error clearing services: $e');
     }
   }
 
@@ -1530,19 +1330,14 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   Widget _buildMainScreen() {
     return Builder(
       builder: (context) {
-        debugPrint('🔍 BUILD: _buildMainScreen called');
-        debugPrint('🔍 BUILD: isAuthenticated=${widget.authService.isAuthenticated}, servicesInitialized=$_servicesInitialized, userService=${_userService != null}');
-        debugPrint('🔍 BUILD: Current restaurant: ${widget.authService.currentRestaurant?.name ?? 'null'}');
         
         // Show authentication screen if not authenticated
         if (!widget.authService.isAuthenticated) {
-          debugPrint('🔍 BUILD: Showing RestaurantAuthScreen - user not authenticated');
           return const RestaurantAuthScreen();
         }
         
         // Show progress screen while services are initializing (only when authenticated)
         if (widget.authService.isAuthenticated && !_servicesInitialized) {
-          debugPrint('🔍 BUILD: Showing InitializationProgressScreen - authenticated but services not ready');
           return InitializationProgressScreen(
             restaurantName: widget.authService.currentRestaurant?.name ?? 'Restaurant',
           );
@@ -1550,7 +1345,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         
         // CRITICAL: Ensure ALL required services are available before showing main UI
         if (_userService == null || _tableService == null || _paymentService == null || _printerConfigurationService == null) {
-          debugPrint('🔍 BUILD: Services not ready - userService=${_userService != null}, tableService=${_tableService != null}, paymentService=${_paymentService != null}, printerConfigService=${_printerConfigurationService != null}');
           return Scaffold(
             backgroundColor: Colors.blue.shade50,
             body: Center(
@@ -1592,16 +1386,13 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           try {
             userService = Provider.of<UserService?>(context, listen: false);
           } catch (e) {
-            debugPrint('🔍 BUILD: UserService not available in Provider tree: $e');
           }
           
           final userCount = userService?.users.length ?? 0;
           final orderCount = orderService.allOrders.length;
           
-          debugPrint('🔍 BUILD: Provider validation passed - Users: $userCount, Orders: $orderCount');
           
         } catch (e) {
-          debugPrint('❌ BUILD: Provider services not accessible: $e');
           return Scaffold(
             backgroundColor: Colors.orange.shade50,
             body: Center(
@@ -1635,12 +1426,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         }
         
         // All services are ready - show main screen with extra safety
-        debugPrint('🔍 BUILD: All services ready, showing OrderTypeSelectionScreen');
         try {
           return const OrderTypeSelectionScreen();
         } catch (e, stackTrace) {
-          debugPrint('❌ BUILD: Error showing OrderTypeSelectionScreen: $e');
-          debugPrint('Stack trace: $stackTrace');
           
           // Fallback error screen
           return Scaffold(
@@ -1692,7 +1480,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   /// Debounced refresh to prevent infinite UI loops
   void _debouncedRefresh() {
     if (_isRefreshing) {
-      debugPrint('🔄 Refresh already in progress, skipping...');
       return;
     }
     
@@ -1700,7 +1487,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     _refreshTimer = Timer(const Duration(milliseconds: 1000), () {
       if (mounted && !_isRefreshing) {
         _isRefreshing = true;
-        debugPrint('🔄 Executing debounced refresh...');
         
         // Use post frame callback to ensure safe UI update
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1723,11 +1509,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   void _startLightningFastBackgroundSync() {
     // Prevent duplicate sync operations
     if (_isBackgroundSyncActive) {
-      debugPrint('⚠️ Background sync already active, skipping...');
       return;
     }
 
-    debugPrint('🚀 LIGHTNING FAST: Starting background sync operations...');
     _isBackgroundSyncActive = true;
 
     try {
@@ -1736,7 +1520,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         final orderSyncFuture = _orderService!.syncOrdersWithFirebase();
         _activeBackgroundOperations.add(orderSyncFuture);
         unawaited(_handleBackgroundOperation(orderSyncFuture, 'Order Sync'));
-        debugPrint('🚀 Order sync started in background');
       }
 
       // Start menu sync in background
@@ -1744,7 +1527,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         final menuSyncFuture = _menuService!.syncMenusWithFirebase();
         _activeBackgroundOperations.add(menuSyncFuture);
         unawaited(_handleBackgroundOperation(menuSyncFuture, 'Menu Sync'));
-        debugPrint('🚀 Menu sync started in background');
       }
 
       // Start user sync in background
@@ -1752,16 +1534,13 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         final userSyncFuture = _userService!.syncUsersWithFirebase();
         _activeBackgroundOperations.add(userSyncFuture);
         unawaited(_handleBackgroundOperation(userSyncFuture, 'User Sync'));
-        debugPrint('🚀 User sync started in background');
       }
 
       // Start periodic background sync timer
       _startPeriodicBackgroundSync();
 
-      debugPrint('✅ All background sync operations initiated - UI remains lightning fast!');
 
     } catch (e) {
-      debugPrint('⚠️ Failed to start background sync: $e');
       _isBackgroundSyncActive = false;
       // Don't throw - background sync failure shouldn't affect UI
     }
@@ -1774,30 +1553,23 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       await operation.timeout(
         const Duration(minutes: 5), // 5 minute timeout for background operations
         onTimeout: () {
-          debugPrint('⏰ Background operation timed out: $operationName');
           throw TimeoutException('Background operation timed out: $operationName');
         },
       );
-      debugPrint('✅ Background operation completed: $operationName');
     } catch (e) {
-      debugPrint('⚠️ Background operation failed: $operationName - $e');
 
       // If it's a timeout, we might want to retry once
       if (e is TimeoutException && operationName.contains('Order')) {
-        debugPrint('🔄 Retrying critical operation after timeout: $operationName');
         try {
           await Future.delayed(const Duration(seconds: 30)); // Wait before retry
           // Retry logic would go here, but for now we just log
-          debugPrint('ℹ️ Retry logic would be implemented here');
         } catch (retryError) {
-          debugPrint('⚠️ Retry also failed: $retryError');
         }
       }
     } finally {
       _activeBackgroundOperations.remove(operation);
       // Check if all operations are complete
       if (_activeBackgroundOperations.isEmpty) {
-        debugPrint('🎉 All background operations completed');
         _isBackgroundSyncActive = false;
       }
     }
@@ -1809,10 +1581,8 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     _backgroundSyncTimer = Timer.periodic(const Duration(minutes: 5), (timer) {
       // Only sync if app is not in background and not already syncing
       if (!_isAppInBackground && !_isBackgroundSyncActive) {
-        debugPrint('🔄 Periodic background sync triggered');
         _startLightningFastBackgroundSync();
       }
     });
-    debugPrint('⏰ Periodic background sync timer started (5 minute intervals)');
   }
 }

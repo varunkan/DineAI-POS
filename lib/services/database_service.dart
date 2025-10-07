@@ -52,7 +52,6 @@ class DatabaseService {
     
     // CRITICAL: Return custom tenant database if available, otherwise main database
     if (_customDatabase != null) {
-      debugPrint('🔗 Returning custom tenant database: $_customDatabaseName');
       return _customDatabase;
     }
     
@@ -60,7 +59,6 @@ class DatabaseService {
     if (_database == null && !_isInitialized) {
       await initialize();
     }
-    debugPrint('🔗 Returning main database: $_databaseName');
     return _database;
   }
   
@@ -83,17 +81,14 @@ class DatabaseService {
     try {
       if (!Hive.isAdapterRegistered(0)) {
         // Register adapters if needed
-        debugPrint('🌐 Initializing Hive for web platform...');
       }
       
       _webBox = await Hive.openBox(_webBoxName);
-      debugPrint('✅ Web storage initialized successfully');
       
       // Initialize default data if needed
       await _initializeWebDefaults();
       
     } catch (e) {
-      debugPrint('❌ Failed to initialize web storage: $e');
       throw DatabaseException('Failed to initialize web storage', operation: 'init_web_storage', originalError: e);
     }
   }
@@ -116,7 +111,6 @@ class DatabaseService {
           }
         ];
         await _webBox?.put('users', defaultUsers);
-        debugPrint('✅ Created default admin user for web');
       }
       
       // Initialize empty collections if they don't exist
@@ -128,7 +122,6 @@ class DatabaseService {
       }
       
     } catch (e) {
-      debugPrint('❌ Failed to initialize web defaults: $e');
     }
   }
 
@@ -154,23 +147,18 @@ class DatabaseService {
         onOpen: (db) async {
           // Enable foreign key constraints
           await db.execute('PRAGMA foreign_keys = ON');
-          debugPrint('Database opened successfully with foreign keys enabled');
           
           // Try to enable WAL mode with fallback
           try {
             await db.execute('PRAGMA journal_mode = WAL');
-            debugPrint('✅ WAL mode enabled successfully');
           } catch (e) {
-            debugPrint('⚠️ WAL mode not supported, using default journal mode: $e');
             // Continue without WAL mode - this is fine for development
           }
           
           // Set synchronous mode
           try {
             await db.execute('PRAGMA synchronous = NORMAL');
-            debugPrint('✅ Synchronous mode set to NORMAL');
           } catch (e) {
-            debugPrint('⚠️ Could not set synchronous mode: $e');
             // Continue anyway
           }
           
@@ -192,7 +180,6 @@ class DatabaseService {
   /// Throws [DatabaseException] if table creation fails.
   Future<void> _onCreate(Database db, int version) async {
     try {
-      debugPrint('Creating database tables...');
       
       await db.transaction((txn) async {
         // Core tables
@@ -217,7 +204,6 @@ class DatabaseService {
         await _createLoyaltyRewardsTable(txn);
         await _createAppSettingsTable(txn);
         
-        debugPrint('✅ All database tables created successfully');
       });
       
       // ENHANCEMENT: Migrate existing tables to add missing columns
@@ -227,7 +213,6 @@ class DatabaseService {
       // ZERO RISK: Validate schema after creation
       await _validateAndCorrectSchema(db);
     } catch (e) {
-      debugPrint('❌ Error creating database tables: $e');
       throw DatabaseException('Failed to create database tables', operation: 'create_tables', originalError: e);
     }
   }
@@ -235,27 +220,21 @@ class DatabaseService {
   /// ZERO RISK: Validate and correct database schema
   Future<void> _validateAndCorrectSchema(Database db) async {
     try {
-      debugPrint('🔍 Validating database schema after creation...');
       
       final schemaValidationService = SchemaValidationService();
       final validationResult = await schemaValidationService.validateDatabaseSchema(db);
       
       if (validationResult.isValid) {
-        debugPrint('✅ Database schema validation passed');
       } else {
-        debugPrint('⚠️ Database schema validation found ${validationResult.issues.length} issues:');
         for (final issue in validationResult.issues) {
-          debugPrint('  - ${issue.severity}: ${issue.message}');
         }
         
         // ZERO RISK: Auto-correct non-critical issues
         if (SchemaValidationService.isAutoCorrectionEnabled) {
-          debugPrint('🔧 Auto-correcting non-critical schema issues...');
           // Auto-correction is handled within the validation service
         }
       }
     } catch (e) {
-      debugPrint('⚠️ Schema validation failed: $e');
       // Don't throw - schema validation failure shouldn't break database initialization
     }
   }
@@ -537,7 +516,6 @@ class DatabaseService {
       CREATE INDEX IF NOT EXISTS idx_reservations_table ON reservations(table_id)
     ''');
 
-    debugPrint('✅ Reservations table created with indexes');
   }
 
   /// Creates the printer_configurations table with comprehensive printer management.
@@ -581,7 +559,6 @@ class DatabaseService {
       CREATE INDEX IF NOT EXISTS idx_printer_configs_station ON printer_configurations(station_id)
     ''');
 
-    debugPrint('✅ Printer configurations table created with indexes');
   }
 
   /// Creates the printer_assignments table with kitchen station management.
@@ -620,7 +597,6 @@ class DatabaseService {
       CREATE INDEX IF NOT EXISTS idx_printer_assignments_target ON printer_assignments(target_name)
     ''');
 
-    debugPrint('✅ Printer assignments table created with indexes');
   }
 
   /// Creates the order_logs table with comprehensive audit trail support.
@@ -674,7 +650,6 @@ class DatabaseService {
       CREATE INDEX IF NOT EXISTS idx_order_logs_action ON order_logs(action)
     ''');
 
-    debugPrint('✅ Order logs table created with indexes');
   }
 
   /// Creates the app_metadata table for application configuration and state.
@@ -703,7 +678,6 @@ class DatabaseService {
       VALUES ('last_migration', ?, 'string', 'Last migration timestamp', 1)
     ''', [DateTime.now().toIso8601String()]);
 
-    debugPrint('✅ App metadata table created with initial data');
   }
 
   /// Ensures a table exists, creating it if necessary.
@@ -716,18 +690,13 @@ class DatabaseService {
       );
       
       if (result.isEmpty) {
-        debugPrint('🔧 Creating missing table: $tableName');
         await createTable();
-        debugPrint('✅ Created table: $tableName');
       }
     } catch (e) {
-      debugPrint('⚠️ Error ensuring table $tableName exists: $e');
       // Try to create the table anyway
       try {
         await createTable();
-        debugPrint('✅ Created table $tableName after error');
       } catch (createError) {
-        debugPrint('❌ Failed to create table $tableName: $createError');
       }
     }
   }
@@ -737,7 +706,6 @@ class DatabaseService {
   /// This method is called when the database version is increased.
   /// Add migration logic here when needed.
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    debugPrint('📈 Upgrading database from version $oldVersion to $newVersion');
     
     try {
       // Version 1 → 2: Add missing columns to existing tables
@@ -755,13 +723,11 @@ class DatabaseService {
       // Future migrations can be added here
       // if (oldVersion < 4) { ... }
       
-      debugPrint('✅ Database upgrade completed successfully');
       
       // CRITICAL: Clear any cached table schemas to ensure fresh reads
       await db.execute('PRAGMA schema_version = $newVersion');
       
     } catch (e) {
-      debugPrint('❌ Database upgrade failed: $e');
       // Don't rethrow - let the database continue with potentially incomplete migration
     }
   }
@@ -793,7 +759,6 @@ class DatabaseService {
             await saveWebOrderLog(data);
             return 1;
           default:
-            debugPrint('⚠️ Web insert for unsupported table: $table');
             return 0;
         }
       } catch (e) {
@@ -851,7 +816,6 @@ class DatabaseService {
             data = await getWebOrderLogs();
             break;
           default:
-            debugPrint('⚠️ Web query for unsupported table: $table');
             return [];
         }
         
@@ -883,11 +847,9 @@ class DatabaseService {
           data = data.take(limit).toList();
         }
         
-        debugPrint('✅ Web query returned ${data.length} records from $table');
         return data;
         
       } catch (e) {
-        debugPrint('❌ Error in web query for $table: $e');
         return [];
       }
     }
@@ -946,7 +908,6 @@ class DatabaseService {
             await saveWebOrderLog(data);
             return 1;
           default:
-            debugPrint('⚠️ Web update for unsupported table: $table');
             return 0;
         }
       } catch (e) {
@@ -980,7 +941,6 @@ class DatabaseService {
       try {
         // For web, we'll need to implement specific delete logic
         // For now, return 0 as delete operations are less common in POS
-        debugPrint('⚠️ Web delete operation not fully implemented for $table');
         return 0;
       } catch (e) {
         throw DatabaseException('Failed to delete from $table on web', operation: 'delete', originalError: e);
@@ -1005,7 +965,6 @@ class DatabaseService {
       if (_database != null) {
         await _database!.close();
         _database = null;
-        debugPrint('Database connection closed');
       }
     } catch (e) {
       throw DatabaseException('Failed to close database', operation: 'close', originalError: e);
@@ -1022,7 +981,6 @@ class DatabaseService {
       try {
         if (_webBox == null) await _initWebStorage();
         await _webBox?.clear();
-        debugPrint('✅ All web data cleared');
       } catch (e) {
         throw DatabaseException('Failed to clear web data', operation: 'clear_all_data', originalError: e);
       }
@@ -1044,7 +1002,6 @@ class DatabaseService {
         await txn.delete('customers');
         await txn.delete('transactions');
       });
-      debugPrint('All data cleared from database');
     } catch (e) {
       throw DatabaseException('Failed to clear all data', operation: 'clear_all_data', originalError: e);
     }
@@ -1145,10 +1102,8 @@ class DatabaseService {
           });
         }
         
-        debugPrint('✅ Loaded ${result.length} orders for web platform');
         return result;
       } catch (e) {
-        debugPrint('❌ Error getting web orders: $e');
         return [];
       }
     }
@@ -1168,14 +1123,11 @@ class DatabaseService {
         // Add missing columns if they don't exist
         if (!hasNotesColumn) {
           await db.execute('ALTER TABLE order_items ADD COLUMN notes TEXT');
-          debugPrint('Added notes column to order_items table');
         }
         if (!hasKitchenStatusColumn) {
           await db.execute('ALTER TABLE order_items ADD COLUMN kitchen_status TEXT DEFAULT "pending"');
-          debugPrint('Added kitchen_status column to order_items table');
         }
       } catch (e) {
-        debugPrint('Warning: Could not check/add columns: $e');
       }
       
       // Build query with conditional column selection
@@ -1340,7 +1292,6 @@ class DatabaseService {
   /// Performs comprehensive schema migrations for existing databases
   Future<void> _performSchemaMigrations(Database db) async {
     try {
-      debugPrint('🔧 Starting database schema migrations...');
       
       // CRITICAL FIX: Force check and fix critical schema issues first
       await _forceFixCriticalSchemaIssues(db);
@@ -1357,23 +1308,18 @@ class DatabaseService {
       // Run post-migration integrity check
       await _postMigrationIntegrityCheck(db);
       
-      debugPrint('✅ Database schema migrations completed');
     } catch (e) {
-      debugPrint('❌ Database migration failed: $e');
       rethrow;
     }
   }
 
   /// Force fix critical schema issues immediately
   Future<void> _forceFixCriticalSchemaIssues(Database db) async {
-    debugPrint('🔧 FORCE FIXING critical schema issues...');
     
     try {
       // ALWAYS force recreate problematic tables to ensure correct schema
       await _forceRecreateProblematicTables(db);
-      debugPrint('✅ Critical schema issues fixed by force recreation');
     } catch (e) {
-      debugPrint('❌ Critical schema fix failed: $e');
       // Continue anyway to prevent app crashes
     }
   }
@@ -1386,7 +1332,6 @@ class DatabaseService {
       );
       
       if (tableExists.isEmpty) {
-        debugPrint('🔧 Creating missing order_logs table');
         await _createOrderLogsTable(db);
         return;
       }
@@ -1402,13 +1347,10 @@ class DatabaseService {
       final missingColumns = requiredColumns.difference(existingColumns);
       
       if (missingColumns.isNotEmpty) {
-        debugPrint('🔧 Fixing order_logs table - missing columns: $missingColumns');
         await _recreateOrderLogsTable(db);
       } else {
-        debugPrint('✅ Order logs table schema is correct');
       }
     } catch (e) {
-      debugPrint('❌ Error checking order_logs table: $e');
       await _recreateOrderLogsTable(db);
     }
   }
@@ -1421,7 +1363,6 @@ class DatabaseService {
       );
       
       if (tableExists.isEmpty) {
-        debugPrint('🔧 Creating missing printer_configurations table');
         await _createPrinterConfigurationsTable(db);
         return;
       }
@@ -1436,13 +1377,10 @@ class DatabaseService {
       final missingColumns = requiredColumns.difference(existingColumns);
       
       if (missingColumns.isNotEmpty) {
-        debugPrint('🔧 Fixing printer_configurations table - missing columns: $missingColumns');
         await _recreatePrinterConfigurationsTable(db);
       } else {
-        debugPrint('✅ Printer configurations table schema is correct');
       }
     } catch (e) {
-      debugPrint('❌ Error checking printer_configurations table: $e');
       await _recreatePrinterConfigurationsTable(db);
     }
   }
@@ -1455,7 +1393,6 @@ class DatabaseService {
       );
       
       if (tableExists.isEmpty) {
-        debugPrint('🔧 Creating missing printer_assignments table');
         await _createPrinterAssignmentsTable(db);
         return;
       }
@@ -1470,20 +1407,16 @@ class DatabaseService {
       final missingColumns = requiredColumns.difference(existingColumns);
       
       if (missingColumns.isNotEmpty) {
-        debugPrint('🔧 Fixing printer_assignments table - missing columns: $missingColumns');
         await _recreatePrinterAssignmentsTable(db);
       } else {
-        debugPrint('✅ Printer assignments table schema is correct');
       }
     } catch (e) {
-      debugPrint('❌ Error checking printer_assignments table: $e');
       await _recreatePrinterAssignmentsTable(db);
     }
   }
 
   /// Force recreate problematic tables
   Future<void> _forceRecreateProblematicTables(Database db) async {
-    debugPrint('🔧 Force recreating problematic tables...');
     
     await db.transaction((txn) async {
       // Disable foreign keys for this operation
@@ -1503,7 +1436,6 @@ class DatabaseService {
       await txn.execute('PRAGMA foreign_keys = ON');
     });
     
-    debugPrint('✅ Problematic tables recreated');
   }
 
   /// Ensures all required tables exist with proper schema
@@ -1535,7 +1467,6 @@ class DatabaseService {
   /// Migrates existing table schemas to add missing columns and fix column naming issues
   Future<void> _migrateExistingTableSchemas(Database db) async {
     try {
-      debugPrint('🔧 Migrating existing table schemas...');
       
       // CRITICAL FIX: Ensure all boolean columns use proper SQLite integer format
       await _fixBooleanColumnNaming(db);
@@ -1549,15 +1480,12 @@ class DatabaseService {
       await _checkAndFixPrinterConfigurationsTable(db);
       await _checkAndFixPrinterAssignmentsTable(db);
       
-      debugPrint('✅ Table schema migrations completed');
     } catch (e) {
-      debugPrint('❌ Error migrating table schemas: $e');
     }
   }
   
   /// Fix boolean column naming issues across all tables
   Future<void> _fixBooleanColumnNaming(Database db) async {
-    debugPrint('🔧 Fixing boolean column naming issues...');
     
     try {
       // Check users table for column naming issues
@@ -1566,7 +1494,6 @@ class DatabaseService {
       
       // If we have the wrong column names, recreate the table
       if (usersColumnNames.contains('isActive') || usersColumnNames.contains('adminPanelAccess')) {
-        debugPrint('⚠️ Found incorrect boolean column names in users table, fixing...');
         await _recreateUsersTableWithCorrectSchema(db);
       }
       
@@ -1580,14 +1507,11 @@ class DatabaseService {
         final categoriesColumnNames = categoriesColumns.map((col) => col['name'] as String).toSet();
         
         if (categoriesColumnNames.contains('isActive')) {
-          debugPrint('⚠️ Found incorrect boolean column names in categories table, fixing...');
           await _fixCategoriesTableSchema(db);
         }
       }
       
-      debugPrint('✅ Boolean column naming fixed');
     } catch (e) {
-      debugPrint('❌ Error fixing boolean column naming: $e');
     }
   }
   
@@ -1636,7 +1560,6 @@ class DatabaseService {
       await txn.execute('ALTER TABLE users_temp RENAME TO users');
     });
     
-    debugPrint('✅ Users table recreated with correct schema');
   }
   
   /// Fix categories table schema
@@ -1680,13 +1603,11 @@ class DatabaseService {
       await txn.execute('ALTER TABLE categories_temp RENAME TO categories');
     });
     
-    debugPrint('✅ Categories table schema fixed');
   }
 
   /// Migrates users table to add admin_panel_access column
   Future<void> _migrateUsersTable(Database db) async {
     try {
-      debugPrint('🔧 Migrating users table schema...');
       
       // Get current table schema
       final tableInfo = await db.rawQuery("PRAGMA table_info(users)");
@@ -1696,7 +1617,6 @@ class DatabaseService {
       if (!existingColumns.contains('admin_panel_access')) {
         try {
           await db.execute('ALTER TABLE users ADD COLUMN admin_panel_access INTEGER NOT NULL DEFAULT 0');
-          debugPrint('✅ Added admin_panel_access column to users table');
           
           // Grant admin panel access to existing admin users
           await db.execute('''
@@ -1704,22 +1624,17 @@ class DatabaseService {
             SET admin_panel_access = 1 
             WHERE role = 'admin'
           ''');
-          debugPrint('✅ Granted admin panel access to existing admin users');
         } catch (e) {
-          debugPrint('⚠️ Could not add admin_panel_access column: $e');
         }
       }
       
-      debugPrint('✅ users table schema migration completed');
     } catch (e) {
-      debugPrint('❌ Failed to migrate users table: $e');
     }
   }
 
   /// Migrates order_logs table to add missing columns
   Future<void> _migrateOrderLogsTable(dynamic db) async {
     try {
-      debugPrint('🔧 Migrating order_logs table schema...');
       
       // Get current table schema
       final tableInfo = await db.rawQuery("PRAGMA table_info(order_logs)");
@@ -1752,9 +1667,7 @@ class DatabaseService {
         if (!existingColumns.contains(entry.key)) {
           try {
             await db.execute('ALTER TABLE order_logs ADD COLUMN ${entry.key} ${entry.value}');
-            debugPrint('✅ Added column ${entry.key} to order_logs');
           } catch (e) {
-            debugPrint('⚠️ Could not add column ${entry.key}: $e');
           }
         }
       }
@@ -1765,21 +1678,16 @@ class DatabaseService {
         await db.execute('CREATE INDEX IF NOT EXISTS idx_order_logs_performed_by ON order_logs(performed_by)');
         await db.execute('CREATE INDEX IF NOT EXISTS idx_order_logs_timestamp ON order_logs(timestamp DESC)');
         await db.execute('CREATE INDEX IF NOT EXISTS idx_order_logs_action ON order_logs(action)');
-        debugPrint('✅ order_logs indexes created');
       } catch (e) {
-        debugPrint('⚠️ Could not create order_logs indexes: $e');
       }
       
-      debugPrint('✅ order_logs table schema migration completed');
     } catch (e) {
-      debugPrint('❌ Failed to migrate order_logs table: $e');
     }
   }
 
   /// Migrates the categories table to add missing columns for version 3.
   Future<void> _migrateCategoriesTable(DatabaseExecutor db) async {
     try {
-      debugPrint('🔄 Migrating categories table schema...');
       
       // Get current table schema
       final tableInfo = await db.rawQuery("PRAGMA table_info(categories)");
@@ -1789,9 +1697,7 @@ class DatabaseService {
       if (!existingColumns.contains('icon_code_point')) {
         try {
           await db.execute('ALTER TABLE categories ADD COLUMN icon_code_point INTEGER');
-          debugPrint('✅ Added icon_code_point column to categories');
         } catch (e) {
-          debugPrint('⚠️ Could not add icon_code_point column: $e');
         }
       }
       
@@ -1799,22 +1705,17 @@ class DatabaseService {
       if (!existingColumns.contains('color_value')) {
         try {
           await db.execute('ALTER TABLE categories ADD COLUMN color_value TEXT');
-          debugPrint('✅ Added color_value column to categories');
         } catch (e) {
-          debugPrint('⚠️ Could not add color_value column: $e');
         }
       }
       
-      debugPrint('✅ Categories table schema migration completed');
     } catch (e) {
-      debugPrint('❌ Failed to migrate categories table: $e');
     }
   }
 
   /// Migrates printer_configurations table to add missing columns
   Future<void> _migratePrinterConfigurationsTable(dynamic db) async {
     try {
-      debugPrint('🔧 Migrating printer_configurations table schema...');
       
       // Get current table schema
       final tableInfo = await db.rawQuery("PRAGMA table_info(printer_configurations)");
@@ -1839,23 +1740,18 @@ class DatabaseService {
         if (!existingColumns.contains(entry.key)) {
           try {
             await db.execute('ALTER TABLE printer_configurations ADD COLUMN ${entry.key} ${entry.value}');
-            debugPrint('✅ Added column ${entry.key} to printer_configurations');
           } catch (e) {
-            debugPrint('⚠️ Could not add column ${entry.key}: $e');
           }
         }
       }
       
-      debugPrint('✅ printer_configurations table schema migration completed');
     } catch (e) {
-      debugPrint('❌ Failed to migrate printer_configurations table: $e');
     }
   }
 
   /// Migrates printer_assignments table to add missing columns
   Future<void> _migratePrinterAssignmentsTable(dynamic db) async {
     try {
-      debugPrint('🔧 Migrating printer_assignments table schema...');
       
       // Get current table schema
       final tableInfo = await db.rawQuery("PRAGMA table_info(printer_assignments)");
@@ -1881,46 +1777,37 @@ class DatabaseService {
         if (!existingColumns.contains(entry.key)) {
           try {
             await db.execute('ALTER TABLE printer_assignments ADD COLUMN ${entry.key} ${entry.value}');
-            debugPrint('✅ Added column ${entry.key} to printer_assignments');
           } catch (e) {
-            debugPrint('⚠️ Could not add column ${entry.key}: $e');
           }
         }
       }
       
-      debugPrint('✅ printer_assignments table schema migration completed');
     } catch (e) {
-      debugPrint('❌ Failed to migrate printer_assignments table: $e');
     }
   }
 
   /// Performs post-migration integrity check
   Future<void> _postMigrationIntegrityCheck(Database db) async {
     try {
-      debugPrint('🔧 Starting post-migration data integrity check...');
       
       // Test critical operations
       await db.rawQuery('SELECT COUNT(*) FROM order_logs LIMIT 1');
       await db.rawQuery('SELECT COUNT(*) FROM printer_configurations LIMIT 1');
       await db.rawQuery('SELECT COUNT(*) FROM printer_assignments LIMIT 1');
       
-      debugPrint('✅ Post-migration integrity check passed');
     } catch (e) {
-      debugPrint('⚠️ Post-migration integrity check warning: $e');
     }
   }
 
   /// Cleans up orphaned data that could cause foreign key constraint errors
   Future<void> _cleanupOrphanedData(Database db) async {
     try {
-      debugPrint('🧹 Starting orphaned data cleanup...');
       
       // Check if we have menu items loaded first
       final menuItemsResult = await db.rawQuery('SELECT COUNT(*) as count FROM menu_items');
       final menuItemsCount = menuItemsResult.first['count'] as int;
       
       if (menuItemsCount == 0) {
-        debugPrint('⚠️ No menu items found - skipping order cleanup to prevent data loss');
         // Only clean up order logs that reference non-existent orders
         final orphanedLogs = await db.rawDelete('''
           DELETE FROM order_logs 
@@ -1930,10 +1817,8 @@ class DatabaseService {
         ''');
         
         if (orphanedLogs > 0) {
-          debugPrint('🧹 Removed $orphanedLogs orphaned order logs');
         }
         
-        debugPrint('✅ Limited orphaned data cleanup completed (preserved orders)');
         return;
       }
       
@@ -1944,7 +1829,6 @@ class DatabaseService {
       ''');
       
       if (emptyMenuItemIds > 0) {
-        debugPrint('🧹 Removed $emptyMenuItemIds order items with empty menu_item_id');
       }
       
       // Be more conservative with orphaned order items - only delete if menu items table is properly loaded
@@ -1956,7 +1840,6 @@ class DatabaseService {
       ''');
       
       if (orphanedOrderItems > 0) {
-        debugPrint('🧹 Removed $orphanedOrderItems orphaned order items');
       }
       
       // Only clean up orders that have no items AND are completed/cancelled (preserve active orders)
@@ -1968,7 +1851,6 @@ class DatabaseService {
       ''');
       
       if (emptyOrders > 0) {
-        debugPrint('🧹 Removed $emptyOrders completed/cancelled orders with no items');
       }
       
       // Clean up order logs that reference non-existent orders
@@ -1980,12 +1862,9 @@ class DatabaseService {
       ''');
       
       if (orphanedLogs > 0) {
-        debugPrint('🧹 Removed $orphanedLogs orphaned order logs');
       }
       
-      debugPrint('✅ Orphaned data cleanup completed');
     } catch (e) {
-      debugPrint('⚠️ Orphaned data cleanup error: $e');
     }
   }
 
@@ -1993,14 +1872,12 @@ class DatabaseService {
   Future<void> cleanupOrphanedOrderItems() async {
     if (kIsWeb) {
       // Web platform - simplified cleanup (could be enhanced)
-      debugPrint('✅ Web platform cleanup completed (simplified)');
       return;
     }
     
     try {
       final db = await database;
       if (db == null) {
-        debugPrint('⚠️ Database not available for cleanup');
         return;
       }
       
@@ -2011,12 +1888,9 @@ class DatabaseService {
       ''');
       
       if (orphanedCount > 0) {
-        debugPrint('🧹 Cleaned up $orphanedCount orphaned order items');
       } else {
-        debugPrint('✅ No orphaned order items found');
       }
     } catch (e) {
-      debugPrint('❌ Error during orphaned order items cleanup: $e');
     }
   }
 
@@ -2028,7 +1902,6 @@ class DatabaseService {
         final menuItems = await getWebMenuItems();
         return menuItems.any((item) => item['id'] == menuItemId);
       } catch (e) {
-        debugPrint('⚠️ Error validating web menu item existence: $e');
         return false;
       }
     }
@@ -2043,7 +1916,6 @@ class DatabaseService {
       );
       return (result.first['count'] as int) > 0;
     } catch (e) {
-      debugPrint('⚠️ Error validating menu item existence: $e');
       return false;
     }
   }
@@ -2060,7 +1932,6 @@ class DatabaseService {
         final existingIds = menuItems.map((item) => item['id'] as String).toSet();
         return menuItemIds.where((id) => !existingIds.contains(id)).toList();
       } catch (e) {
-        debugPrint('⚠️ Error validating web menu items: $e');
         return menuItemIds; // Return all as invalid on error
       }
     }
@@ -2078,7 +1949,6 @@ class DatabaseService {
       final existingIds = result.map((row) => row['id'] as String).toSet();
       return menuItemIds.where((id) => !existingIds.contains(id)).toList();
     } catch (e) {
-      debugPrint('⚠️ Error validating menu items: $e');
       return menuItemIds; // Return all as invalid on error
     }
   }
@@ -2091,7 +1961,6 @@ class DatabaseService {
         final categories = await getWebCategories();
         return categories.isEmpty;
       } catch (e) {
-        debugPrint('⚠️ Error checking web sample data need: $e');
         return true; // Default to needing sample data
       }
     }
@@ -2115,7 +1984,6 @@ class DatabaseService {
       
       return menuItemsCount == 0;
     } catch (e) {
-      debugPrint('⚠️ Error checking sample data need: $e');
       return true; // Default to needing sample data
     }
   }
@@ -2124,14 +1992,12 @@ class DatabaseService {
   Future<void> markSampleDataLoaded() async {
     if (kIsWeb) {
       // Web platform - no need to mark as loaded (handled by sample data existence)
-      debugPrint('✅ Web sample data loading completed');
       return;
     }
     
     try {
       final db = await database;
       if (db == null) {
-        debugPrint('⚠️ Database not available to mark sample data as loaded');
         return;
       }
       
@@ -2139,9 +2005,7 @@ class DatabaseService {
         INSERT OR REPLACE INTO app_metadata (key, value, updated_at)
         VALUES ('sample_data_loaded', 'true', ?)
       ''', [DateTime.now().toIso8601String()]);
-      debugPrint('✅ Marked sample data as loaded');
     } catch (e) {
-      debugPrint('⚠️ Error marking sample data as loaded: $e');
     }
   }
 
@@ -2150,19 +2014,15 @@ class DatabaseService {
     if (kIsWeb) {
       // Web platform - clear all Hive storage
       try {
-        debugPrint('🔄 Resetting web storage completely...');
         if (_webBox == null) await _initWebStorage();
         await _webBox?.clear();
-        debugPrint('✅ Web storage reset completed successfully');
       } catch (e) {
-        debugPrint('❌ Web storage reset failed: $e');
         rethrow;
       }
       return;
     }
     
     try {
-      debugPrint('🔄 Resetting database completely...');
       final db = await database;
       if (db == null) throw DatabaseException('Database not available', operation: 'reset_database');
       
@@ -2206,9 +2066,7 @@ class DatabaseService {
         await txn.execute('PRAGMA foreign_keys = ON');
       });
       
-      debugPrint('✅ Database reset completed successfully');
     } catch (e) {
-      debugPrint('❌ Database reset failed: $e');
       rethrow;
     }
   }
@@ -2224,7 +2082,6 @@ class DatabaseService {
       final users = _webBox?.get('users', defaultValue: <Map<String, dynamic>>[]);
       return List<Map<String, dynamic>>.from(users ?? []);
     } catch (e) {
-      debugPrint('❌ Error getting web users: $e');
       return [];
     }
   }
@@ -2246,9 +2103,7 @@ class DatabaseService {
       }
       
       await _webBox?.put('users', users);
-      debugPrint('✅ User saved to web storage: ${user['name']}');
     } catch (e) {
-      debugPrint('❌ Error saving web user: $e');
     }
   }
 
@@ -2261,7 +2116,6 @@ class DatabaseService {
       final orders = _webBox?.get('orders', defaultValue: <Map<String, dynamic>>[]);
       return List<Map<String, dynamic>>.from(orders ?? []);
     } catch (e) {
-      debugPrint('❌ Error getting web orders: $e');
       return [];
     }
   }
@@ -2283,9 +2137,7 @@ class DatabaseService {
       }
       
       await _webBox?.put('orders', orders);
-      debugPrint('✅ Order saved to web storage: ${order['order_number']}');
     } catch (e) {
-      debugPrint('❌ Error saving web order: $e');
     }
   }
 
@@ -2298,7 +2150,6 @@ class DatabaseService {
       final logs = _webBox?.get('order_logs', defaultValue: <Map<String, dynamic>>[]);
       return List<Map<String, dynamic>>.from(logs ?? []);
     } catch (e) {
-      debugPrint('❌ Error getting web order logs: $e');
       return [];
     }
   }
@@ -2313,9 +2164,7 @@ class DatabaseService {
       logs.add(log);
       
       await _webBox?.put('order_logs', logs);
-      debugPrint('✅ Order log saved to web storage');
     } catch (e) {
-      debugPrint('❌ Error saving web order log: $e');
     }
   }
 
@@ -2326,9 +2175,7 @@ class DatabaseService {
     try {
       if (_webBox == null) await _initWebStorage();
       await _webBox?.put('order_logs', logs);
-      debugPrint('✅ ${logs.length} order logs saved to web storage');
     } catch (e) {
-      debugPrint('❌ Error saving web order logs: $e');
     }
   }
 
@@ -2341,7 +2188,6 @@ class DatabaseService {
       final items = _webBox?.get('menu_items', defaultValue: <Map<String, dynamic>>[]);
       return List<Map<String, dynamic>>.from(items ?? []);
     } catch (e) {
-      debugPrint('❌ Error getting web menu items: $e');
       return [];
     }
   }
@@ -2363,9 +2209,7 @@ class DatabaseService {
       }
       
       await _webBox?.put('menu_items', items);
-      debugPrint('✅ Menu item saved to web storage: ${item['name']}');
     } catch (e) {
-      debugPrint('❌ Error saving web menu item: $e');
     }
   }
 
@@ -2378,7 +2222,6 @@ class DatabaseService {
       final categories = _webBox?.get('categories', defaultValue: <Map<String, dynamic>>[]);
       return List<Map<String, dynamic>>.from(categories ?? []);
     } catch (e) {
-      debugPrint('❌ Error getting web categories: $e');
       return [];
     }
   }
@@ -2400,9 +2243,7 @@ class DatabaseService {
       }
       
       await _webBox?.put('categories', categories);
-      debugPrint('✅ Category saved to web storage: ${category['name']}');
     } catch (e) {
-      debugPrint('❌ Error saving web category: $e');
     }
   }
 
@@ -2416,7 +2257,6 @@ class DatabaseService {
       // Check if we already have sample data
       final categories = await getWebCategories();
       if (categories.isNotEmpty) {
-        debugPrint('✅ Web sample data already exists');
         return;
       }
       
@@ -2483,10 +2323,8 @@ class DatabaseService {
       
       await _webBox?.put('menu_items', sampleMenuItems);
       
-      debugPrint('✅ Web sample data initialized successfully');
       
     } catch (e) {
-      debugPrint('❌ Error initializing web sample data: $e');
     }
   }
 
@@ -2519,7 +2357,6 @@ class DatabaseService {
   /// Initialize the database
   Future<void> initialize() async {
     if (_isInitialized || _initializationInProgress) {
-      debugPrint('⚠️ Database service already initialized or initialization in progress');
       return;
     }
     
@@ -2527,27 +2364,20 @@ class DatabaseService {
     
     try {
       if (kIsWeb) {
-        debugPrint('🌐 Initializing database service for web platform...');
         await _initWebStorage();
-        debugPrint('✅ Web database service initialized');
       } else {
-        debugPrint('📱 Initializing database service for mobile/desktop platform...');
         _database = await _initDatabase();
         
         // CRITICAL: Force verify and fix schema issues immediately after database connection
         await _forceVerifyAndFixSchema();
         
-        debugPrint('✅ Database service initialized with cleanup');
         
         // Force cleanup of orphaned data
-        debugPrint('🧹 Running additional database cleanup...');
         await cleanupOrphanedOrderItems();
-        debugPrint('✅ Database cleanup completed');
       }
       
       _isInitialized = true;
     } catch (e) {
-      debugPrint('❌ Database initialization failed: $e');
       _isInitialized = false;
       rethrow;
     } finally {
@@ -2558,14 +2388,12 @@ class DatabaseService {
   /// Initialize the database with a custom name for multi-tenant support
   Future<void> initializeWithCustomName(String customDatabaseName) async {
     if (_customDatabaseName == customDatabaseName && _customDatabase != null) {
-      debugPrint('⚠️ Custom database already initialized: $customDatabaseName');
       return;
     }
     
     try {
       // Close existing custom database if it exists
       if (_customDatabase != null) {
-        debugPrint('🔒 Closing existing custom database: $_customDatabaseName');
         await _customDatabase!.close();
         _customDatabase = null;
       }
@@ -2573,21 +2401,14 @@ class DatabaseService {
       _customDatabaseName = customDatabaseName;
       
       if (kIsWeb) {
-        debugPrint('🌐 Initializing database service for web platform with custom name: $customDatabaseName');
         await _initWebStorage();
-        debugPrint('✅ Web database service initialized with custom name');
       } else {
-        debugPrint('📱 Initializing database service for mobile/desktop platform with custom name: $customDatabaseName');
         _customDatabase = await _initDatabaseWithCustomName(customDatabaseName);
-        debugPrint('✅ Database service initialized with custom name: $customDatabaseName');
         
         // Force cleanup of orphaned data
-        debugPrint('🧹 Running additional database cleanup...');
         await cleanupOrphanedOrderItems();
-        debugPrint('✅ Database cleanup completed');
       }
     } catch (e) {
-      debugPrint('❌ Custom database initialization failed: $e');
       _customDatabase = null;
       _customDatabaseName = null;
       rethrow;
@@ -2608,7 +2429,6 @@ class DatabaseService {
         onOpen: (db) async {
           // Enable foreign key constraints
           await db.execute('PRAGMA foreign_keys = ON');
-          debugPrint('Database opened successfully with foreign keys enabled: $customDatabaseName');
           
           // Perform schema migrations for existing databases
           await _performSchemaMigrations(db);
@@ -2626,7 +2446,6 @@ class DatabaseService {
   /// Verify schema integrity for multi-tenant database
   Future<void> _verifySchemaIntegrity(Database db) async {
     try {
-      debugPrint('🔍 Verifying schema integrity for multi-tenant database...');
       
       // Check if all required tables exist
       final requiredTables = [
@@ -2653,14 +2472,11 @@ class DatabaseService {
         );
         
         if (tableExists.isEmpty) {
-          debugPrint('⚠️ Required table missing: $tableName - creating it...');
           await _createMissingTable(db, tableName);
         }
       }
       
-      debugPrint('✅ Schema integrity verified for multi-tenant database');
     } catch (e) {
-      debugPrint('❌ Schema integrity verification failed: $e');
     }
   }
   
@@ -2739,39 +2555,31 @@ class DatabaseService {
           ''');
           break;
         default:
-          debugPrint('⚠️ Unknown table type: $tableName');
       }
       
-      debugPrint('✅ Created missing table: $tableName');
     } catch (e) {
-      debugPrint('❌ Failed to create missing table $tableName: $e');
     }
   }
 
   /// Performs comprehensive database integrity check
   Future<void> performDatabaseIntegrityCheck() async {
     try {
-      debugPrint('🔧 Starting comprehensive database integrity check...');
       
       final db = await database;
       if (db == null) {
-        debugPrint('❌ Database not available for integrity check');
         return;
       }
       
       // Check for critical schema issues
       await _checkCriticalSchemaIssues(db);
       
-      debugPrint('✅ Database integrity check completed successfully');
     } catch (e) {
-      debugPrint('❌ Database integrity check failed: $e');
       rethrow;
     }
   }
   
   /// Checks for critical schema issues that need immediate fixing
   Future<void> _checkCriticalSchemaIssues(Database db) async {
-    debugPrint('🔧 Checking for critical schema issues...');
     
     try {
       // Check order_logs table schema
@@ -2786,7 +2594,6 @@ class DatabaseService {
       final missingOrderLogsColumns = requiredOrderLogsColumns.difference(orderLogsColumnNames);
       
       if (missingOrderLogsColumns.isNotEmpty) {
-        debugPrint('⚠️ Missing columns in order_logs: $missingOrderLogsColumns');
         await _recreateOrderLogsTable(db);
       }
       
@@ -2801,7 +2608,6 @@ class DatabaseService {
       final missingPrinterConfigColumns = requiredPrinterConfigColumns.difference(printerConfigColumnNames);
       
       if (missingPrinterConfigColumns.isNotEmpty) {
-        debugPrint('⚠️ Missing columns in printer_configurations: $missingPrinterConfigColumns');
         await _recreatePrinterConfigurationsTable(db);
       }
       
@@ -2816,20 +2622,16 @@ class DatabaseService {
       final missingPrinterAssignColumns = requiredPrinterAssignColumns.difference(printerAssignColumnNames);
       
       if (missingPrinterAssignColumns.isNotEmpty) {
-        debugPrint('⚠️ Missing columns in printer_assignments: $missingPrinterAssignColumns');
         await _recreatePrinterAssignmentsTable(db);
       }
       
-      debugPrint('✅ No critical schema issues detected');
     } catch (e) {
-      debugPrint('❌ Critical schema check failed: $e');
       // Continue with app initialization even if schema check fails
     }
   }
   
   /// Recreates the order_logs table with proper schema
   Future<void> _recreateOrderLogsTable(Database db) async {
-    debugPrint('🔄 Recreating order_logs table...');
     
     try {
       // Backup existing data
@@ -2837,7 +2639,6 @@ class DatabaseService {
       try {
         existingData = await db.query('order_logs');
       } catch (e) {
-        debugPrint('⚠️ Could not backup existing order_logs data: $e');
       }
       
       // Drop and recreate table
@@ -2875,19 +2676,15 @@ class DatabaseService {
           
           await db.insert('order_logs', migratedRow);
         } catch (e) {
-          debugPrint('⚠️ Could not migrate order log row: $e');
         }
       }
       
-      debugPrint('✅ Recreated order_logs table successfully');
     } catch (e) {
-      debugPrint('❌ Failed to recreate order_logs table: $e');
     }
   }
   
   /// Recreates the printer_configurations table with proper schema
   Future<void> _recreatePrinterConfigurationsTable(Database db) async {
-    debugPrint('🔄 Recreating printer_configurations table...');
     
     try {
       // Backup existing data
@@ -2895,22 +2692,18 @@ class DatabaseService {
       try {
         existingData = await db.query('printer_configurations');
       } catch (e) {
-        debugPrint('⚠️ Could not backup existing printer_configurations data: $e');
       }
       
       // Drop and recreate table
       await db.execute('DROP TABLE IF EXISTS printer_configurations');
       await _createPrinterConfigurationsTable(db);
       
-      debugPrint('✅ Recreated printer_configurations table successfully');
     } catch (e) {
-      debugPrint('❌ Failed to recreate printer_configurations table: $e');
     }
   }
   
   /// Recreates the printer_assignments table with proper schema
   Future<void> _recreatePrinterAssignmentsTable(Database db) async {
-    debugPrint('🔄 Recreating printer_assignments table...');
     
     try {
       // Backup existing data
@@ -2918,23 +2711,19 @@ class DatabaseService {
       try {
         existingData = await db.query('printer_assignments');
       } catch (e) {
-        debugPrint('⚠️ Could not backup existing printer_assignments data: $e');
       }
       
       // Drop and recreate table
       await db.execute('DROP TABLE IF EXISTS printer_assignments');
       await _createPrinterAssignmentsTable(db);
       
-      debugPrint('✅ Recreated printer_assignments table successfully');
     } catch (e) {
-      debugPrint('❌ Failed to recreate printer_assignments table: $e');
     }
   }
 
   /// Force database reset if critical schema issues are detected
   Future<void> _handleCriticalSchemaIssues(Database db) async {
     try {
-      debugPrint('🔧 Checking for critical schema issues...');
       
       // Check for critical missing columns that indicate major schema problems
       final criticalIssues = <String>[];
@@ -2981,18 +2770,13 @@ class DatabaseService {
       }
       
       if (criticalIssues.isNotEmpty) {
-        debugPrint('❌ Critical schema issues detected: ${criticalIssues.join(', ')}');
-        debugPrint('🔄 Performing emergency database reset...');
         
         // Force recreate all tables
         await _forceRecreateAllTables(db);
         
-        debugPrint('✅ Emergency database reset completed');
       } else {
-        debugPrint('✅ No critical schema issues detected');
       }
     } catch (e) {
-      debugPrint('❌ Error checking for critical schema issues: $e');
     }
   }
 
@@ -3027,21 +2811,18 @@ class DatabaseService {
   Future<void> _addMissingOrderLogsColumns(Database db) async {
     // This method is now handled by _checkAndFixOrderLogsTable
     // which recreates the table if columns are missing
-    debugPrint('✅ order_logs table schema ensured');
   }
   
   /// Add missing columns to printer_configurations table
   Future<void> _addMissingPrinterConfigColumns(Database db) async {
     // This method is now handled by _checkAndFixPrinterConfigurationsTable
     // which recreates the table if columns are missing
-    debugPrint('✅ printer_configurations table schema ensured');
   }
   
   /// Add missing columns to printer_assignments table
   Future<void> _addMissingPrinterAssignmentColumns(Database db) async {
     // This method is now handled by _checkAndFixPrinterAssignmentsTable
     // which recreates the table if columns are missing
-    debugPrint('✅ printer_assignments table schema ensured');
   }
 
   /// Check and fix users table schema
@@ -3052,7 +2833,6 @@ class DatabaseService {
       );
       
       if (tableExists.isEmpty) {
-        debugPrint('🔧 Creating missing users table');
         await _createUsersTable(db);
         return;
       }
@@ -3070,14 +2850,11 @@ class DatabaseService {
       if (missingColumns.isNotEmpty || 
           columnNames.contains('isActive') || 
           columnNames.contains('adminPanelAccess')) {
-        debugPrint('🔧 Users table needs major schema fix, recreating...');
         await _recreateUsersTableWithCorrectSchema(db);
       } else {
-        debugPrint('✅ Users table schema is correct');
       }
       
     } catch (e) {
-      debugPrint('❌ Error checking users table: $e');
       // Try to recreate the table
       await _recreateUsersTableWithCorrectSchema(db);
     }
@@ -3091,7 +2868,6 @@ class DatabaseService {
       final db = await database;
       if (db == null) return;
 
-      debugPrint('🔧 Force verifying and fixing critical schema issues...');
       
       // CRITICAL: Force check and fix printer_configurations table
       await _forceFixPrinterConfigurationsTable(db);
@@ -3102,10 +2878,8 @@ class DatabaseService {
       // CRITICAL: Force check and fix order_logs table
       await _forceFixOrderLogsTable(db);
       
-      debugPrint('✅ Critical schema verification and fixes completed');
       
     } catch (e) {
-      debugPrint('❌ Schema verification failed: $e');
       // Continue initialization even if schema fixes fail
     }
   }
@@ -3113,7 +2887,6 @@ class DatabaseService {
   /// FORCE FIX: Ensure printer_configurations table has all required columns
   Future<void> _forceFixPrinterConfigurationsTable(Database db) async {
     try {
-      debugPrint('🔧 Force fixing printer_configurations table schema...');
       
       // Check if table exists
       final tableExists = await db.rawQuery(
@@ -3121,7 +2894,6 @@ class DatabaseService {
       );
       
       if (tableExists.isEmpty) {
-        debugPrint('🔧 Creating missing printer_configurations table');
         await _createPrinterConfigurationsTable(db);
         return;
       }
@@ -3130,7 +2902,6 @@ class DatabaseService {
       final tableInfo = await db.rawQuery("PRAGMA table_info(printer_configurations)");
       final existingColumns = tableInfo.map((col) => col['name'] as String).toSet();
       
-      debugPrint('🔧 Current printer_configurations columns: ${existingColumns.join(', ')}');
       
       // CRITICAL: Define ALL required columns
       final requiredColumns = {
@@ -3159,25 +2930,20 @@ class DatabaseService {
       final missingColumns = requiredColumns.keys.toSet().difference(existingColumns);
       
       if (missingColumns.isNotEmpty) {
-        debugPrint('🔧 Missing columns in printer_configurations: ${missingColumns.join(', ')}');
         
         // Add missing columns one by one
         for (final columnName in missingColumns) {
           try {
             final columnDef = requiredColumns[columnName]!;
             await db.execute('ALTER TABLE printer_configurations ADD COLUMN $columnName $columnDef');
-            debugPrint('✅ Added column $columnName to printer_configurations');
           } catch (e) {
-            debugPrint('⚠️ Could not add column $columnName: $e');
             
             // If adding column fails, recreate the entire table
-            debugPrint('🔧 Recreating printer_configurations table due to column addition failure');
             await _forceRecreatePrinterConfigurationsTable(db);
             break;
           }
         }
       } else {
-        debugPrint('✅ printer_configurations table has all required columns');
       }
       
       // Verify the station_id column specifically
@@ -3185,14 +2951,11 @@ class DatabaseService {
       final updatedColumns = updatedTableInfo.map((col) => col['name'] as String).toSet();
       
       if (updatedColumns.contains('station_id')) {
-        debugPrint('✅ station_id column verified in printer_configurations table');
       } else {
-        debugPrint('❌ station_id column still missing - forcing table recreation');
         await _forceRecreatePrinterConfigurationsTable(db);
       }
       
     } catch (e) {
-      debugPrint('❌ Error force fixing printer_configurations table: $e');
       // Try to recreate the table as a last resort
       await _forceRecreatePrinterConfigurationsTable(db);
     }
@@ -3201,15 +2964,12 @@ class DatabaseService {
   /// FORCE RECREATE: printer_configurations table with proper schema
   Future<void> _forceRecreatePrinterConfigurationsTable(Database db) async {
     try {
-      debugPrint('🔧 Force recreating printer_configurations table...');
       
       // Backup existing data
       List<Map<String, dynamic>> existingData = [];
       try {
         existingData = await db.query('printer_configurations');
-        debugPrint('🔧 Backed up ${existingData.length} printer configurations');
       } catch (e) {
-        debugPrint('⚠️ Could not backup existing printer_configurations data: $e');
       }
       
       // Drop and recreate table
@@ -3243,23 +3003,18 @@ class DatabaseService {
           };
           
           await db.insert('printer_configurations', safeRow);
-          debugPrint('✅ Restored printer configuration: ${safeRow['name']}');
         } catch (e) {
-          debugPrint('⚠️ Could not restore printer configuration: $e');
         }
       }
       
-      debugPrint('✅ Force recreated printer_configurations table successfully');
       
     } catch (e) {
-      debugPrint('❌ Failed to force recreate printer_configurations table: $e');
     }
   }
 
   /// FORCE FIX: Ensure printer_assignments table has all required columns
   Future<void> _forceFixPrinterAssignmentsTable(Database db) async {
     try {
-      debugPrint('🔧 Force fixing printer_assignments table schema...');
       
       // Check if table exists
       final tableExists = await db.rawQuery(
@@ -3267,7 +3022,6 @@ class DatabaseService {
       );
       
       if (tableExists.isEmpty) {
-        debugPrint('🔧 Creating missing printer_assignments table');
         await _createPrinterAssignmentsTable(db);
         return;
       }
@@ -3297,31 +3051,25 @@ class DatabaseService {
       final missingColumns = requiredColumns.keys.toSet().difference(existingColumns);
       
       if (missingColumns.isNotEmpty) {
-        debugPrint('🔧 Missing columns in printer_assignments: ${missingColumns.join(', ')}');
         
         // Add missing columns one by one
         for (final columnName in missingColumns) {
           try {
             final columnDef = requiredColumns[columnName]!;
             await db.execute('ALTER TABLE printer_assignments ADD COLUMN $columnName $columnDef');
-            debugPrint('✅ Added column $columnName to printer_assignments');
           } catch (e) {
-            debugPrint('⚠️ Could not add column $columnName: $e');
           }
         }
       } else {
-        debugPrint('✅ printer_assignments table has all required columns');
       }
       
     } catch (e) {
-      debugPrint('❌ Error force fixing printer_assignments table: $e');
     }
   }
 
   /// FORCE FIX: Ensure order_logs table has all required columns
   Future<void> _forceFixOrderLogsTable(Database db) async {
     try {
-      debugPrint('🔧 Force fixing order_logs table schema...');
       
       // Check if table exists
       final tableExists = await db.rawQuery(
@@ -3329,7 +3077,6 @@ class DatabaseService {
       );
       
       if (tableExists.isEmpty) {
-        debugPrint('🔧 Creating missing order_logs table');
         await _createOrderLogsTable(db);
         return;
       }
@@ -3369,24 +3116,19 @@ class DatabaseService {
       final missingColumns = requiredColumns.keys.toSet().difference(existingColumns);
       
       if (missingColumns.isNotEmpty) {
-        debugPrint('🔧 Missing columns in order_logs: ${missingColumns.join(', ')}');
         
         // Add missing columns one by one
         for (final columnName in missingColumns) {
           try {
             final columnDef = requiredColumns[columnName]!;
             await db.execute('ALTER TABLE order_logs ADD COLUMN $columnName $columnDef');
-            debugPrint('✅ Added column $columnName to order_logs');
           } catch (e) {
-            debugPrint('⚠️ Could not add column $columnName: $e');
           }
         }
       } else {
-        debugPrint('✅ order_logs table has all required columns');
       }
       
     } catch (e) {
-      debugPrint('❌ Error force fixing order_logs table: $e');
     }
   }
 
@@ -3394,20 +3136,17 @@ class DatabaseService {
   /// This is critical for multi-tenant isolation
   Future<void> clearAllDataAndClose() async {
     try {
-      debugPrint('🧹 Clearing all cached data and closing database connections...');
       
       // Close custom database
       if (_customDatabase != null) {
         await _customDatabase!.close();
         _customDatabase = null;
-        debugPrint('✅ Custom database closed');
       }
       
       // Close main database
       if (_database != null) {
         await _database!.close();
         _database = null;
-        debugPrint('✅ Main database closed');
       }
       
       // Reset initialization flags
@@ -3420,12 +3159,9 @@ class DatabaseService {
         await _webBox!.clear();
         await _webBox!.close();
         _webBox = null;
-        debugPrint('✅ Web storage cleared and closed');
       }
       
-      debugPrint('✅ All database connections and cached data cleared');
     } catch (e) {
-      debugPrint('❌ Error clearing database data: $e');
       // Continue anyway - don't throw as this is cleanup
     }
   }
@@ -3445,7 +3181,6 @@ class DatabaseService {
       
       return result.isNotEmpty ? result.first : null;
     } catch (e) {
-      debugPrint('❌ Error getting data: $e');
       return null;
     }
   }
@@ -3463,7 +3198,6 @@ class DatabaseService {
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
     } catch (e) {
-      debugPrint('❌ Error saving data: $e');
       rethrow;
     }
   }
@@ -3477,7 +3211,6 @@ class DatabaseService {
       final result = await db.query(collection);
       return result;
     } catch (e) {
-      debugPrint('❌ Error getting all data: $e');
       return [];
     }
   }
@@ -3492,32 +3225,25 @@ class DatabaseService {
       // Add missing columns if they don't exist
       if (!columnNames.contains('notes')) {
         await db.execute('ALTER TABLE orders ADD COLUMN notes TEXT');
-        debugPrint('✅ Added notes column to orders table');
       }
       
       if (!columnNames.contains('preferences')) {
         await db.execute('ALTER TABLE orders ADD COLUMN preferences TEXT');
-        debugPrint('✅ Added preferences column to orders table');
       }
       
       if (!columnNames.contains('history')) {
         await db.execute('ALTER TABLE orders ADD COLUMN history TEXT');
-        debugPrint('✅ Added history column to orders table');
       }
       
       if (!columnNames.contains('completed_at')) {
         await db.execute('ALTER TABLE orders ADD COLUMN completed_at TEXT');
-        debugPrint('✅ Added completed_at column to orders table');
       }
       
       if (!columnNames.contains('items')) {
         await db.execute('ALTER TABLE orders ADD COLUMN items TEXT');
-        debugPrint('✅ Added items column to orders table');
       }
       
-      debugPrint('✅ Orders table migration completed');
     } catch (e) {
-      debugPrint('⚠️ Orders table migration failed: $e');
     }
   }
 

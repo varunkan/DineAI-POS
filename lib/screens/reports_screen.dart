@@ -91,10 +91,8 @@ class _ReportsScreenState extends State<ReportsScreen> with TickerProviderStateM
     // 🚫 CRITICAL FIX: Use existing orders if available to avoid ghost order cleanup interference
     List<Order> allOrders;
     if (orderService.allOrders.isNotEmpty) {
-      debugPrint('📊 Reports Screen: Using existing loaded orders (${orderService.allOrders.length}) to avoid reload interference');
       allOrders = orderService.allOrders;
     } else {
-      debugPrint('📊 Reports Screen: Loading orders from database (first time)');
       await orderService.loadOrders();
       allOrders = orderService.allOrders;
     }

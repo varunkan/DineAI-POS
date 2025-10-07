@@ -162,7 +162,6 @@ Connected Printers: ${_connectedPrinters.length}
         try {
           await printingService.printToSpecificPrinter(printer.id, testContent, PrinterType.bluetooth);
         } catch (e) {
-          debugPrint('Error printing to ${printer.name}: $e');
         }
       }
       

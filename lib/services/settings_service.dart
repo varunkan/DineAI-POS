@@ -23,7 +23,6 @@ class SettingsService with ChangeNotifier {
         _settings = AppSettings.fromJson(settingsMap);
         notifyListeners();
       } catch (e) {
-        debugPrint('Error loading settings: $e');
         // Keep default settings if loading fails
       }
     }
@@ -232,11 +231,9 @@ class SettingsService with ChangeNotifier {
         try {
           notifyListeners();
         } catch (e) {
-          debugPrint('Error notifying listeners during set HST rate: $e');
         }
       });
     } catch (e) {
-      debugPrint('Error scheduling notification during set HST rate: $e');
     }
   }
 
@@ -255,11 +252,9 @@ class SettingsService with ChangeNotifier {
         try {
           notifyListeners();
         } catch (e) {
-          debugPrint('Error notifying listeners during set tax rate: $e');
         }
       });
     } catch (e) {
-      debugPrint('Error scheduling notification during set tax rate: $e');
     }
   }
 } 

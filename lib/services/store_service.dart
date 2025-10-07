@@ -27,7 +27,6 @@ class StoreService with ChangeNotifier {
   /// Initialize the store service and load configurations
   Future<void> initialize() async {
     try {
-      debugPrint('🏪 Initializing StoreService...');
       
       await _loadStoresFromStorage();
       await _loadCurrentStore();
@@ -40,10 +39,8 @@ class StoreService with ChangeNotifier {
       }
       
       _isInitialized = true;
-      debugPrint('✅ StoreService initialized with ${_availableStores.length} stores');
       notifyListeners();
     } catch (e) {
-      debugPrint('❌ Error initializing StoreService: $e');
       rethrow;
     }
   }
@@ -55,7 +52,6 @@ class StoreService with ChangeNotifier {
     required String password,
   }) async {
     try {
-      debugPrint('🔐 Authenticating store: $storeCode, user: $username');
       
       // Find store by code
       final store = _availableStores.firstWhere(
@@ -79,14 +75,11 @@ class StoreService with ChangeNotifier {
           lastLoginAt: DateTime.now(),
         ));
         
-        debugPrint('✅ Authentication successful for store: ${store.name}');
         return true;
       } else {
-        debugPrint('❌ Authentication failed for store: $storeCode');
         return false;
       }
     } catch (e) {
-      debugPrint('❌ Authentication error: $e');
       return false;
     }
   }
@@ -100,10 +93,8 @@ class StoreService with ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_currentStoreKey, jsonEncode(store.toJson()));
       
-      debugPrint('🏪 Current store set to: ${store.name} (${store.code})');
       notifyListeners();
     } catch (e) {
-      debugPrint('❌ Error setting current store: $e');
       rethrow;
     }
   }
@@ -111,7 +102,6 @@ class StoreService with ChangeNotifier {
   /// Logout from current store
   Future<void> logout() async {
     try {
-      debugPrint('👋 Logging out from store: ${_currentStore?.name}');
       
       _currentStore = null;
       
@@ -119,10 +109,8 @@ class StoreService with ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_currentStoreKey);
       
-      debugPrint('✅ Logged out successfully');
       notifyListeners();
     } catch (e) {
-      debugPrint('❌ Error during logout: $e');
     }
   }
 
@@ -138,10 +126,8 @@ class StoreService with ChangeNotifier {
       _availableStores.add(store);
       await _saveStoresToStorage();
       
-      debugPrint('✅ Added new store: ${store.name} (${store.code})');
       notifyListeners();
     } catch (e) {
-      debugPrint('❌ Error adding store: $e');
       rethrow;
     }
   }
@@ -159,11 +145,9 @@ class StoreService with ChangeNotifier {
           _currentStore = updatedStore;
         }
         
-        debugPrint('✅ Updated store: ${updatedStore.name}');
         notifyListeners();
       }
     } catch (e) {
-      debugPrint('❌ Error updating store: $e');
       rethrow;
     }
   }
@@ -179,10 +163,8 @@ class StoreService with ChangeNotifier {
         await logout();
       }
       
-      debugPrint('✅ Removed store: $storeId');
       notifyListeners();
     } catch (e) {
-      debugPrint('❌ Error removing store: $e');
       rethrow;
     }
   }
@@ -231,10 +213,8 @@ class StoreService with ChangeNotifier {
         final prefs = await SharedPreferences.getInstance();
         await prefs.remove('$_storeAuthKey${store.id}');
         
-        debugPrint('✅ Cleared saved credentials for store: $storeCode');
       }
     } catch (e) {
-      debugPrint('❌ Error clearing credentials: $e');
     }
   }
 
@@ -246,13 +226,11 @@ class StoreService with ChangeNotifier {
         final store = getStoreById(credentials.storeId);
         if (store != null) {
           await setCurrentStore(store);
-          debugPrint('✅ Quick login successful for store: $storeCode');
           return true;
         }
       }
       return false;
     } catch (e) {
-      debugPrint('❌ Quick login failed: $e');
       return false;
     }
   }
@@ -276,10 +254,8 @@ class StoreService with ChangeNotifier {
         _availableStores = storesList
             .map((json) => Store.fromJson(json))
             .toList();
-        debugPrint('📂 Loaded ${_availableStores.length} stores from storage');
       }
     } catch (e) {
-      debugPrint('⚠️ Error loading stores from storage: $e');
       _availableStores = [];
     }
   }
@@ -292,9 +268,7 @@ class StoreService with ChangeNotifier {
         _availableStores.map((store) => store.toJson()).toList(),
       );
       await prefs.setString(_storesKey, storesJson);
-      debugPrint('💾 Saved ${_availableStores.length} stores to storage');
     } catch (e) {
-      debugPrint('❌ Error saving stores to storage: $e');
     }
   }
 
@@ -307,10 +281,8 @@ class StoreService with ChangeNotifier {
       if (currentStoreJson != null) {
         final storeData = jsonDecode(currentStoreJson);
         _currentStore = Store.fromJson(storeData);
-        debugPrint('📂 Loaded current store: ${_currentStore?.name}');
       }
     } catch (e) {
-      debugPrint('⚠️ Error loading current store: $e');
       _currentStore = null;
     }
   }
@@ -328,9 +300,7 @@ class StoreService with ChangeNotifier {
         }
       }
       
-      debugPrint('🔑 Loaded credentials for ${_storeCredentials.length} stores');
     } catch (e) {
-      debugPrint('⚠️ Error loading store credentials: $e');
     }
   }
 
@@ -345,9 +315,7 @@ class StoreService with ChangeNotifier {
         jsonEncode(credentials.toJson()),
       );
       
-      debugPrint('💾 Saved credentials for store: ${credentials.storeCode}');
     } catch (e) {
-      debugPrint('❌ Error saving credentials: $e');
     }
   }
 
@@ -368,7 +336,6 @@ class StoreService with ChangeNotifier {
   /// Create demo stores for testing
   Future<void> _createDemoStores() async {
     try {
-      debugPrint('🏪 Creating demo stores...');
       
       final demoStores = [
         _createDemoStore('REST001', 'Downtown Restaurant', '123 Main St, Toronto, ON'),
@@ -386,9 +353,7 @@ class StoreService with ChangeNotifier {
       _availableStores.addAll(demoStores);
       await _saveStoresToStorage();
       
-      debugPrint('✅ Created ${demoStores.length} demo stores');
     } catch (e) {
-      debugPrint('❌ Error creating demo stores: $e');
     }
   }
 

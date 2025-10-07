@@ -54,7 +54,6 @@ class MenuService with ChangeNotifier {
   /// Reset disposal state for reinitialization (multi-tenant support)
   void resetDisposalState() {
     if (_isDisposed) {
-      debugPrint('🔄 MenuService: Resetting disposal state for reinitialization');
       _isDisposed = false;
       _isInitialized = false;
     }
@@ -63,11 +62,9 @@ class MenuService with ChangeNotifier {
   @override
   void dispose() {
     if (_isDisposed) {
-      debugPrint('⚠️ MenuService.dispose() called but already disposed');
       return;
     }
     
-    debugPrint('🧹 MenuService.dispose() called - cleaning up resources...');
     _isDisposed = true;
     
     // Clear data
@@ -78,9 +75,7 @@ class MenuService with ChangeNotifier {
     // Only dispose the parent ChangeNotifier if we're truly shutting down
     try {
       super.dispose();
-      debugPrint('✅ MenuService disposed successfully');
     } catch (e) {
-      debugPrint('⚠️ Error during MenuService dispose: $e');
     }
   }
 
@@ -90,45 +85,35 @@ class MenuService with ChangeNotifier {
   Future<void> ensureInitialized() async {
     if (!_isInitialized) {
       try {
-        debugPrint('🍽️ Initializing MenuService...');
         
         // Initialize web menu loader if on web platform
         if (kIsWeb && _webMenuLoader != null) {
-          debugPrint('🌐 Initializing web menu loader...');
           await _webMenuLoader!.initialize();
           
           // Load Oh Bombay Milton menu if no data exists
           if (await _webMenuLoader!.isEmpty()) {
-            debugPrint('🍽️ Loading Oh Bombay Milton menu for web...');
             await loadOhBombayMiltonMenu();
           }
         }
         
-        debugPrint('🔧 Loading menu data from database...');
         await _loadMenuData();
         
         // Check if we need to load sample data
         final needsSample = await _databaseService.needsSampleData();
-        debugPrint('🔍 Sample data check: needsSample=$needsSample, categories=${_categories.length}, items=${_menuItems.length}');
         
         if (needsSample && _menuItems.isEmpty && _categories.isEmpty) {
-          debugPrint('🔧 Loading sample menu data...');
           await loadSampleData();
           await _databaseService.markSampleDataLoaded();
           
           // Reload after adding sample data
-          debugPrint('🔄 Reloading menu data after sample data...');
           await _loadMenuData();
         }
         
-        debugPrint('✅ MenuService initialized with ${_categories.length} categories and ${_menuItems.length} items');
         _isInitialized = true;
       } catch (e) {
-        debugPrint('❌ Failed to initialize MenuService: $e');
         throw MenuServiceException('Failed to initialize menu service', operation: 'initialize', originalError: e);
       }
     } else {
-      debugPrint('🔍 MenuService already initialized with ${_categories.length} categories and ${_menuItems.length} items');
     }
   }
 
@@ -156,10 +141,8 @@ class MenuService with ChangeNotifier {
         });
         // Reload categories so UI can show it immediately
         await _loadMenuData();
-        debugPrint('🧾 Created special Receipts category (cat_receipts)');
       }
     } catch (e) {
-      debugPrint('⚠️ ensureReceiptsCategoryExists failed: $e');
     }
   }
 
@@ -167,7 +150,6 @@ class MenuService with ChangeNotifier {
   Future<void> loadOhBombayMiltonMenu() async {
     if (kIsWeb && _webMenuLoader != null) {
       try {
-        debugPrint('🌐 Loading Oh Bombay Milton menu...');
         await _webMenuLoader!.loadOhBombayMiltonMenu();
         
         // Reload the data after loading the menu
@@ -176,9 +158,7 @@ class MenuService with ChangeNotifier {
         // CRITICAL: Sync web menu data to main database service for order validation
         await _syncWebMenuToDatabase();
         
-        debugPrint('✅ Oh Bombay Milton menu loaded successfully with ${_categories.length} categories and ${_menuItems.length} items');
       } catch (e) {
-        debugPrint('❌ Failed to load Oh Bombay Milton menu: $e');
         throw MenuServiceException('Failed to load Oh Bombay Milton menu', operation: 'load_oh_bombay_menu', originalError: e);
       }
     }
@@ -189,7 +169,6 @@ class MenuService with ChangeNotifier {
     if (!kIsWeb || _webMenuLoader == null) return;
     
     try {
-      debugPrint('🔄 Syncing web menu data to main database service...');
       
       // Get data from WebMenuLoader
       final menuItems = await _webMenuLoader!.getMenuItems();
@@ -204,9 +183,7 @@ class MenuService with ChangeNotifier {
         await _databaseService.saveWebCategory(category);
       }
       
-      debugPrint('✅ Synced ${menuItems.length} menu items and ${categories.length} categories to main database service');
     } catch (e) {
-      debugPrint('❌ Failed to sync web menu data: $e');
       // Don't throw error, just log it
     }
   }
@@ -230,11 +207,9 @@ class MenuService with ChangeNotifier {
           try {
             notifyListeners();
           } catch (e) {
-            debugPrint('Error notifying listeners during menu data load: $e');
           }
         });
       } catch (e) {
-        debugPrint('Error scheduling notification during menu data load: $e');
       }
     } catch (e) {
       throw MenuServiceException('Failed to load menu data', operation: 'load_menu_data', originalError: e);
@@ -248,9 +223,7 @@ class MenuService with ChangeNotifier {
   /// This method can be called after external data changes (e.g., Firebase sync)
   /// to refresh the in-memory cache and notify UI listeners.
   Future<void> reloadMenuData() async {
-    debugPrint('🔄 MenuService: Reloading menu data after external changes...');
     await _loadMenuData();
-    debugPrint('✅ MenuService: Menu data reloaded with ${_categories.length} categories and ${_menuItems.length} items');
   }
 
   /// Loads all menu items from the database.
@@ -263,7 +236,6 @@ class MenuService with ChangeNotifier {
       if (kIsWeb && _webMenuLoader != null) {
         // Load from web storage
         itemsData = await _webMenuLoader!.getMenuItems();
-        debugPrint('🌐 Loaded ${itemsData.length} menu items from web storage');
       } else {
         // Load from SQLite database
         itemsData = await _databaseService.query('menu_items');
@@ -293,24 +265,18 @@ class MenuService with ChangeNotifier {
       if (kIsWeb && _webMenuLoader != null) {
         // Load from web storage
         categoriesData = await _webMenuLoader!.getCategories();
-        debugPrint('🌐 Loaded ${categoriesData.length} categories from web storage');
       } else {
         // Load from SQLite database with error handling for schema issues
         try {
-          debugPrint('🔍 Querying categories from SQLite database...');
           categoriesData = await _databaseService.query('categories');
-          debugPrint('🔍 Raw categories query returned ${categoriesData.length} records');
         } catch (e) {
-          debugPrint('⚠️ Database schema issue loading categories: $e');
           // If database query fails due to schema issues, try to load with basic schema
           try {
             categoriesData = await _databaseService.query(
               'categories',
               columns: ['id', 'name', 'description', 'is_active', 'sort_order', 'created_at', 'updated_at'],
             );
-            debugPrint('✅ Loaded categories with basic schema (${categoriesData.length} categories)');
           } catch (e2) {
-            debugPrint('❌ Failed to load categories even with basic schema: $e2');
             // If even basic schema fails, create empty list but don't throw
             categoriesData = [];
           }
@@ -321,7 +287,6 @@ class MenuService with ChangeNotifier {
         try {
           return pos_category.Category.fromJson(data);
         } catch (e) {
-          debugPrint('⚠️ Error parsing category ${data['id'] ?? 'unknown'}: $e');
           // Return a basic category if parsing fails
           return pos_category.Category(
             id: data['id']?.toString() ?? const Uuid().v4(),
@@ -339,9 +304,7 @@ class MenuService with ChangeNotifier {
         return orderCompare != 0 ? orderCompare : a.name.compareTo(b.name);
       });
       
-      debugPrint('✅ Loaded ${_categories.length} categories successfully');
     } catch (e) {
-      debugPrint('❌ Critical error loading categories: $e');
       // Don't throw exception - just log and continue with empty categories
       _categories = [];
     }
@@ -412,10 +375,7 @@ class MenuService with ChangeNotifier {
           try {
             await _databaseService.insert('menu_items', itemData);
             _menuItems.add(item);
-            debugPrint('✅ Menu item inserted successfully: ${item.name}');
           } catch (dbError) {
-            debugPrint('❌ Database insert error for menu item ${item.name}: $dbError');
-            debugPrint('📊 Item data: $itemData');
             
             // Check if it's a constraint error
             if (dbError.toString().contains('constraint') || dbError.toString().contains('foreign key')) {
@@ -451,7 +411,6 @@ class MenuService with ChangeNotifier {
           await syncService.createOrUpdateMenuItem(item);
         }
       } catch (e) {
-        debugPrint('⚠️ Failed to sync menu item to Firebase: $e');
         // Don't throw - local save was successful
       }
       
@@ -461,11 +420,9 @@ class MenuService with ChangeNotifier {
           try {
             notifyListeners();
           } catch (e) {
-            debugPrint('Error notifying listeners during menu item save: $e');
           }
         });
       } catch (e) {
-        debugPrint('Error scheduling notification during menu item save: $e');
       }
     } catch (e) {
       if (e is MenuServiceException) {
@@ -504,11 +461,9 @@ class MenuService with ChangeNotifier {
         final unifiedSyncService = UnifiedSyncService.instance;
         await unifiedSyncService.syncMenuItemToFirebase(item, 'created');
       } catch (e) {
-        debugPrint('⚠️ Firebase sync failed for menu item ${item.name}: $e');
         // Don't throw here - the item was saved locally successfully
       }
       
-      debugPrint('✅ Menu item added successfully: ${item.name}');
     } catch (e) {
       if (e is MenuServiceException) {
         rethrow;
@@ -559,14 +514,11 @@ class MenuService with ChangeNotifier {
           try {
             notifyListeners();
           } catch (e) {
-            debugPrint('Error notifying listeners during menu item delete: $e');
           }
         });
       } catch (e) {
-        debugPrint('Error scheduling notification during menu item delete: $e');
       }
       
-      debugPrint('✅ Menu item deleted: ${item.name}');
     } catch (e) {
       throw MenuServiceException('Failed to delete menu item', operation: 'delete_menu_item', originalError: e);
     }
@@ -582,10 +534,8 @@ class MenuService with ChangeNotifier {
         } else {
           await syncService.createOrUpdateMenuItem(item);
         }
-        debugPrint('🔄 Menu item auto-synced to Firebase: ${item.name} ($action)');
       }
     } catch (e) {
-      debugPrint('⚠️ Failed to auto-sync menu item to Firebase: $e');
     }
   }
 
@@ -686,7 +636,6 @@ class MenuService with ChangeNotifier {
           await syncService.createOrUpdateCategory(category);
         }
       } catch (e) {
-        debugPrint('⚠️ Failed to sync category to Firebase: $e');
       }
       
       // Safely notify listeners
@@ -695,11 +644,9 @@ class MenuService with ChangeNotifier {
           try {
             notifyListeners();
           } catch (e) {
-            debugPrint('Error notifying listeners during category save: $e');
           }
         });
       } catch (e) {
-        debugPrint('Error scheduling notification during category save: $e');
       }
     } catch (e) {
       throw MenuServiceException('Failed to save category', operation: 'save_category', originalError: e);
@@ -740,10 +687,8 @@ class MenuService with ChangeNotifier {
         } else {
           await syncService.createOrUpdateCategory(category);
         }
-        debugPrint('🔄 Category auto-synced to Firebase: ${category.name} ($action)');
       }
     } catch (e) {
-      debugPrint('⚠️ Failed to auto-sync category to Firebase: $e');
     }
   }
 
@@ -780,11 +725,9 @@ class MenuService with ChangeNotifier {
           try {
             notifyListeners();
           } catch (e) {
-            debugPrint('Error notifying listeners during category delete: $e');
           }
         });
       } catch (e) {
-        debugPrint('Error scheduling notification during category delete: $e');
       }
     } catch (e) {
       throw MenuServiceException('Failed to delete category', operation: 'delete_category', originalError: e);
@@ -810,17 +753,14 @@ class MenuService with ChangeNotifier {
         try {
           notifyListeners();
         } catch (e) {
-          debugPrint('Error notifying listeners during loading state change: $e');
         }
       });
     } catch (e) {
-      debugPrint('Error scheduling notification during loading state change: $e');
     }
   }
 
   /// Sync menus with Firebase (background operation)
   Future<void> syncMenusWithFirebase() async {
-    debugPrint('🔄 Menu sync started (background operation)');
     // TODO: Implement menu sync - for now just log
     await Future.delayed(const Duration(milliseconds: 100)); // Simulate async operation
   }
@@ -906,7 +846,6 @@ class MenuService with ChangeNotifier {
   /// This method creates sample categories and menu items to get started.
   Future<void> loadSampleData() async {
     try {
-      debugPrint('🍽️ Loading sample menu data...');
       
       // Don't clear existing data, just add if missing
       if (_categories.isEmpty) {
@@ -937,7 +876,6 @@ class MenuService with ChangeNotifier {
         for (final category in sampleCategories) {
           await saveCategory(category);
         }
-        debugPrint('✅ Sample categories created');
       }
 
       if (_menuItems.isEmpty) {
@@ -1028,13 +966,10 @@ class MenuService with ChangeNotifier {
           for (final item in sampleItems) {
             await saveMenuItem(item);
           }
-          debugPrint('✅ Sample menu items created');
         }
       }
 
-      debugPrint('✅ Sample menu data loaded successfully');
     } catch (e) {
-      debugPrint('❌ Failed to load sample data: $e');
       throw MenuServiceException('Failed to load sample data', operation: 'load_sample_data', originalError: e);
     }
   }
@@ -1059,12 +994,10 @@ class MenuService with ChangeNotifier {
       // Check if we already have menu data loaded
       await _loadMenuData();
       if (_categories.isNotEmpty && _menuItems.isNotEmpty) {
-        debugPrint('✅ Menu data already exists, skipping load to preserve existing data');
         return;
       }
       
       // Only clear data if we need to load fresh menu data
-      debugPrint('🍽️ Loading Oh Bombay menu data (no existing data found)');
       await clearAllData();
       
       // Create categories for Oh Bombay Milton
@@ -2096,7 +2029,6 @@ class MenuService with ChangeNotifier {
         await saveMenuItem(item);
       }
 
-      debugPrint('Oh Bombay Milton menu loaded successfully with ${categories.length} categories and ${menuItems.length} items');
     } catch (e) {
       throw MenuServiceException('Failed to load Oh Bombay menu', operation: 'load_oh_bombay_menu', originalError: e);
     }
@@ -2105,7 +2037,6 @@ class MenuService with ChangeNotifier {
   /// Clear all menu data from memory and database
   Future<void> clearAllData() async {
     try {
-      debugPrint('🗑️ Clearing all menu data...');
       
       // Clear from memory
       _menuItems.clear();
@@ -2118,10 +2049,8 @@ class MenuService with ChangeNotifier {
         await db.delete('categories');
       }
       
-      debugPrint('✅ All menu data cleared');
       notifyListeners();
     } catch (e) {
-      debugPrint('❌ Error clearing menu data: $e');
       rethrow;
     }
   }
@@ -2129,7 +2058,6 @@ class MenuService with ChangeNotifier {
   /// Update menu item from Firebase (for cross-device sync)
   Future<void> updateMenuItemFromFirebase(MenuItem firebaseMenuItem) async {
     try {
-      debugPrint('🔄 Updating menu item from Firebase: ${firebaseMenuItem.name}');
       
       // Check if menu item already exists locally
       final existingIndex = _menuItems.indexWhere((item) => item.id == firebaseMenuItem.id);
@@ -2137,11 +2065,9 @@ class MenuService with ChangeNotifier {
       if (existingIndex != -1) {
         // Update existing menu item
         _menuItems[existingIndex] = firebaseMenuItem;
-        debugPrint('🔄 Updated existing menu item from Firebase: ${firebaseMenuItem.name}');
       } else {
         // Add new menu item from Firebase
         _menuItems.add(firebaseMenuItem);
-        debugPrint('➕ Added new menu item from Firebase: ${firebaseMenuItem.name}');
       }
       
       // Save to local database
@@ -2155,17 +2081,14 @@ class MenuService with ChangeNotifier {
         );
       }
       
-      debugPrint('✅ Menu item updated from Firebase: ${firebaseMenuItem.name}');
       notifyListeners();
     } catch (e) {
-      debugPrint('❌ Failed to update menu item from Firebase: $e');
     }
   }
   
   /// Update category from Firebase (for cross-device sync)
   Future<void> updateCategoryFromFirebase(pos_category.Category firebaseCategory) async {
     try {
-      debugPrint('🔄 Updating category from Firebase: ${firebaseCategory.name}');
       
       // Check if category already exists locally
       final existingIndex = _categories.indexWhere((cat) => cat.id == firebaseCategory.id);
@@ -2173,11 +2096,9 @@ class MenuService with ChangeNotifier {
       if (existingIndex != -1) {
         // Update existing category
         _categories[existingIndex] = firebaseCategory;
-        debugPrint('🔄 Updated existing category from Firebase: ${firebaseCategory.name}');
       } else {
         // Add new category from Firebase
         _categories.add(firebaseCategory);
-        debugPrint('➕ Added new category from Firebase: ${firebaseCategory.name}');
       }
       
       // Save to local database
@@ -2191,10 +2112,8 @@ class MenuService with ChangeNotifier {
         );
       }
       
-      debugPrint('✅ Category updated from Firebase: ${firebaseCategory.name}');
       notifyListeners();
     } catch (e) {
-      debugPrint('❌ Failed to update category from Firebase: $e');
     }
   }
 } 

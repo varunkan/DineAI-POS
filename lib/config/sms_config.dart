@@ -10,6 +10,5 @@ class SmsConfig {
       twilioAccountSid.isNotEmpty && twilioAuthToken.isNotEmpty && twilioFromNumber.isNotEmpty;
 
   static void logConfigStatus() {
-    debugPrint('📡 SMS Config: SID set=${twilioAccountSid.isNotEmpty}, From set=${twilioFromNumber.isNotEmpty}');
   }
 } 

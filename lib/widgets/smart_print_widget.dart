@@ -678,7 +678,6 @@ class _SmartPrintWidgetState extends State<SmartPrintWidget>
         }
         
       } catch (e) {
-        debugPrint('Error processing order ${order.orderNumber}: $e');
       }
     }
   }

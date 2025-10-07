@@ -66,7 +66,6 @@ class RobustKitchenService extends ChangeNotifier {
   /// Initialize the kitchen service
   Future<void> initialize() async {
     try {
-      debugPrint('$_logTag 🚀 Initializing robust kitchen service...');
       
       // Initialize printer configuration service
       await _printerConfigService.initialize();
@@ -75,9 +74,7 @@ class RobustKitchenService extends ChangeNotifier {
       await _loadExistingOrders();
       
       _isInitialized = true;
-      debugPrint('$_logTag ✅ Robust kitchen service initialized');
     } catch (e) {
-      debugPrint('$_logTag ❌ Failed to initialize robust kitchen service: $e');
       _lastError = e.toString();
       rethrow;
     }
@@ -88,9 +85,7 @@ class RobustKitchenService extends ChangeNotifier {
     try {
       // This would load orders from the database
       // For now, we'll leave it empty as orders are managed by OrderService
-      debugPrint('$_logTag 📋 Loading existing orders...');
     } catch (e) {
-      debugPrint('$_logTag ⚠️ Failed to load existing orders: $e');
     }
   }
   
@@ -127,7 +122,6 @@ class RobustKitchenService extends ChangeNotifier {
       };
     }
     
-    debugPrint('$_logTag 🚀 Starting robust send to kitchen for order: ${order.orderNumber}');
     
     // Set loading state
     _orderSendingStates[orderId] = true;
@@ -140,7 +134,6 @@ class RobustKitchenService extends ChangeNotifier {
       return await _sendToKitchenInternal(order, userId, userName).timeout(
         const Duration(seconds: 30), // 30 second overall timeout
         onTimeout: () {
-          debugPrint('$_logTag ⏰ Overall send to kitchen operation timed out');
           // Return success result even on timeout - order is still saved
           return {
             'success': true,
@@ -152,7 +145,6 @@ class RobustKitchenService extends ChangeNotifier {
       );
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error in send to kitchen: $e');
       _lastError = e.toString();
       // CRITICAL FIX: Order is still saved successfully even if printer fails
       return _completeWithResult(orderId, {
@@ -163,11 +155,9 @@ class RobustKitchenService extends ChangeNotifier {
       });
     } finally {
       // CRITICAL SAFETY: Always ensure loading state is cleared
-      debugPrint('$_logTag 🧹 Ensuring loading state is cleared...');
       _orderSendingStates[orderId] = false;
       _isSending = false;
       notifyListeners();
-      debugPrint('$_logTag ✅ Loading state cleared successfully');
     }
   }
   
@@ -216,7 +206,6 @@ class RobustKitchenService extends ChangeNotifier {
             itemsByPrinter.putIfAbsent(a.printerId, () => []).add(item);
           }
         } catch (e) {
-          debugPrint('$_logTag ⚠️ Failed to resolve assignments for item ${item.menuItem.name}: $e');
         }
       }
 
@@ -250,7 +239,6 @@ class RobustKitchenService extends ChangeNotifier {
             _printerFailureCount[printerId] = (_printerFailureCount[printerId] ?? 0) + 1;
           }
         } catch (e) {
-          debugPrint('$_logTag ❌ Error sending to printer $printerId: $e');
           _printerFailureCount[printerId] = (_printerFailureCount[printerId] ?? 0) + 1;
         }
       }
@@ -260,7 +248,6 @@ class RobustKitchenService extends ChangeNotifier {
       Order? updatedOrder;
       if (totalItemsSent > 0) { // Changed: Remove successfulPrinters > 0 requirement
         try {
-          debugPrint('$_logTag 📝 Marking items as sent to kitchen in order object...');
           
           // Create updated items with sentToKitchen = true
           final updatedItems = order.items.map((item) {
@@ -278,12 +265,9 @@ class RobustKitchenService extends ChangeNotifier {
           );
           
           if (successfulPrinters > 0) {
-            debugPrint('$_logTag ✅ Kitchen printing succeeded - order items marked as sent to kitchen');
           } else {
-            debugPrint('$_logTag ⚠️ Kitchen printing failed, but items marked as sent (operation was logged)');
           }
         } catch (e) {
-          debugPrint('$_logTag ⚠️ Error updating order items: $e');
         }
       }
       
@@ -324,7 +308,6 @@ class RobustKitchenService extends ChangeNotifier {
       return _completeWithResult(order.id, result);
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error in send to kitchen: $e');
       _lastError = e.toString();
       // CRITICAL FIX: Order is still saved successfully even if printer fails
       return _completeWithResult(order.id, {
@@ -354,7 +337,6 @@ class RobustKitchenService extends ChangeNotifier {
           await Future.delayed(Duration.zero).timeout(
             const Duration(seconds: 5), // 5 second timeout for getting assignments
             onTimeout: () {
-              debugPrint('$_logTag ⏰ Getting printer assignments timed out, using fallback');
               throw TimeoutException('Getting printer assignments timed out', const Duration(seconds: 5));
             },
           );
@@ -383,7 +365,6 @@ class RobustKitchenService extends ChangeNotifier {
           
           // If no specific assignments found, create a fallback for testing
           if (assignments.isEmpty) {
-            debugPrint('$_logTag ⚠️ No printer assignments found, using fallback for testing');
             assignments.add(PrinterAssignment(
               printerId: 'test_printer',
               printerName: 'Test Kitchen Printer',
@@ -395,7 +376,6 @@ class RobustKitchenService extends ChangeNotifier {
           }
           
         } catch (e) {
-          debugPrint('$_logTag ⚠️ Error getting printer assignments from service: $e');
           // Fallback to test printer
           assignments.add(PrinterAssignment(
             printerId: 'test_printer',
@@ -408,10 +388,8 @@ class RobustKitchenService extends ChangeNotifier {
         }
       }
       
-      debugPrint('$_logTag 🔍 Found ${assignments.length} printer assignments for ${items.length} items');
       return assignments;
     } catch (e) {
-      debugPrint('$_logTag ❌ Error getting printer assignments: $e');
       return [];
     }
   }
@@ -436,12 +414,10 @@ class RobustKitchenService extends ChangeNotifier {
             result[id] = 'Other Items';
           }
         } catch (e) {
-          debugPrint('$_logTag ⚠️ Category lookup failed for $id: $e');
           result[id] = 'Other Items';
         }
       }
     } catch (e) {
-      debugPrint('$_logTag ⚠️ Category name resolution failed: $e');
     }
     return result;
   }
@@ -488,7 +464,6 @@ class RobustKitchenService extends ChangeNotifier {
         }
       }
     } catch (e) {
-      debugPrint('$_logTag ⚠️ Guest resolution failed: $e');
     }
     return null;
   }
@@ -496,14 +471,12 @@ class RobustKitchenService extends ChangeNotifier {
   /// Send order to specific printer
   Future<bool> _sendToPrinter(Order order, PrinterAssignment assignment, List<OrderItem> items, {String? serverName}) async {
     try {
-      debugPrint('$_logTag 🖨️ Sending to printer: ${assignment.printerId}');
       
       // Resolve category names for items (safe, with fallbacks)
       Map<String, String> categoryNameById = {};
       try {
         categoryNameById = await _resolveCategoryNamesFor(items);
       } catch (e) {
-        debugPrint('$_logTag ⚠️ Failed to resolve category names: $e');
       }
       
       // Resolve guests for order (safe fallback)
@@ -511,7 +484,6 @@ class RobustKitchenService extends ChangeNotifier {
       try {
         guests = await _resolveGuestsForOrder(order);
       } catch (e) {
-        debugPrint('$_logTag ⚠️ Failed to resolve guests: $e');
       }
       
       // Generate kitchen ticket content
@@ -545,21 +517,17 @@ class RobustKitchenService extends ChangeNotifier {
       ).timeout(
         const Duration(seconds: 10),
         onTimeout: () {
-          debugPrint('$_logTag ⏰ Printer operation timed out for: $address');
           return false;
         },
       );
       
       if (success) {
-        debugPrint('$_logTag ✅ Successfully sent to printer: $address');
         return true;
       } else {
-        debugPrint('$_logTag ❌ Failed to send to printer: $address');
         return false;
       }
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error sending to printer ${assignment.printerId}: $e');
       return false;
     }
   }
@@ -757,7 +725,6 @@ class RobustKitchenService extends ChangeNotifier {
 
         return String.fromCharCodes(cmds);
       } catch (e) {
-        debugPrint('$_logTag ⚠️ Failed to build preview-aligned ESC/POS: $e');
         // Fallback continues below
       }
     }
@@ -820,7 +787,6 @@ class RobustKitchenService extends ChangeNotifier {
          );
        }
     } catch (e) {
-      debugPrint('$_logTag ⚠️ Failed to log kitchen operation: $e');
     }
   }
   
@@ -845,7 +811,6 @@ class RobustKitchenService extends ChangeNotifier {
   /// Complete order gracefully without breaking kitchen printing connections
   Future<Map<String, dynamic>> completeOrderGracefully(Order order) async {
     try {
-      debugPrint('$_logTag 🎯 Completing order gracefully: ${order.orderNumber}');
       
       // Step 1: Mark order as completed in database
       final updatedOrder = order.copyWith(
@@ -868,7 +833,6 @@ class RobustKitchenService extends ChangeNotifier {
         {'completion_time': DateTime.now().toIso8601String()}
       );
       
-      debugPrint('$_logTag ✅ Order completed gracefully: ${order.orderNumber}');
       return {
         'success': true,
         'message': 'Order completed successfully',
@@ -877,7 +841,6 @@ class RobustKitchenService extends ChangeNotifier {
       };
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error completing order gracefully: $e');
       return {
         'success': false,
         'message': 'Failed to complete order: $e',
@@ -938,16 +901,13 @@ class RobustKitchenService extends ChangeNotifier {
   /// Reinitialize service if needed
   Future<bool> reinitializeIfNeeded() async {
     if (isHealthy) {
-      debugPrint('$_logTag ✅ Service is healthy, no reinitialization needed');
       return true;
     }
     
-    debugPrint('$_logTag 🔄 Service needs reinitialization');
     try {
       await initialize();
       return _isInitialized;
     } catch (e) {
-      debugPrint('$_logTag ❌ Failed to reinitialize service: $e');
       return false;
     }
   }

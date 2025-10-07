@@ -29,7 +29,6 @@ class PrinterValidationService extends ChangeNotifier {
   /// Comprehensive validation before sending order to kitchen
   Future<PrinterValidationResult> validateOrderForKitchen(Order order) async {
     try {
-      debugPrint('$_logTag 🔍 Validating order ${order.orderNumber} for kitchen submission...');
       
       // 1. Check if order has items
       if (order.items.isEmpty) {
@@ -66,14 +65,12 @@ class PrinterValidationService extends ChangeNotifier {
         return configurationResult;
       }
 
-      debugPrint('$_logTag ✅ Order ${order.orderNumber} passed all validation checks');
       return PrinterValidationResult.success(
         'Order validated successfully for kitchen submission',
         _getValidationSummary(order),
       );
 
     } catch (e) {
-      debugPrint('$_logTag ❌ Validation error for order ${order.orderNumber}: $e');
       return PrinterValidationResult.failure(
         'Validation failed: ${e.toString()}',
         ValidationFailureType.systemError,
@@ -112,7 +109,6 @@ class PrinterValidationService extends ChangeNotifier {
       );
     }
 
-    debugPrint('$_logTag ✅ All order items have printer assignments');
     return PrinterValidationResult.success(
       'All items have printer assignments',
       itemAssignments,
@@ -182,7 +178,6 @@ class PrinterValidationService extends ChangeNotifier {
       );
     }
 
-    debugPrint('$_logTag ✅ All required printers are online: ${onlinePrinters.join(', ')}');
     return PrinterValidationResult.success(
       'All required printers are online',
       {
@@ -261,7 +256,6 @@ class PrinterValidationService extends ChangeNotifier {
       );
     }
 
-    debugPrint('$_logTag ✅ All printer configurations are valid');
     return PrinterValidationResult.success(
       'All printer configurations are valid',
       {'validatedPrinters': requiredPrinterIds.length},
@@ -281,7 +275,6 @@ class PrinterValidationService extends ChangeNotifier {
       return await _basicConnectivityTest(printer);
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Connection test failed for ${printer.name}: $e');
       return false;
     }
   }
@@ -327,7 +320,6 @@ class PrinterValidationService extends ChangeNotifier {
       final result = await validateOrderForKitchen(order);
       return result.isValid;
     } catch (e) {
-      debugPrint('$_logTag ⚠️ Quick validation error: $e');
       return false;
     }
   }

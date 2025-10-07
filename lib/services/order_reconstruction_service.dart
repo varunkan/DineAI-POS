@@ -17,7 +17,6 @@ class OrderReconstructionService {
   /// 🔄 RECONSTRUCTION: Create orders from orphaned order_items
   Future<List<Order>> reconstructOrdersFromItems() async {
     try {
-      debugPrint('🔄 Starting order reconstruction from order_items...');
       
       final db = await _databaseService.database;
       if (db == null) {
@@ -35,11 +34,9 @@ class OrderReconstructionService {
       ''');
 
       if (orphanedItemsQuery.isEmpty) {
-        debugPrint('🔄 No orphaned order items found');
         return [];
       }
 
-      debugPrint('🔄 Found ${orphanedItemsQuery.length} orphaned order items');
 
       // Group items by order_id
       final Map<String, List<Map<String, dynamic>>> itemsByOrderId = {};
@@ -58,18 +55,14 @@ class OrderReconstructionService {
           final order = await _reconstructOrderFromItems(orderId, itemMaps);
           if (order != null) {
             reconstructedOrders.add(order);
-            debugPrint('✅ Reconstructed order: ${order.orderNumber} with ${order.items.length} items');
           }
         } catch (e) {
-          debugPrint('❌ Failed to reconstruct order $orderId: $e');
         }
       }
 
-      debugPrint('🔄 Reconstruction complete: ${reconstructedOrders.length} orders created');
       return reconstructedOrders;
 
     } catch (e) {
-      debugPrint('❌ Error during order reconstruction: $e');
       return [];
     }
   }
@@ -119,12 +112,10 @@ class OrderReconstructionService {
           }
 
         } catch (e) {
-          debugPrint('⚠️ Error processing item ${itemMap['id']}: $e');
         }
       }
 
       if (orderItems.isEmpty) {
-        debugPrint('⚠️ No valid items found for order $orderId');
         return null;
       }
 
@@ -158,7 +149,6 @@ class OrderReconstructionService {
       return reconstructedOrder;
 
     } catch (e) {
-      debugPrint('❌ Error reconstructing order $orderId: $e');
       return null;
     }
   }
@@ -166,7 +156,6 @@ class OrderReconstructionService {
   /// 💾 SAVE: Save reconstructed orders to database
   Future<int> saveReconstructedOrders(List<Order> orders) async {
     try {
-      debugPrint('💾 Saving ${orders.length} reconstructed orders...');
       
       final db = await _databaseService.database;
       if (db == null) {
@@ -218,20 +207,16 @@ class OrderReconstructionService {
               conflictAlgorithm: ConflictAlgorithm.replace,
             );
 
-            debugPrint('✅ Saved reconstructed order: ${order.orderNumber}');
             savedCount++;
           });
 
         } catch (e) {
-          debugPrint('❌ Failed to save order ${order.orderNumber}: $e');
         }
       }
 
-      debugPrint('💾 Saved $savedCount reconstructed orders');
       return savedCount;
 
     } catch (e) {
-      debugPrint('❌ Error saving reconstructed orders: $e');
       return 0;
     }
   }
@@ -239,7 +224,6 @@ class OrderReconstructionService {
   /// 🔍 ANALYSIS: Analyze order_items table for reconstruction opportunities
   Future<Map<String, dynamic>> analyzeOrderItems() async {
     try {
-      debugPrint('🔍 Analyzing order_items table...');
       
       final db = await _databaseService.database;
       if (db == null) {
@@ -280,17 +264,10 @@ class OrderReconstructionService {
         'reconstructionNeeded': orphanedItems > 0,
       };
 
-      debugPrint('🔍 Analysis complete:');
-      debugPrint('   - Total order items: $totalItems');
-      debugPrint('   - Orphaned items: $orphanedItems');
-      debugPrint('   - Unique order IDs: $uniqueOrderIds');
-      debugPrint('   - Existing orders: $existingOrders');
-      debugPrint('   - Potential reconstructable orders: $potentialReconstructableOrders');
 
       return analysis;
 
     } catch (e) {
-      debugPrint('❌ Error analyzing order items: $e');
       return {};
     }
   }
@@ -310,7 +287,6 @@ class OrderReconstructionService {
 
       return Sqflite.firstIntValue(result) ?? 0;
     } catch (e) {
-      debugPrint('❌ Error counting reconstructable orders: $e');
       return 0;
     }
   }
@@ -318,13 +294,11 @@ class OrderReconstructionService {
   /// 🚀 FULL PROCESS: Analyze, reconstruct, and save orders
   Future<Map<String, dynamic>> performFullReconstruction() async {
     try {
-      debugPrint('🚀 Starting full order reconstruction process...');
 
       // Step 1: Analyze
       final analysis = await analyzeOrderItems();
       
       if (!(analysis['reconstructionNeeded'] as bool? ?? false)) {
-        debugPrint('✅ No reconstruction needed');
         return {
           'success': true,
           'message': 'No orphaned items found - no reconstruction needed',
@@ -337,7 +311,6 @@ class OrderReconstructionService {
       final reconstructedOrders = await reconstructOrdersFromItems();
       
       if (reconstructedOrders.isEmpty) {
-        debugPrint('⚠️ No orders could be reconstructed');
         return {
           'success': false,
           'message': 'No orders could be reconstructed from orphaned items',
@@ -349,7 +322,6 @@ class OrderReconstructionService {
       // Step 3: Save
       final savedCount = await saveReconstructedOrders(reconstructedOrders);
 
-      debugPrint('🚀 Full reconstruction complete: $savedCount orders saved');
 
       return {
         'success': true,
@@ -360,7 +332,6 @@ class OrderReconstructionService {
       };
 
     } catch (e) {
-      debugPrint('❌ Error during full reconstruction: $e');
       return {
         'success': false,
         'message': 'Reconstruction failed: $e',

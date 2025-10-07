@@ -16,29 +16,24 @@ class FirebaseConfig {
   // Initialize Firebase with bulletproof error handling
   static Future<void> initialize() async {
     if (_isInitialized) {
-      print('✅ Firebase already initialized');
       return;
     }
     
     try {
-      print('🔥 Starting bulletproof Firebase initialization...');
       
       // Check if Firebase is already initialized
       if (Firebase.apps.isNotEmpty) {
-        print('✅ Firebase already initialized by main.dart');
         _isInitialized = true;
         _initializeServices();
         return;
       }
       
-      print('🔧 Initializing Firebase with default options...');
       
       // Initialize Firebase with default options
       await Firebase.initializeApp(
         options: DefaultFirebaseOptions.currentPlatform,
       );
       
-      print('✅ Firebase core initialized successfully');
       
       // Initialize services
       _initializeServices();
@@ -48,12 +43,9 @@ class FirebaseConfig {
       
       _isInitialized = true;
       _lastError = null;
-      print('✅ Firebase initialization completed successfully');
       
     } catch (e) {
       _lastError = e.toString();
-      print('❌ Firebase initialization failed: $e');
-      print('📱 App will continue in offline mode');
       
       // Don't rethrow - allow app to continue in offline mode
       _isInitialized = false;
@@ -62,32 +54,26 @@ class FirebaseConfig {
   
   static void _initializeServices() {
     try {
-      print('🔧 Initializing Firebase services...');
       
       // Initialize Firestore
       _firestore = FirebaseFirestore.instance;
-      print('✅ Firestore initialized');
       
       // Enable offline persistence
       _firestore!.settings = const Settings(
         persistenceEnabled: true,
         cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
       );
-      print('✅ Firestore settings configured');
       
       // Initialize Auth
       _auth = FirebaseAuth.instance;
-      print('✅ Firebase Auth initialized');
       
       // Initialize Storage
       _storage = FirebaseStorage.instance;
-      print('✅ Firebase Storage initialized');
       
       // ENABLE FIREBASE EMULATOR FOR TESTING
       _enableEmulatorForTesting();
       
     } catch (e) {
-      print('❌ Error initializing Firebase services: $e');
       _lastError = e.toString();
     }
   }
@@ -100,13 +86,7 @@ class FirebaseConfig {
       // _auth?.useAuthEmulator('127.0.0.1', 9099);
       // _storage?.useStorageEmulator('127.0.0.1', 9199);
       
-      print('✅ Firebase production mode enabled');
-      print('📍 Firestore: Production (dineai-pos-system)');
-      print('📍 Auth: Production (dineai-pos-system)');
-      print('📍 Storage: Production (dineai-pos-system)');
     } catch (e) {
-      print('⚠️ Failed to configure Firebase: $e');
-      print('📱 Continuing with production Firebase');
     }
   }
   
@@ -114,42 +94,34 @@ class FirebaseConfig {
   static Future<void> _ensureAnonymousAuthentication() async {
     try {
       if (_auth == null) {
-        print('⚠️ Firebase Auth not available for anonymous authentication');
         return;
       }
       
       // Check if user is already signed in
       if (_auth!.currentUser != null) {
-        print('✅ User already authenticated: ${_auth!.currentUser!.uid}');
         _isAnonymousAuthenticated = true;
         return;
       }
       
       // Sign in anonymously
-      print('🔐 Signing in anonymously...');
       final userCredential = await _auth!.signInAnonymously();
       
       if (userCredential.user != null) {
-        print('✅ Anonymous authentication successful: ${userCredential.user!.uid}');
         _isAnonymousAuthenticated = true;
       } else {
-        print('❌ Anonymous authentication failed - no user returned');
         _isAnonymousAuthenticated = false;
       }
       
     } catch (e) {
-      print('❌ Anonymous authentication failed: $e');
       _isAnonymousAuthenticated = false;
       
       // Don't rethrow - app can work in offline mode
-      print('📱 App will continue in offline mode without Firebase authentication');
     }
   }
   
   /// Set current tenant ID for Firebase operations
   static void setCurrentTenantId(String tenantId) {
     _currentTenantId = tenantId;
-    print('🏪 Set current tenant ID: $tenantId');
   }
   
   /// Get current tenant ID
@@ -170,7 +142,6 @@ class FirebaseConfig {
   /// Set current tenant ID
   static void setCurrentTenant(String tenantId) {
     _currentTenantId = tenantId;
-    print('✅ Current tenant set to: $tenantId');
   }
   
   /// Get Firestore instance
@@ -194,7 +165,6 @@ class FirebaseConfig {
   /// Get tenant-specific Firestore reference
   static DocumentReference? getTenantDocument(String collection, String documentId) {
     if (_firestore == null || _currentTenantId == null) {
-      print('⚠️ Firebase or tenant ID not available');
       return null;
     }
     
@@ -204,7 +174,6 @@ class FirebaseConfig {
   /// Get tenant-specific collection reference
   static CollectionReference? getTenantCollection(String collection) {
     if (_firestore == null || _currentTenantId == null) {
-      print('⚠️ Firebase or tenant ID not available');
       return null;
     }
     
@@ -214,7 +183,6 @@ class FirebaseConfig {
   /// Get global document reference (not tenant-specific)
   static DocumentReference? getGlobalDocument(String collection, String documentId) {
     if (_firestore == null) {
-      print('⚠️ Firebase not available');
       return null;
     }
     
@@ -237,20 +205,16 @@ class FirebaseConfig {
       if (_auth != null) {
         await _auth!.signOut();
         _isAnonymousAuthenticated = false;
-        print('✅ User signed out successfully');
       }
     } catch (e) {
-      print('❌ Failed to sign out: $e');
     }
   }
   
   /// Re-authenticate anonymously (useful for token refresh)
   static Future<bool> reAuthenticateAnonymously() async {
     try {
-      print('🔄 Re-authenticating anonymously...');
       
       if (_auth == null) {
-        print('⚠️ Firebase Auth not available');
         return false;
       }
       
@@ -261,17 +225,14 @@ class FirebaseConfig {
       final userCredential = await _auth!.signInAnonymously();
       
       if (userCredential.user != null) {
-        print('✅ Re-authentication successful: ${userCredential.user!.uid}');
         _isAnonymousAuthenticated = true;
         return true;
       } else {
-        print('❌ Re-authentication failed - no user returned');
         _isAnonymousAuthenticated = false;
         return false;
       }
       
     } catch (e) {
-      print('❌ Re-authentication failed: $e');
       _isAnonymousAuthenticated = false;
       return false;
     }

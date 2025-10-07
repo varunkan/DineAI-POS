@@ -36,7 +36,6 @@ class PrinterTypeManagementService extends ChangeNotifier {
 
   /// Initialize the service
   Future<void> initialize() async {
-    debugPrint('🔧 Initializing Printer Type Management Service...');
     
     try {
       // Load from local storage first
@@ -45,9 +44,7 @@ class PrinterTypeManagementService extends ChangeNotifier {
       // Then sync from Firebase
       await _syncFromFirebase();
       
-      debugPrint('✅ Printer Type Management Service initialized');
     } catch (e) {
-      debugPrint('❌ Error initializing Printer Type Management Service: $e');
     }
   }
 
@@ -83,9 +80,7 @@ class PrinterTypeManagementService extends ChangeNotifier {
             .toList();
       }
       
-      debugPrint('📱 Loaded ${_printerTypeConfigs.length} printer type configs from local storage');
     } catch (e) {
-      debugPrint('⚠️ Error loading from local storage: $e');
     }
   }
 
@@ -108,9 +103,7 @@ class PrinterTypeManagementService extends ChangeNotifier {
       final mappingsJson = jsonEncode(_itemPrinterTypeMappings.map((m) => m.toJson()).toList());
       await prefs.setString(_itemPrinterTypeMappingsKey, mappingsJson);
       
-      debugPrint('💾 Saved data to local storage');
     } catch (e) {
-      debugPrint('❌ Error saving to local storage: $e');
     }
   }
 
@@ -119,11 +112,9 @@ class PrinterTypeManagementService extends ChangeNotifier {
     try {
       final restaurantId = MultiTenantAuthService().currentRestaurant?.id ?? '';
       if (restaurantId.isEmpty) {
-        debugPrint('⚠️ No restaurant ID available for Firebase sync');
         return;
       }
 
-      debugPrint('🔄 Syncing printer type data from Firebase...');
       
       // Sync printer type configurations
       final configsSnapshot = await _firestore
@@ -159,16 +150,13 @@ class PrinterTypeManagementService extends ChangeNotifier {
       await _saveToLocalStorage();
       
       notifyListeners();
-      debugPrint('✅ Synced ${_printerTypeConfigs.length} printer type configs from Firebase');
     } catch (e) {
-      debugPrint('❌ Error syncing from Firebase: $e');
     }
   }
 
   /// Create default printer type configurations
   Future<void> createDefaultConfigurations(String restaurantId, String userId) async {
     try {
-      debugPrint('🏗️ Creating default printer type configurations...');
       
       final now = DateTime.now();
       
@@ -246,9 +234,7 @@ class PrinterTypeManagementService extends ChangeNotifier {
       await _saveToLocalStorage();
       
       notifyListeners();
-      debugPrint('✅ Created default printer type configurations');
     } catch (e) {
-      debugPrint('❌ Error creating default configurations: $e');
     }
   }
 
@@ -263,9 +249,7 @@ class PrinterTypeManagementService extends ChangeNotifier {
       }
       
       await batch.commit();
-      debugPrint('🔥 Saved ${configs.length} configurations to Firebase');
     } catch (e) {
-      debugPrint('❌ Error saving to Firebase: $e');
       rethrow;
     }
   }
@@ -278,7 +262,6 @@ class PrinterTypeManagementService extends ChangeNotifier {
     required String userId,
   }) async {
     try {
-      debugPrint('🔗 Assigning printer $printerId to ${printerType.displayName}...');
       
       // Find the configuration for this printer type
       final config = _printerTypeConfigs.firstWhere(
@@ -326,9 +309,7 @@ class PrinterTypeManagementService extends ChangeNotifier {
       await _saveToLocalStorage();
       
       notifyListeners();
-      debugPrint('✅ Printer assigned successfully');
     } catch (e) {
-      debugPrint('❌ Error assigning printer: $e');
       rethrow;
     }
   }
@@ -340,7 +321,6 @@ class PrinterTypeManagementService extends ChangeNotifier {
     required String userId,
   }) async {
     try {
-      debugPrint('🏷️ Assigning category $categoryId to ${printerType.displayName}...');
       
       // Find the configuration for this printer type
       final config = _printerTypeConfigs.firstWhere(
@@ -369,9 +349,7 @@ class PrinterTypeManagementService extends ChangeNotifier {
       await _saveToLocalStorage();
       
       notifyListeners();
-      debugPrint('✅ Category assigned successfully');
     } catch (e) {
-      debugPrint('❌ Error assigning category: $e');
       rethrow;
     }
   }
@@ -387,7 +365,6 @@ class PrinterTypeManagementService extends ChangeNotifier {
     required String restaurantId,
   }) async {
     try {
-      debugPrint('🍽️ Assigning item $itemName to ${printerType.displayName}...');
       
       // Find the configuration for this printer type
       final config = _printerTypeConfigs.firstWhere(
@@ -440,9 +417,7 @@ class PrinterTypeManagementService extends ChangeNotifier {
       await _saveToLocalStorage();
       
       notifyListeners();
-      debugPrint('✅ Item assigned successfully');
     } catch (e) {
-      debugPrint('❌ Error assigning item: $e');
       rethrow;
     }
   }
@@ -502,7 +477,6 @@ class PrinterTypeManagementService extends ChangeNotifier {
   /// Remove printer assignment
   Future<void> removePrinterAssignment(String printerId, PrinterTypeCategory printerType) async {
     try {
-      debugPrint('🔌 Removing printer $printerId from ${printerType.displayName}...');
       
       // Remove assignment
       _printerTypeAssignments.removeWhere((a) => 
@@ -545,9 +519,7 @@ class PrinterTypeManagementService extends ChangeNotifier {
       await _saveToLocalStorage();
       
       notifyListeners();
-      debugPrint('✅ Printer assignment removed successfully');
     } catch (e) {
-      debugPrint('❌ Error removing printer assignment: $e');
       rethrow;
     }
   }

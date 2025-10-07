@@ -39,7 +39,6 @@ class ReservationService extends ChangeNotifier {
         _updateTodaysReservations();
       }
     } catch (e) {
-      debugPrint('Error loading reservations: $e');
       _reservations = [];
       _todaysReservations = [];
     } finally {
@@ -66,7 +65,6 @@ class ReservationService extends ChangeNotifier {
         return maps.map((map) => Reservation.fromJson(map)).toList();
       }
     } catch (e) {
-      debugPrint('Error loading reservations for date: $e');
     }
     return [];
   }
@@ -86,9 +84,7 @@ class ReservationService extends ChangeNotifier {
         final tableExists = await _validateTableExists(reservation.tableId!);
         if (tableExists) {
           validTableId = reservation.tableId;
-          debugPrint('Table ID ${reservation.tableId} validated successfully');
         } else {
-          debugPrint('Table ID ${reservation.tableId} does not exist - removing table assignment');
           validTableId = null;
         }
       }
@@ -98,12 +94,9 @@ class ReservationService extends ChangeNotifier {
         final userExists = await _validateUserExists(reservation.createdBy!);
         if (userExists) {
           validUserId = reservation.createdBy;
-          debugPrint('User ID ${reservation.createdBy} validated successfully');
         } else {
-          debugPrint('User ID ${reservation.createdBy} does not exist - finding valid user');
           validUserId = await _findAdminUser();
           if (validUserId == null) {
-            debugPrint('No valid users found - creating reservation without user assignment');
           }
         }
       } else {
@@ -121,7 +114,6 @@ class ReservationService extends ChangeNotifier {
       
       return await _insertReservation(db, cleanReservation);
     } catch (e) {
-      debugPrint('Error creating reservation: $e');
       return false;
     }
   }
@@ -132,7 +124,6 @@ class ReservationService extends ChangeNotifier {
       // Check for conflicts
       final conflicts = await _checkReservationConflicts(reservation);
       if (conflicts.isNotEmpty) {
-        debugPrint('Reservation conflicts found: ${conflicts.length}');
         return false;
       }
 
@@ -153,7 +144,6 @@ class ReservationService extends ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
-      debugPrint('Error inserting reservation: $e');
       return false;
     }
   }
@@ -172,7 +162,6 @@ class ReservationService extends ChangeNotifier {
         return result.isNotEmpty;
       }
     } catch (e) {
-      debugPrint('Error validating table: $e');
     }
     return false;
   }
@@ -191,7 +180,6 @@ class ReservationService extends ChangeNotifier {
         return result.isNotEmpty;
       }
     } catch (e) {
-      debugPrint('Error validating user: $e');
     }
     return false;
   }
@@ -221,7 +209,6 @@ class ReservationService extends ChangeNotifier {
       }
       return null; // Add explicit return for when db is null
     } catch (e) {
-      debugPrint('Error finding admin user: $e');
       return null;
     }
   }
@@ -235,7 +222,6 @@ class ReservationService extends ChangeNotifier {
       // Check for conflicts (excluding current reservation)
       final conflicts = await _checkReservationConflicts(reservation, excludeId: reservation.id);
       if (conflicts.isNotEmpty) {
-        debugPrint('Reservation conflicts found: ${conflicts.length}');
         return false;
       }
 
@@ -256,7 +242,6 @@ class ReservationService extends ChangeNotifier {
       
       return true;
     } catch (e) {
-      debugPrint('Error updating reservation: $e');
       return false;
     }
   }
@@ -275,7 +260,6 @@ class ReservationService extends ChangeNotifier {
 
       return await updateReservation(updatedReservation);
     } catch (e) {
-      debugPrint('Error updating reservation status: $e');
       return false;
     }
   }
@@ -298,7 +282,6 @@ class ReservationService extends ChangeNotifier {
       
       return true;
     } catch (e) {
-      debugPrint('Error deleting reservation: $e');
       return false;
     }
   }
@@ -339,7 +322,6 @@ class ReservationService extends ChangeNotifier {
         return conflicts;
       }
     } catch (e) {
-      debugPrint('Error checking reservation conflicts: $e');
     }
     return [];
   }
@@ -422,10 +404,8 @@ class ReservationService extends ChangeNotifier {
           )
         ''');
 
-        debugPrint('Reservations table initialized successfully');
       }
     } catch (e) {
-      debugPrint('Error initializing reservations database: $e');
     }
   }
 } 

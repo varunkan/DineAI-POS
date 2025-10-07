@@ -91,9 +91,7 @@ class TenantService extends ChangeNotifier {
         }
       }
       _isInitialized = true;
-      print('✅ Tenant Service initialized');
     } catch (e) {
-      print('❌ Tenant Service initialization failed: $e');
       rethrow;
     }
   }
@@ -103,7 +101,6 @@ class TenantService extends ChangeNotifier {
     try {
       final globalUsersCollection = FirebaseConfig.getGlobalCollection('users');
       if (globalUsersCollection == null) {
-        print('⚠️ Global users collection not available');
         return;
       }
       
@@ -120,7 +117,6 @@ class TenantService extends ChangeNotifier {
         }
       }
     } catch (e) {
-      print('❌ Error loading user tenant: $e');
     }
   }
 
@@ -144,7 +140,6 @@ class TenantService extends ChangeNotifier {
       
       return null;
     } catch (e) {
-      print('❌ Error getting current tenant: $e');
       return null;
     }
   }
@@ -160,7 +155,6 @@ class TenantService extends ChangeNotifier {
           .map((doc) => Tenant.fromJson(doc.data()))
           .toList();
     } catch (e) {
-      print('❌ Error getting tenants: $e');
       return [];
     }
   }
@@ -173,9 +167,7 @@ class TenantService extends ChangeNotifier {
           .doc(tenant.id)
           .update(tenant.toJson());
       
-      print('✅ Tenant updated successfully');
     } catch (e) {
-      print('❌ Error updating tenant: $e');
       rethrow;
     }
   }
@@ -187,9 +179,7 @@ class TenantService extends ChangeNotifier {
       // For now, we'll use a simple approach
       FirebaseConfig.setCurrentTenant(tenantId);
       
-      print('✅ Current tenant set to: $tenantId');
     } catch (e) {
-      print('❌ Error setting current tenant: $e');
       rethrow;
     }
   }
@@ -199,7 +189,6 @@ class TenantService extends ChangeNotifier {
     try {
       final tenantsCollection = FirebaseConfig.getGlobalCollection('tenants');
       if (tenantsCollection == null) {
-        print('⚠️ Tenants collection not available');
         return '';
       }
       
@@ -218,10 +207,8 @@ class TenantService extends ChangeNotifier {
         });
       }
       
-      print('✅ Tenant created successfully: $tenantId');
       return tenantId;
     } catch (e) {
-      print('❌ Error creating tenant: $e');
       rethrow;
     }
   }
@@ -230,6 +217,5 @@ class TenantService extends ChangeNotifier {
   void clearCurrentTenant() {
     _currentTenant = null;
     notifyListeners();
-    print('✅ Current tenant cleared');
   }
 } 

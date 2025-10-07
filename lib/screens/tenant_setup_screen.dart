@@ -41,7 +41,6 @@ class _TenantSetupScreenState extends State<TenantSetupScreen> {
         _availableTenants = [];
       });
     } catch (e) {
-      print('Error loading tenants: $e');
     }
   }
 

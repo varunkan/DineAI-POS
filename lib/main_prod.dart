@@ -21,12 +21,6 @@ void main() async {
   
   // Enable production-specific features
   if (kDebugMode) {
-    debugPrint('🚀 Starting AI POS System in PRODUCTION mode');
-    debugPrint('📊 Environment: ${EnvironmentConfig.environment.name}');
-    debugPrint('🗄️ Database: ${EnvironmentConfig.databaseName}');
-    debugPrint('🔧 Debug Logs: ${EnvironmentConfig.enableDebugLogs}');
-    debugPrint('🖨️ Printer Simulation: ${EnvironmentConfig.enablePrinterSimulation}');
-    debugPrint('📊 Performance Monitoring: ${EnvironmentConfig.enablePerformanceMonitoring}');
   }
   
   // Set system UI overlay style for production

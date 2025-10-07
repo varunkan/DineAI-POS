@@ -16,7 +16,6 @@ class SmsService {
   static Future<bool> sendSms(String to, String message) async {
     try {
       if (!SmsConfig.isConfigured) {
-        debugPrint('⚠️ SMS not configured; skipping actual send');
         return false;
       }
       final uri = Uri.parse('https://api.twilio.com/2010-04-01/Accounts/${SmsConfig.twilioAccountSid}/Messages.json');
@@ -35,13 +34,10 @@ class SmsService {
         body: body,
       );
       if (res.statusCode >= 200 && res.statusCode < 300) {
-        debugPrint('✅ SMS sent to $to');
         return true;
       }
-      debugPrint('❌ SMS failed to $to: ${res.statusCode} ${res.body}');
       return false;
     } catch (e) {
-      debugPrint('❌ SMS exception for $to: $e');
       return false;
     }
   }

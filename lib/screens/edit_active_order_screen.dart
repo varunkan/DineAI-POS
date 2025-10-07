@@ -332,7 +332,6 @@ class _EditActiveOrderScreenState extends State<EditActiveOrderScreen> {
     // Guard to prevent multiple simultaneous operations
     if (_isLoading) return;
     
-    debugPrint('🚀 Starting send to kitchen process...');
     
     // GUARANTEE: Set loading state
     if (mounted) {
@@ -350,10 +349,8 @@ class _EditActiveOrderScreenState extends State<EditActiveOrderScreen> {
       // Step 1: Get items that haven't been sent to kitchen yet
       final newItems = _currentOrder.items.where((item) => !item.sentToKitchen).toList();
       
-      debugPrint('🔍 Found ${newItems.length} new items to send to kitchen');
       
       if (newItems.isEmpty) {
-        debugPrint('⚠️ No new items to send to kitchen');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -368,13 +365,11 @@ class _EditActiveOrderScreenState extends State<EditActiveOrderScreen> {
       }
       
       // Step 2: Update items to mark as sent to kitchen
-      debugPrint('📝 Updating items to mark as sent to kitchen...');
       final updatedItems = _currentOrder.items.map((item) =>
         item.sentToKitchen ? item : item.copyWith(sentToKitchen: true)
       ).toList();
       
       // Step 3: Update order
-      debugPrint('📋 Creating updated order...');
       final updatedOrder = _currentOrder.copyWith(
         items: updatedItems,
         userId: widget.user.id,
@@ -382,7 +377,6 @@ class _EditActiveOrderScreenState extends State<EditActiveOrderScreen> {
       );
       
       // Step 4: Save to database with timeout protection
-      debugPrint('💾 Saving order to database...');
       
       // Use Future.timeout to prevent hanging
       await _saveOrderDirectly(updatedOrder, databaseService).timeout(
@@ -390,7 +384,6 @@ class _EditActiveOrderScreenState extends State<EditActiveOrderScreen> {
         onTimeout: () => throw TimeoutException('Database save timeout', const Duration(seconds: 10)),
       );
       
-      debugPrint('✅ Order saved successfully to database');
       
       // Step 5: Update UI state
       if (mounted) {
@@ -399,7 +392,6 @@ class _EditActiveOrderScreenState extends State<EditActiveOrderScreen> {
         });
       }
       
-      debugPrint('✅ UI state updated successfully');
       
       // Step 6: Show success message IMMEDIATELY
       if (mounted) {
@@ -413,7 +405,6 @@ class _EditActiveOrderScreenState extends State<EditActiveOrderScreen> {
         );
       }
       
-      debugPrint('✅ Success message displayed');
       
       // Step 7: Log activity (synchronously)
       try {
@@ -429,22 +420,15 @@ class _EditActiveOrderScreenState extends State<EditActiveOrderScreen> {
             'sent_at': DateTime.now().toIso8601String(),
           },
         );
-        debugPrint('✅ Activity logged successfully');
       } catch (e) {
-        debugPrint('⚠️ Failed to log activity: $e');
         // Don't fail the send to kitchen if logging fails
       }
       
       // Step 8: Try printing in background (don't await it)
-      debugPrint('🖨️ Starting background printing...');
       _tryPrintingInBackground(updatedOrder, printingService);
       
-      debugPrint('🎉 Send to kitchen process completed successfully!');
 
     } catch (e) {
-      debugPrint('❌ Error sending to kitchen: $e');
-      debugPrint('❌ Error type: ${e.runtimeType}');
-      debugPrint('❌ Error stack trace: ${StackTrace.current}');
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -458,13 +442,11 @@ class _EditActiveOrderScreenState extends State<EditActiveOrderScreen> {
       }
     } finally {
       // GUARANTEE: Always clear loading state no matter what happens
-      debugPrint('🧹 Clearing loading state...');
       if (mounted) {
         setState(() {
           _isLoading = false;
         });
       }
-      debugPrint('✅ Loading state cleared');
     }
   }
   
@@ -483,7 +465,6 @@ class _EditActiveOrderScreenState extends State<EditActiveOrderScreen> {
           );
         }
       } catch (e) {
-        debugPrint('⚠️ Background printing failed: $e');
         // Silently fail - the order was already saved successfully
       }
     }();
@@ -492,18 +473,14 @@ class _EditActiveOrderScreenState extends State<EditActiveOrderScreen> {
   /// Saves order directly to database without triggering OrderService listeners
   Future<void> _saveOrderDirectly(Order order, DatabaseService databaseService) async {
     try {
-      debugPrint('💾 Starting direct database save for order: ${order.orderNumber}');
       
       final orderData = _orderToMap(order);
-      debugPrint('📋 Order data prepared, items count: ${order.items.length}');
       
       // Save order in a transaction
       final db = await databaseService.database;
       if (db != null) {
-        debugPrint('🗄️ Database connection established');
         
         await db.transaction((txn) async {
-          debugPrint('🔄 Starting database transaction');
           
           // Use INSERT OR REPLACE to handle potential ID conflicts
           await txn.rawInsert('''
@@ -551,18 +528,15 @@ class _EditActiveOrderScreenState extends State<EditActiveOrderScreen> {
             orderData['updated_at'],
           ]);
           
-          debugPrint('✅ Order saved to database');
           
           // Delete existing order items first to avoid duplicates
           await txn.delete('order_items', where: 'order_id = ?', whereArgs: [order.id]);
-          debugPrint('🗑️ Existing order items deleted');
           
           // Save order items
           for (int i = 0; i < order.items.length; i++) {
             final item = order.items[i];
             final itemData = _orderItemToMap(item, order.id);
             
-            debugPrint('📝 Saving order item ${i + 1}/${order.items.length}: ${item.menuItem.name}');
             
             await txn.rawInsert('''
               INSERT OR REPLACE INTO order_items (
@@ -587,17 +561,12 @@ class _EditActiveOrderScreenState extends State<EditActiveOrderScreen> {
             ]);
           }
           
-          debugPrint('✅ All order items saved successfully');
         });
         
-        debugPrint('✅ Database transaction completed successfully');
       } else {
         throw Exception('Database is not available');
       }
     } catch (e) {
-      debugPrint('❌ Database save error: $e');
-      debugPrint('❌ Error type: ${e.runtimeType}');
-      debugPrint('❌ Error stack trace: ${StackTrace.current}');
       rethrow;
     }
   }
@@ -831,9 +800,7 @@ class _EditActiveOrderScreenState extends State<EditActiveOrderScreen> {
       final printingService = Provider.of<PrintingService>(context, listen: false);
       try {
         await printingService.maintainConnectionsDuringOrderCompletion();
-        debugPrint('🔌 Printer connections maintained before table close');
       } catch (e) {
-        debugPrint('⚠️ Failed to maintain printer connections: $e');
         // Continue with table close even if connection maintenance fails
       }
       
@@ -856,9 +823,7 @@ class _EditActiveOrderScreenState extends State<EditActiveOrderScreen> {
       // Print receipt via assigned printers (graceful fallback inside service)
       try {
         await printingService.printReceipt(completedOrder);
-        debugPrint('✅ Receipt printed on order close');
       } catch (e) {
-        debugPrint('⚠️ Failed to print receipt on order close: $e');
       }
 
       setState(() {
@@ -1168,34 +1133,16 @@ class _EditActiveOrderScreenState extends State<EditActiveOrderScreen> {
         );
       }
 
-      // Update order status to cancelled using the proper method
+      // Cancel the order using the proper service method (handles all field updates and Firebase sync)
       final orderService = Provider.of<OrderService>(context, listen: false);
-      
-      // Use updateOrderStatus instead of saveOrder to bypass validation
-      final success = await orderService.updateOrderStatus(_currentOrder.id, 'cancelled');
-      
-      // Also update the completed_time for cancelled orders
-      if (success) {
-        try {
-          final databaseService = Provider.of<DatabaseService>(context, listen: false);
-          final database = await databaseService.database;
-          if (database != null) {
-            await database.update(
-              'orders',
-              {'completed_time': DateTime.now().toIso8601String()},
-              where: 'id = ?',
-              whereArgs: [_currentOrder.id],
-            );
-          }
-        } catch (e) {
-          debugPrint('⚠️ Failed to update completed_time: $e');
-          // Don't fail the cancellation if this fails
-        }
+      final result = await orderService.cancelOrder(_currentOrder);
+
+      if (!result['success']) {
+        throw Exception(result['message'] ?? 'Failed to cancel order');
       }
-      
-      if (success) {
-        // Log the cancellation
-        try {
+
+      // Log the cancellation
+      try {
           final activityLogService = Provider.of<ActivityLogService>(context, listen: false);
           await activityLogService.logActivity(
             action: ActivityAction.orderCancelled,
@@ -1209,7 +1156,6 @@ class _EditActiveOrderScreenState extends State<EditActiveOrderScreen> {
             },
           );
         } catch (e) {
-          debugPrint('⚠️ Failed to log cancellation activity: $e');
         }
 
         // Show success message and navigate back
@@ -1236,7 +1182,6 @@ class _EditActiveOrderScreenState extends State<EditActiveOrderScreen> {
         }
       }
     } catch (e) {
-      debugPrint('❌ Error cancelling order: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

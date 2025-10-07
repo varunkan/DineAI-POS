@@ -140,14 +140,12 @@ class UnifiedSyncService extends ChangeNotifier {
     if (_isInitialized) return;
     
     try {
-      debugPrint('🚀 Initializing Unified Sync Service with comprehensive fixes...');
       
       // Initialize sync fix service first
       await _syncFixService.initialize();
       
       // Check if Firebase is initialized
       if (!FirebaseConfig.isInitialized) {
-        debugPrint('⚠️ Firebase not initialized - sync will be limited');
         _isInitialized = true;
         return;
       }
@@ -161,7 +159,6 @@ class UnifiedSyncService extends ChangeNotifier {
           cacheSizeBytes: fs.Settings.CACHE_SIZE_UNLIMITED,
         );
       } catch (e) {
-        debugPrint('⚠️ Failed to enable Firebase persistence: $e');
         // Continue without persistence
       }
       
@@ -169,10 +166,8 @@ class UnifiedSyncService extends ChangeNotifier {
       _startConnectivityMonitoring();
       
       _isInitialized = true;
-      debugPrint('✅ Unified Sync Service initialized with fixes');
       notifyListeners();
     } catch (e) {
-      debugPrint('❌ Failed to initialize Unified Sync Service: $e');
       _onSyncError?.call('Failed to initialize: $e');
       _isInitialized = true;
     }
@@ -181,7 +176,6 @@ class UnifiedSyncService extends ChangeNotifier {
   /// Connect to restaurant for sync with comprehensive error handling
   Future<void> connectToRestaurant(Restaurant restaurant, RestaurantSession session) async {
     try {
-      debugPrint('🔄 Connecting to restaurant for sync: ${restaurant.email}');
       
       _currentRestaurant = restaurant;
       _currentSession = session;
@@ -199,21 +193,16 @@ class UnifiedSyncService extends ChangeNotifier {
       _lastSyncTime = DateTime.now();
       
       // Run comprehensive sync fixes before starting listeners
-      debugPrint('🔧 Running comprehensive sync fixes...');
       final fixResult = await _syncFixService.fixAllSyncIssues();
       if (fixResult) {
-        debugPrint('✅ Sync fixes completed successfully');
       } else {
-        debugPrint('⚠️ Some sync fixes failed, continuing with caution');
       }
       
       // START REAL-TIME LISTENERS for immediate cross-device sync
       await _startRealTimeListeners();
       
-      debugPrint('✅ Connected to restaurant for sync with fixes applied');
       notifyListeners();
     } catch (e) {
-      debugPrint('❌ Failed to connect to restaurant for sync: $e');
       _isConnected = false;
       _handleConnectionError(e);
     }
@@ -235,7 +224,6 @@ class UnifiedSyncService extends ChangeNotifier {
           throw Exception('Firebase connection failed after $_maxRetries attempts: $e');
         }
         
-        debugPrint('⚠️ Firebase connection attempt $attempts failed, retrying in ${_retryDelay.inSeconds}s: $e');
         await Future.delayed(_retryDelay);
       }
     }
@@ -249,34 +237,26 @@ class UnifiedSyncService extends ChangeNotifier {
         throw Exception('No tenant ID available');
       }
       
-      debugPrint('🔍 Testing Firebase connection to tenant: $tenantId');
       
       final doc = await _firestore.collection('tenants').doc(tenantId).get();
-      debugPrint('✅ Firebase connection test successful - tenant exists: ${doc.exists}');
     } catch (e) {
-      debugPrint('❌ Firebase connection test failed: $e');
       rethrow;
     }
   }
   
   /// Handle connection errors with recovery
   void _handleConnectionError(dynamic error) {
-    debugPrint('🔧 Handling connection error: $error');
     
     if (_consecutiveErrors >= _maxConsecutiveErrors && !_isRecovering) {
       _isRecovering = true;
-      debugPrint('🚨 Too many consecutive errors, starting recovery process...');
       
       // Schedule recovery
       Timer(const Duration(seconds: 30), () async {
         try {
-          debugPrint('🔄 Attempting connection recovery...');
           await _recoverConnection();
           _isRecovering = false;
           _consecutiveErrors = 0;
-          debugPrint('✅ Connection recovery completed');
         } catch (e) {
-          debugPrint('❌ Connection recovery failed: $e');
           _isRecovering = false;
         }
       });
@@ -292,9 +272,7 @@ class UnifiedSyncService extends ChangeNotifier {
       // Clear Firebase cache
       try {
         await _firestore.clearPersistence();
-        debugPrint('🔧 Cleared Firebase persistence cache');
       } catch (e) {
-        debugPrint('⚠️ Failed to clear Firebase cache: $e');
       }
       
       // Reinitialize Firebase settings
@@ -304,7 +282,6 @@ class UnifiedSyncService extends ChangeNotifier {
           cacheSizeBytes: fs.Settings.CACHE_SIZE_UNLIMITED,
         );
       } catch (e) {
-        debugPrint('⚠️ Failed to reinitialize Firebase settings: $e');
       }
       
       // Test connection
@@ -319,7 +296,6 @@ class UnifiedSyncService extends ChangeNotifier {
       await _syncFixService.fixAllSyncIssues();
       
     } catch (e) {
-      debugPrint('❌ Connection recovery failed: $e');
       rethrow;
     }
   }
@@ -330,13 +306,10 @@ class UnifiedSyncService extends ChangeNotifier {
       final wasOnline = _isOnline;
       _isOnline = result != ConnectivityResult.none;
       
-      debugPrint('🌐 Connectivity changed: $result (online: $_isOnline)');
       
       if (!wasOnline && _isOnline) {
-        debugPrint('🌐 Connection restored - triggering sync');
         _onConnectivityRestored();
       } else if (wasOnline && !_isOnline) {
-        debugPrint('🌐 Connection lost - switching to offline mode');
         _onConnectivityLost();
       }
       
@@ -363,7 +336,6 @@ class UnifiedSyncService extends ChangeNotifier {
   /// Perform emergency sync when connectivity is restored
   Future<void> _performEmergencySync() async {
     try {
-      debugPrint('🚨 Performing emergency sync after connectivity restoration...');
       
       // Run comprehensive sync fixes
       await _syncFixService.fixAllSyncIssues();
@@ -376,9 +348,7 @@ class UnifiedSyncService extends ChangeNotifier {
       // Perform manual sync
       await manualSync();
       
-      debugPrint('✅ Emergency sync completed successfully');
     } catch (e) {
-      debugPrint('❌ Emergency sync failed: $e');
       _onSyncError?.call('Emergency sync failed: $e');
     }
   }
@@ -388,7 +358,6 @@ class UnifiedSyncService extends ChangeNotifier {
   /// Enhanced manual sync with comprehensive fixes
   Future<void> manualSync() async {
     if (_isSyncing) {
-      debugPrint('⚠️ Manual sync: Already syncing, skipping duplicate call');
       return;
     }
     
@@ -396,20 +365,15 @@ class UnifiedSyncService extends ChangeNotifier {
     _onSyncProgress?.call('🔄 Starting comprehensive manual sync...');
     
     try {
-      debugPrint('🔄 Starting enhanced manual sync with fixes...');
       
       // PHASE 1: Run comprehensive sync fixes first
-      debugPrint('🔧 Phase 1: Running comprehensive sync fixes...');
       final fixResult = await _syncFixService.fixAllSyncIssues();
       if (!fixResult) {
-        debugPrint('⚠️ Some sync fixes failed, continuing with caution');
       }
       
       // PHASE 2: Perform standard sync operations
-      debugPrint('🔄 Phase 2: Performing standard sync operations...');
       
       if (!_isOnline) {
-        debugPrint('⚠️ Device is offline - queuing changes for later sync');
         _onSyncProgress?.call('⚠️ Offline - changes queued for later sync');
         return;
       }
@@ -431,10 +395,8 @@ class UnifiedSyncService extends ChangeNotifier {
       
       _lastSyncTime = DateTime.now();
       _onSyncProgress?.call('✅ Enhanced manual sync completed successfully');
-      debugPrint('✅ Enhanced manual sync completed');
       
     } catch (e) {
-      debugPrint('❌ Enhanced manual sync failed: $e');
       _onSyncError?.call('Manual sync failed: $e');
       _handleSyncError(e);
     } finally {
@@ -447,9 +409,7 @@ class UnifiedSyncService extends ChangeNotifier {
   Future<void> _syncWithErrorHandling(Future<void> Function() syncFunction, String dataType) async {
     try {
       await syncFunction();
-      debugPrint('✅ Successfully synced $dataType');
     } catch (e) {
-      debugPrint('❌ Failed to sync $dataType: $e');
       // Don't rethrow - continue with other sync operations
     }
   }
@@ -459,7 +419,6 @@ class UnifiedSyncService extends ChangeNotifier {
     _consecutiveErrors++;
     
     if (_consecutiveErrors >= _maxConsecutiveErrors) {
-      debugPrint('🚨 Too many sync errors, triggering recovery');
       _handleConnectionError(error);
     }
   }
@@ -471,11 +430,9 @@ class UnifiedSyncService extends ChangeNotifier {
     try {
       final tenantId = FirebaseConfig.getCurrentTenantId();
       if (tenantId == null) {
-        debugPrint('⚠️ No tenant ID available for real-time listeners');
         return;
       }
       
-      debugPrint('🔴 Starting enhanced real-time Firebase listeners...');
       
       // Stop existing listeners first
       await _stopRealTimeListeners();
@@ -513,26 +470,21 @@ class UnifiedSyncService extends ChangeNotifier {
             onError: (error) => _handleListenerError('users', error),
           );
       
-      debugPrint('✅ Enhanced real-time listeners started successfully');
       
     } catch (e) {
-      debugPrint('❌ Failed to start real-time listeners: $e');
       _onSyncError?.call('Failed to start real-time listeners: $e');
     }
   }
   
   /// Handle listener errors
   void _handleListenerError(String listenerType, dynamic error) {
-    debugPrint('❌ Real-time listener error ($listenerType): $error');
     _consecutiveErrors++;
     
     // Restart listener after delay
     Timer(const Duration(seconds: 5), () async {
       try {
-        debugPrint('🔄 Restarting $listenerType listener...');
         await _startRealTimeListeners();
       } catch (e) {
-        debugPrint('❌ Failed to restart $listenerType listener: $e');
       }
     });
   }
@@ -540,7 +492,6 @@ class UnifiedSyncService extends ChangeNotifier {
   /// Handle orders snapshot with enhanced processing
   void _handleOrdersSnapshot(fs.QuerySnapshot snapshot) {
     try {
-      debugPrint('📥 Received orders snapshot with ${snapshot.docs.length} documents');
       
       if (snapshot.docs.isEmpty) return;
       
@@ -548,7 +499,6 @@ class UnifiedSyncService extends ChangeNotifier {
       _batchProcessChanges('orders', snapshot.docChanges);
       
     } catch (e) {
-      debugPrint('❌ Error processing orders snapshot: $e');
       _handleListenerError('orders', e);
     }
   }
@@ -556,14 +506,12 @@ class UnifiedSyncService extends ChangeNotifier {
   /// Handle menu items snapshot
   void _handleMenuItemsSnapshot(fs.QuerySnapshot snapshot) {
     try {
-      debugPrint('📥 Received menu items snapshot with ${snapshot.docs.length} documents');
       
       if (snapshot.docs.isEmpty) return;
       
       _batchProcessChanges('menu_items', snapshot.docChanges);
       
     } catch (e) {
-      debugPrint('❌ Error processing menu items snapshot: $e');
       _handleListenerError('menu_items', e);
     }
   }
@@ -571,14 +519,12 @@ class UnifiedSyncService extends ChangeNotifier {
   /// Handle users snapshot
   void _handleUsersSnapshot(fs.QuerySnapshot snapshot) {
     try {
-      debugPrint('📥 Received users snapshot with ${snapshot.docs.length} documents');
       
       if (snapshot.docs.isEmpty) return;
       
       _batchProcessChanges('users', snapshot.docChanges);
       
     } catch (e) {
-      debugPrint('❌ Error processing users snapshot: $e');
       _handleListenerError('users', e);
     }
   }
@@ -602,14 +548,12 @@ class UnifiedSyncService extends ChangeNotifier {
   /// Process batched changes
   void _processBatchedChanges() {
     try {
-      debugPrint('🔄 Processing batched changes...');
       
       for (final entry in _batchedChanges.entries) {
         final collection = entry.key;
         final changes = entry.value;
         
         if (changes.length > _maxBatchSize) {
-          debugPrint('⚠️ Large batch detected for $collection: ${changes.length} changes, processing in chunks');
           
           // Process in chunks
           for (int i = 0; i < changes.length; i += _maxBatchSize) {
@@ -625,14 +569,12 @@ class UnifiedSyncService extends ChangeNotifier {
       _batchedChanges.clear();
       
     } catch (e) {
-      debugPrint('❌ Error processing batched changes: $e');
     }
   }
   
   /// Process collection changes
   void _processCollectionChanges(String collection, List<fs.DocumentChange> changes) {
     try {
-      debugPrint('🔄 Processing ${changes.length} changes for $collection');
       
       for (final change in changes) {
         switch (change.type) {
@@ -652,14 +594,12 @@ class UnifiedSyncService extends ChangeNotifier {
       _notifyCollectionUpdated(collection);
       
     } catch (e) {
-      debugPrint('❌ Error processing $collection changes: $e');
     }
   }
   
   /// Handle document added
   void _handleDocumentAdded(String collection, fs.DocumentSnapshot doc) {
     try {
-      debugPrint('➕ Document added to $collection: ${doc.id}');
       
       switch (collection) {
         case 'orders':
@@ -675,14 +615,12 @@ class UnifiedSyncService extends ChangeNotifier {
       }
       
     } catch (e) {
-      debugPrint('❌ Error handling document added ($collection): $e');
     }
   }
   
   /// Handle document modified
   void _handleDocumentModified(String collection, fs.DocumentSnapshot doc) {
     try {
-      debugPrint('✏️ Document modified in $collection: ${doc.id}');
       
       switch (collection) {
         case 'orders':
@@ -698,14 +636,12 @@ class UnifiedSyncService extends ChangeNotifier {
       }
       
     } catch (e) {
-      debugPrint('❌ Error handling document modified ($collection): $e');
     }
   }
   
   /// Handle document removed
   void _handleDocumentRemoved(String collection, fs.DocumentSnapshot doc) {
     try {
-      debugPrint('🗑️ Document removed from $collection: ${doc.id}');
       
       switch (collection) {
         case 'orders':
@@ -721,7 +657,6 @@ class UnifiedSyncService extends ChangeNotifier {
       }
       
     } catch (e) {
-      debugPrint('❌ Error handling document removed ($collection): $e');
     }
   }
   
@@ -734,10 +669,8 @@ class UnifiedSyncService extends ChangeNotifier {
         
         // Convert to Order object and update local database
         // This would need to be implemented based on your Order model
-        debugPrint('📝 Processing new order from Firebase: ${doc.id}');
       }
     } catch (e) {
-      debugPrint('❌ Error handling order added: $e');
     }
   }
   
@@ -748,10 +681,8 @@ class UnifiedSyncService extends ChangeNotifier {
         final orderData = doc.data() as Map<String, dynamic>;
         orderData['id'] = doc.id;
         
-        debugPrint('📝 Processing modified order from Firebase: ${doc.id}');
       }
     } catch (e) {
-      debugPrint('❌ Error handling order modified: $e');
     }
   }
   
@@ -759,10 +690,8 @@ class UnifiedSyncService extends ChangeNotifier {
   void _handleOrderRemoved(fs.DocumentSnapshot doc) {
     try {
       if (_orderService != null) {
-        debugPrint('🗑️ Processing removed order from Firebase: ${doc.id}');
       }
     } catch (e) {
-      debugPrint('❌ Error handling order removed: $e');
     }
   }
   
@@ -770,10 +699,8 @@ class UnifiedSyncService extends ChangeNotifier {
   void _handleMenuItemAdded(fs.DocumentSnapshot doc) {
     try {
       if (_menuService != null) {
-        debugPrint('📝 Processing new menu item from Firebase: ${doc.id}');
       }
     } catch (e) {
-      debugPrint('❌ Error handling menu item added: $e');
     }
   }
   
@@ -781,10 +708,8 @@ class UnifiedSyncService extends ChangeNotifier {
   void _handleMenuItemModified(fs.DocumentSnapshot doc) {
     try {
       if (_menuService != null) {
-        debugPrint('📝 Processing modified menu item from Firebase: ${doc.id}');
       }
     } catch (e) {
-      debugPrint('❌ Error handling menu item modified: $e');
     }
   }
   
@@ -792,10 +717,8 @@ class UnifiedSyncService extends ChangeNotifier {
   void _handleMenuItemRemoved(fs.DocumentSnapshot doc) {
     try {
       if (_menuService != null) {
-        debugPrint('🗑️ Processing removed menu item from Firebase: ${doc.id}');
       }
     } catch (e) {
-      debugPrint('❌ Error handling menu item removed: $e');
     }
   }
   
@@ -803,10 +726,8 @@ class UnifiedSyncService extends ChangeNotifier {
   void _handleUserAdded(fs.DocumentSnapshot doc) {
     try {
       if (_userService != null) {
-        debugPrint('📝 Processing new user from Firebase: ${doc.id}');
       }
     } catch (e) {
-      debugPrint('❌ Error handling user added: $e');
     }
   }
   
@@ -814,10 +735,8 @@ class UnifiedSyncService extends ChangeNotifier {
   void _handleUserModified(fs.DocumentSnapshot doc) {
     try {
       if (_userService != null) {
-        debugPrint('📝 Processing modified user from Firebase: ${doc.id}');
       }
     } catch (e) {
-      debugPrint('❌ Error handling user modified: $e');
     }
   }
   
@@ -825,10 +744,8 @@ class UnifiedSyncService extends ChangeNotifier {
   void _handleUserRemoved(fs.DocumentSnapshot doc) {
     try {
       if (_userService != null) {
-        debugPrint('🗑️ Processing removed user from Firebase: ${doc.id}');
       }
     } catch (e) {
-      debugPrint('❌ Error handling user removed: $e');
     }
   }
   
@@ -861,7 +778,6 @@ class UnifiedSyncService extends ChangeNotifier {
   /// Stop real-time listeners
   Future<void> _stopRealTimeListeners() async {
     try {
-      debugPrint('🔴 Stopping real-time listeners...');
       
       await _ordersListener?.cancel();
       await _menuItemsListener?.cancel();
@@ -879,9 +795,7 @@ class UnifiedSyncService extends ChangeNotifier {
       _tablesListener = null;
       _categoriesListener = null;
       
-      debugPrint('✅ Real-time listeners stopped');
     } catch (e) {
-      debugPrint('❌ Error stopping real-time listeners: $e');
     }
   }
   
@@ -958,18 +872,14 @@ class UnifiedSyncService extends ChangeNotifier {
           
           // Process order data
           // This would need to be implemented based on your Order model
-          debugPrint('📝 Syncing order: ${doc.id}');
           
         } catch (e) {
-          debugPrint('⚠️ Failed to sync order ${doc.id}: $e');
           // Continue with other orders
         }
       }
       
       _onOrdersUpdated?.call();
-      debugPrint('✅ Synced ${snapshot.docs.length} orders');
     } catch (e) {
-      debugPrint('❌ Failed to sync orders: $e');
       rethrow;
     }
   }
@@ -991,14 +901,11 @@ class UnifiedSyncService extends ChangeNotifier {
           final menuItem = MenuItem.fromJson(menuItemData);
           await _menuService!.updateMenuItemFromFirebase(menuItem);
         } catch (e) {
-          debugPrint('⚠️ Failed to sync menu item ${doc.id}: $e');
         }
       }
       
       _onMenuItemsUpdated?.call();
-      debugPrint('✅ Synced ${snapshot.docs.length} menu items');
     } catch (e) {
-      debugPrint('❌ Failed to sync menu items: $e');
       rethrow;
     }
   }
@@ -1016,16 +923,12 @@ class UnifiedSyncService extends ChangeNotifier {
         try {
           final categoryData = doc.data();
           // Process category data
-          debugPrint('📝 Syncing category: ${doc.id}');
         } catch (e) {
-          debugPrint('⚠️ Failed to sync category ${doc.id}: $e');
         }
       }
       
       _onCategoriesUpdated?.call();
-      debugPrint('✅ Synced ${snapshot.docs.length} categories');
     } catch (e) {
-      debugPrint('❌ Failed to sync categories: $e');
       rethrow;
     }
   }
@@ -1047,14 +950,11 @@ class UnifiedSyncService extends ChangeNotifier {
           final user = User.fromJson(userData);
           await _userService!.updateUserFromFirebase(user);
         } catch (e) {
-          debugPrint('⚠️ Failed to sync user ${doc.id}: $e');
         }
       }
       
       _onUsersUpdated?.call();
-      debugPrint('✅ Synced ${snapshot.docs.length} users');
     } catch (e) {
-      debugPrint('❌ Failed to sync users: $e');
       rethrow;
     }
   }
@@ -1076,14 +976,11 @@ class UnifiedSyncService extends ChangeNotifier {
           final inventoryItem = InventoryItem.fromJson(inventoryData);
           await _inventoryService!.updateItemFromFirebase(inventoryItem);
         } catch (e) {
-          debugPrint('⚠️ Failed to sync inventory item ${doc.id}: $e');
         }
       }
       
       _onInventoryUpdated?.call();
-      debugPrint('✅ Synced ${snapshot.docs.length} inventory items');
     } catch (e) {
-      debugPrint('❌ Failed to sync inventory: $e');
       rethrow;
     }
   }
@@ -1105,14 +1002,11 @@ class UnifiedSyncService extends ChangeNotifier {
           final table = Table.fromJson(tableData);
           await _tableService!.updateTableFromFirebase(table);
         } catch (e) {
-          debugPrint('⚠️ Failed to sync table ${doc.id}: $e');
         }
       }
       
       _onTablesUpdated?.call();
-      debugPrint('✅ Synced ${snapshot.docs.length} tables');
     } catch (e) {
-      debugPrint('❌ Failed to sync tables: $e');
       rethrow;
     }
   }
@@ -1132,9 +1026,7 @@ class UnifiedSyncService extends ChangeNotifier {
           .doc(order.id)
           .set(order.toJson(), fs.SetOptions(merge: true));
       
-      debugPrint('✅ Order synced to Firebase: ${order.orderNumber}');
     } catch (e) {
-      debugPrint('❌ Failed to sync order to Firebase: $e');
       
       // Queue for retry if offline
       if (!_isOnline) {
@@ -1144,7 +1036,6 @@ class UnifiedSyncService extends ChangeNotifier {
           'data': order.toJson(),
           'timestamp': DateTime.now().toIso8601String(),
         });
-        debugPrint('📝 Queued order for offline sync: ${order.orderNumber}');
       } else {
         rethrow;
       }
@@ -1164,9 +1055,7 @@ class UnifiedSyncService extends ChangeNotifier {
           .doc(item.id)
           .set(item.toJson(), fs.SetOptions(merge: true));
       
-      debugPrint('✅ Menu item synced to Firebase: ${item.name}');
     } catch (e) {
-      debugPrint('❌ Failed to sync menu item to Firebase: $e');
       
       if (!_isOnline) {
         _pendingChanges.add({
@@ -1175,7 +1064,6 @@ class UnifiedSyncService extends ChangeNotifier {
           'data': item.toJson(),
           'timestamp': DateTime.now().toIso8601String(),
         });
-        debugPrint('📝 Queued menu item for offline sync: ${item.name}');
       } else {
         rethrow;
       }
@@ -1186,7 +1074,6 @@ class UnifiedSyncService extends ChangeNotifier {
   Future<void> _processPendingChanges() async {
     if (_pendingChanges.isEmpty || !_isOnline) return;
     
-    debugPrint('🔄 Processing ${_pendingChanges.length} pending changes...');
     
     final changesToProcess = List<Map<String, dynamic>>.from(_pendingChanges);
     _pendingChanges.clear();
@@ -1195,13 +1082,11 @@ class UnifiedSyncService extends ChangeNotifier {
       try {
         await _processPendingChange(change);
       } catch (e) {
-        debugPrint('❌ Failed to process pending change: $e');
         // Re-queue failed changes
         _pendingChanges.add(change);
       }
     }
     
-    debugPrint('✅ Processed pending changes');
   }
   
   /// Process individual pending change
@@ -1230,7 +1115,6 @@ class UnifiedSyncService extends ChangeNotifier {
   /// Force sync - runs comprehensive fixes and sync
   Future<void> forceSync() async {
     try {
-      debugPrint('🔄 Starting force sync with comprehensive fixes...');
       
       // Run comprehensive sync fixes
       await _syncFixService.fixAllSyncIssues();
@@ -1238,9 +1122,7 @@ class UnifiedSyncService extends ChangeNotifier {
       // Run manual sync
       await manualSync();
       
-      debugPrint('✅ Force sync completed');
     } catch (e) {
-      debugPrint('❌ Force sync failed: $e');
       rethrow;
     }
   }
@@ -1248,11 +1130,8 @@ class UnifiedSyncService extends ChangeNotifier {
   /// Trigger immediate sync
   Future<void> triggerImmediateSync() async {
     try {
-      debugPrint('🔄 Triggering immediate sync...');
       await forceSync();
-      debugPrint('✅ Immediate sync completed');
     } catch (e) {
-      debugPrint('❌ Immediate sync failed: $e');
       rethrow;
     }
   }
@@ -1260,11 +1139,8 @@ class UnifiedSyncService extends ChangeNotifier {
   /// Download data from cloud
   Future<void> downloadFromCloud() async {
     try {
-      debugPrint('🔄 Downloading data from cloud...');
       await manualSync();
-      debugPrint('✅ Download from cloud completed');
     } catch (e) {
-      debugPrint('❌ Download from cloud failed: $e');
       rethrow;
     }
   }
@@ -1272,7 +1148,6 @@ class UnifiedSyncService extends ChangeNotifier {
   /// Clear and sync data
   Future<void> clearAndSyncData() async {
     try {
-      debugPrint('🔄 Clearing and syncing data...');
       
       // Run comprehensive fixes first
       await _syncFixService.fixAllSyncIssues();
@@ -1290,9 +1165,7 @@ class UnifiedSyncService extends ChangeNotifier {
       
       // Then sync from Firebase
       await manualSync();
-      debugPrint('✅ Clear and sync completed');
     } catch (e) {
-      debugPrint('❌ Clear and sync failed: $e');
       rethrow;
     }
   }
@@ -1300,11 +1173,8 @@ class UnifiedSyncService extends ChangeNotifier {
   /// Upload data to cloud
   Future<void> uploadToCloud() async {
     try {
-      debugPrint('🔄 Uploading data to cloud...');
       await manualSync();
-      debugPrint('✅ Upload to cloud completed');
     } catch (e) {
-      debugPrint('❌ Upload to cloud failed: $e');
       rethrow;
     }
   }
@@ -1312,11 +1182,8 @@ class UnifiedSyncService extends ChangeNotifier {
   /// Perform full sync (alias for manualSync)
   Future<void> performFullSync() async {
     try {
-      debugPrint('🔄 Performing full sync...');
       await forceSync();
-      debugPrint('✅ Full sync completed');
     } catch (e) {
-      debugPrint('❌ Full sync failed: $e');
       rethrow;
     }
   }
@@ -1324,11 +1191,8 @@ class UnifiedSyncService extends ChangeNotifier {
   /// Trigger instant sync (alias for manualSync)
   Future<void> triggerInstantSync() async {
     try {
-      debugPrint('🔄 Triggering instant sync...');
       await forceSync();
-      debugPrint('✅ Instant sync completed');
     } catch (e) {
-      debugPrint('❌ Instant sync failed: $e');
       rethrow;
     }
   }
@@ -1342,11 +1206,8 @@ class UnifiedSyncService extends ChangeNotifier {
     bool forceRefresh = false,
   }) async {
     try {
-      debugPrint('🔄 Server change sync triggered (compatibility mode)...');
       await forceSync();
-      debugPrint('✅ Server change sync completed');
     } catch (e) {
-      debugPrint('❌ Server change sync failed: $e');
       rethrow;
     }
   }
@@ -1354,11 +1215,8 @@ class UnifiedSyncService extends ChangeNotifier {
   /// Compatibility method for forceSyncAllLocalData
   Future<void> forceSyncAllLocalData() async {
     try {
-      debugPrint('🔄 Force sync all local data...');
       await forceSync();
-      debugPrint('✅ Force sync all local data completed');
     } catch (e) {
-      debugPrint('❌ Force sync all local data failed: $e');
       rethrow;
     }
   }
@@ -1372,7 +1230,6 @@ class UnifiedSyncService extends ChangeNotifier {
       final timeSinceLastSync = DateTime.now().difference(_lastSyncTime!);
       return timeSinceLastSync.inMinutes > 5;
     } catch (e) {
-      debugPrint('⚠️ Error checking if sync is needed: $e');
       return true; // Default to needing sync if we can't determine
     }
   }
@@ -1380,11 +1237,8 @@ class UnifiedSyncService extends ChangeNotifier {
   /// Compatibility method for performSmartTimeBasedSync
   Future<void> performSmartTimeBasedSync() async {
     try {
-      debugPrint('🔄 Smart time-based sync...');
       await forceSync();
-      debugPrint('✅ Smart time-based sync completed');
     } catch (e) {
-      debugPrint('❌ Smart time-based sync failed: $e');
       rethrow;
     }
   }
@@ -1407,35 +1261,27 @@ class UnifiedSyncService extends ChangeNotifier {
   /// Compatibility method for ensureRealTimeSyncActive
   Future<void> ensureRealTimeSyncActive() async {
     try {
-      debugPrint('🔄 Ensuring real-time sync is active...');
       
       if (!_isConnected) {
-        debugPrint('⚠️ Not connected - cannot ensure real-time sync');
         return;
       }
       
       // Check if listeners are active
       if (!isRealTimeSyncActive) {
-        debugPrint('🔄 Starting real-time listeners...');
         await _startRealTimeListeners();
       }
       
-      debugPrint('✅ Real-time sync is active');
     } catch (e) {
-      debugPrint('❌ Failed to ensure real-time sync: $e');
     }
   }
   
   /// Compatibility method for restartRealTimeListeners
   Future<void> restartRealTimeListeners() async {
     try {
-      debugPrint('🔄 Restarting real-time listeners...');
       await _stopRealTimeListeners();
       await Future.delayed(const Duration(milliseconds: 500));
       await _startRealTimeListeners();
-      debugPrint('✅ Real-time listeners restarted');
     } catch (e) {
-      debugPrint('❌ Failed to restart real-time listeners: $e');
     }
   }
   
@@ -1454,29 +1300,22 @@ class UnifiedSyncService extends ChangeNotifier {
   /// Compatibility method for cleanupGhostOrdersOnLogin
   Future<void> cleanupGhostOrdersOnLogin({int maxDeletes = 250}) async {
     try {
-      debugPrint('🔄 Ghost order cleanup (now handled by sync fix service)...');
       await _syncFixService.fixAllSyncIssues();
-      debugPrint('✅ Ghost order cleanup completed');
     } catch (e) {
-      debugPrint('❌ Ghost order cleanup failed: $e');
     }
   }
   
   /// Compatibility method for autoSyncOnDeviceLogin
   Future<void> autoSyncOnDeviceLogin() async {
     try {
-      debugPrint('🔄 Auto sync on device login...');
       await forceSync();
-      debugPrint('✅ Auto sync on device login completed');
     } catch (e) {
-      debugPrint('❌ Auto sync on device login failed: $e');
     }
   }
   
   /// Compatibility method for disconnect
   Future<void> disconnect() async {
     try {
-      debugPrint('🔄 Disconnecting from restaurant...');
       
       // Stop real-time listeners
       await _stopRealTimeListeners();
@@ -1485,10 +1324,8 @@ class UnifiedSyncService extends ChangeNotifier {
       _currentSession = null;
       _isConnected = false;
       
-      debugPrint('✅ Disconnected from restaurant');
       notifyListeners();
     } catch (e) {
-      debugPrint('❌ Failed to disconnect: $e');
     }
   }
   
@@ -1500,9 +1337,7 @@ class UnifiedSyncService extends ChangeNotifier {
       } else {
         await createOrUpdateMenuItem(item);
       }
-      debugPrint('✅ Menu item synced to Firebase: ${item.name} ($action)');
     } catch (e) {
-      debugPrint('❌ Failed to sync menu item to Firebase: $e');
       rethrow;
     }
   }
@@ -1520,9 +1355,7 @@ class UnifiedSyncService extends ChangeNotifier {
           .doc(itemId)
           .delete();
       
-      debugPrint('✅ Item deleted from Firebase: $collection/$itemId');
     } catch (e) {
-      debugPrint('❌ Failed to delete item from Firebase: $e');
       rethrow;
     }
   }
@@ -1535,9 +1368,7 @@ class UnifiedSyncService extends ChangeNotifier {
       } else {
         await createOrUpdateCategory(category);
       }
-      debugPrint('✅ Category synced to Firebase: ${category.name} ($action)');
     } catch (e) {
-      debugPrint('❌ Failed to sync category to Firebase: $e');
       rethrow;
     }
   }
@@ -1550,11 +1381,9 @@ class UnifiedSyncService extends ChangeNotifier {
       
       final sent = (itemMap['sent_to_kitchen'] ?? itemMap['sentToKitchen'] ?? 0);
       if (sent is int && sent != 1) {
-        debugPrint('⏭️ Guard: Not syncing unsent item ${itemMap['id']} to Firebase');
         return;
       }
       if (sent is bool && sent != true) {
-        debugPrint('⏭️ Guard: Not syncing unsent item ${itemMap['id']} to Firebase');
         return;
       }
       
@@ -1565,9 +1394,7 @@ class UnifiedSyncService extends ChangeNotifier {
           .doc(itemMap['id'] as String)
           .set(itemMap, fs.SetOptions(merge: true));
       
-      debugPrint('✅ Order item synced to Firebase: ${itemMap['id']}');
     } catch (e) {
-      debugPrint('❌ Failed to sync order item to Firebase: $e');
       rethrow;
     }
   }
@@ -1583,9 +1410,7 @@ class UnifiedSyncService extends ChangeNotifier {
       };
       
       _pendingChanges.add(change);
-      debugPrint('📝 Added pending sync change: $collection/$action/$itemId');
     } catch (e) {
-      debugPrint('❌ Failed to add pending sync change: $e');
     }
   }
   
@@ -1597,9 +1422,7 @@ class UnifiedSyncService extends ChangeNotifier {
       } else {
         await createOrUpdateOrder(order);
       }
-      debugPrint('✅ Order synced to Firebase: ${order.orderNumber} ($action)');
     } catch (e) {
-      debugPrint('❌ Failed to sync order to Firebase: $e');
       rethrow;
     }
   }
@@ -1617,9 +1440,7 @@ class UnifiedSyncService extends ChangeNotifier {
           .doc(user.id)
           .set(user.toJson(), fs.SetOptions(merge: true));
       
-      debugPrint('✅ User synced to Firebase: ${user.name}');
     } catch (e) {
-      debugPrint('❌ Failed to sync user to Firebase: $e');
       rethrow;
     }
   }
@@ -1632,9 +1453,7 @@ class UnifiedSyncService extends ChangeNotifier {
       } else {
         await createOrUpdateUser(user);
       }
-      debugPrint('✅ User synced to Firebase: ${user.name} ($action)');
     } catch (e) {
-      debugPrint('❌ Failed to sync user to Firebase: $e');
       rethrow;
     }
   }
@@ -1655,9 +1474,7 @@ class UnifiedSyncService extends ChangeNotifier {
             .doc(table.id)
             .set(table.toJson(), fs.SetOptions(merge: true));
       }
-      debugPrint('✅ Table synced to Firebase: ${table.number} ($action)');
     } catch (e) {
-      debugPrint('❌ Failed to sync table to Firebase: $e');
       rethrow;
     }
   }
@@ -1670,9 +1487,7 @@ class UnifiedSyncService extends ChangeNotifier {
       } else {
         await createOrUpdateInventoryItem(item);
       }
-      debugPrint('✅ Inventory item synced to Firebase: ${item.name} ($action)');
     } catch (e) {
-      debugPrint('❌ Failed to sync inventory item to Firebase: $e');
       rethrow;
     }
   }
@@ -1690,9 +1505,7 @@ class UnifiedSyncService extends ChangeNotifier {
           .doc(category.id)
           .set(category.toJson(), fs.SetOptions(merge: true));
       
-      debugPrint('✅ Category synced to Firebase: ${category.name}');
     } catch (e) {
-      debugPrint('❌ Failed to sync category to Firebase: $e');
       rethrow;
     }
   }
@@ -1710,9 +1523,7 @@ class UnifiedSyncService extends ChangeNotifier {
           .doc(item.id)
           .set(item.toJson(), fs.SetOptions(merge: true));
       
-      debugPrint('✅ Inventory item synced to Firebase: ${item.name}');
     } catch (e) {
-      debugPrint('❌ Failed to sync inventory item to Firebase: $e');
       rethrow;
     }
   }

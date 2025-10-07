@@ -65,9 +65,7 @@ class TenantPrinterConfigService extends ChangeNotifier {
     try {
       _firestore = FirebaseFirestore.instance;
       _auth = FirebaseAuth.instance;
-      debugPrint('$_logTag ✅ Firebase services initialized');
     } catch (e) {
-      debugPrint('$_logTag ❌ Error initializing Firebase: $e');
       _lastError = 'Firebase initialization failed: $e';
     }
   }
@@ -75,7 +73,6 @@ class TenantPrinterConfigService extends ChangeNotifier {
   /// Initialize the service for a specific tenant
   Future<bool> initialize({required String tenantId, required String restaurantId}) async {
     try {
-      debugPrint('$_logTag 🚀 Initializing tenant printer config service for tenant: $tenantId');
       
       _currentTenantId = tenantId;
       _currentRestaurantId = restaurantId;
@@ -93,12 +90,10 @@ class TenantPrinterConfigService extends ChangeNotifier {
       _lastError = null;
       _hasSyncError = false;
       
-      debugPrint('$_logTag ✅ Tenant printer config service initialized successfully');
       notifyListeners();
       return true;
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error initializing tenant printer config service: $e');
       _lastError = 'Initialization failed: $e';
       _hasSyncError = true;
       return false;
@@ -123,15 +118,12 @@ class TenantPrinterConfigService extends ChangeNotifier {
             _printerConfigs.add(config);
             _printerConfigMap[config.id] = config;
           } catch (e) {
-            debugPrint('$_logTag ⚠️ Error parsing cached printer config: $e');
           }
         }
         
-        debugPrint('$_logTag 📥 Loaded ${_printerConfigs.length} cached printer configurations');
       }
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error loading cached configurations: $e');
     }
   }
   
@@ -144,10 +136,8 @@ class TenantPrinterConfigService extends ChangeNotifier {
       await prefs.setString('${_printerConfigsKey}_$_currentTenantId', configsJson);
       await prefs.setString('${_lastSyncKey}_$_currentTenantId', DateTime.now().toIso8601String());
       
-      debugPrint('$_logTag 💾 Saved ${_printerConfigs.length} printer configurations to cache');
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error saving configurations to cache: $e');
     }
   }
   
@@ -155,7 +145,6 @@ class TenantPrinterConfigService extends ChangeNotifier {
   void _startRealTimeSync() {
     if (_firestore == null || _currentTenantId.isEmpty) return;
     
-    debugPrint('$_logTag 🔄 Starting real-time Firebase sync for cross-device updates...');
     
     final tenantDoc = _firestore!.collection('tenants').doc(_currentTenantId);
     
@@ -173,7 +162,6 @@ class TenantPrinterConfigService extends ChangeNotifier {
       _handlePrinterAssignmentChanges(snapshot);
     });
     
-    debugPrint('$_logTag ✅ Real-time Firebase sync started');
   }
   
   /// Handle printer configuration changes from Firebase
@@ -194,19 +182,15 @@ class TenantPrinterConfigService extends ChangeNotifier {
           switch (change.type) {
             case DocumentChangeType.added:
               _addPrinterConfig(printer);
-              debugPrint('$_logTag ➕ Printer config added from Firebase: ${printer.name}');
               break;
             case DocumentChangeType.modified:
               _updatePrinterConfig(printer);
-              debugPrint('$_logTag 🔄 Printer config updated from Firebase: ${printer.name}');
               break;
             case DocumentChangeType.removed:
               _removePrinterConfig(printer.id);
-              debugPrint('$_logTag ➖ Printer config removed from Firebase: ${printer.name}');
               break;
           }
         } catch (e) {
-          debugPrint('$_logTag ❌ Error parsing printer config change: $e');
         }
       }
       
@@ -215,7 +199,6 @@ class TenantPrinterConfigService extends ChangeNotifier {
       notifyListeners();
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error handling printer config changes: $e');
       _lastError = 'Sync error: $e';
       _hasSyncError = true;
     }
@@ -224,11 +207,9 @@ class TenantPrinterConfigService extends ChangeNotifier {
   /// Handle printer assignment changes from Firebase
   void _handlePrinterAssignmentChanges(QuerySnapshot snapshot) {
     try {
-      debugPrint('$_logTag 🔄 Printer assignments updated from Firebase');
       // TODO: Implement assignment change handling if needed
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error handling assignment changes: $e');
     }
   }
   
@@ -260,7 +241,6 @@ class TenantPrinterConfigService extends ChangeNotifier {
     try {
       if (_firestore == null || _currentTenantId.isEmpty) return;
       
-      debugPrint('$_logTag 🔄 Loading printer configurations from Firebase...');
       
       final tenantDoc = _firestore!.collection('tenants').doc(_currentTenantId);
       final printerSnapshot = await tenantDoc.collection('printer_configurations').get();
@@ -293,11 +273,9 @@ class TenantPrinterConfigService extends ChangeNotifier {
           loadedCount++;
           
         } catch (e) {
-          debugPrint('$_logTag ⚠️ Error parsing printer config from Firebase: $e');
         }
       }
       
-      debugPrint('$_logTag ✅ Loaded $loadedCount printer configurations from Firebase');
       
       // Save to cache
       await _saveConfigurationsToCache();
@@ -306,7 +284,6 @@ class TenantPrinterConfigService extends ChangeNotifier {
       _hasSyncError = false;
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error loading configurations from Firebase: $e');
       _lastError = 'Failed to load from Firebase: $e';
       _hasSyncError = true;
     }
@@ -340,12 +317,10 @@ class TenantPrinterConfigService extends ChangeNotifier {
       
       await printerDoc.set(enhancedData);
       
-      debugPrint('$_logTag ✅ Created printer configuration: ${config.name}');
       _lastError = null;
       return true;
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error creating printer configuration: $e');
       _lastError = 'Creation failed: $e';
       return false;
     }
@@ -377,12 +352,10 @@ class TenantPrinterConfigService extends ChangeNotifier {
       
       await printerDoc.update(updatedData);
       
-      debugPrint('$_logTag ✅ Updated printer configuration: ${updatedConfig.name}');
       _lastError = null;
       return true;
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error updating printer configuration: $e');
       _lastError = 'Update failed: $e';
       return false;
     }
@@ -402,12 +375,10 @@ class TenantPrinterConfigService extends ChangeNotifier {
       
       await printerDoc.delete();
       
-      debugPrint('$_logTag ✅ Deleted printer configuration: $printerId');
       _lastError = null;
       return true;
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error deleting printer configuration: $e');
       _lastError = 'Deletion failed: $e';
       return false;
     }
@@ -508,11 +479,9 @@ class TenantPrinterConfigService extends ChangeNotifier {
       
       // TODO: Implement actual connection testing
       // For now, return true if configuration is valid
-      debugPrint('$_logTag ✅ Printer connection test passed: ${config.name}');
       return true;
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error testing printer connection: $e');
       _lastError = 'Connection test failed: $e';
       return false;
     }
@@ -521,11 +490,8 @@ class TenantPrinterConfigService extends ChangeNotifier {
   /// Force refresh from Firebase
   Future<void> forceRefresh() async {
     try {
-      debugPrint('$_logTag 🔄 Force refreshing printer configurations...');
       await _loadConfigurationsFromFirebase();
-      debugPrint('$_logTag ✅ Force refresh completed');
     } catch (e) {
-      debugPrint('$_logTag ❌ Error during force refresh: $e');
       _lastError = 'Force refresh failed: $e';
     }
   }
@@ -545,11 +511,9 @@ class TenantPrinterConfigService extends ChangeNotifier {
       _printerConfigListener?.cancel();
       _printerAssignmentListener?.cancel();
       
-      debugPrint('$_logTag ✅ Service data cleared');
       notifyListeners();
       
     } catch (e) {
-      debugPrint('$_logTag ❌ Error clearing data: $e');
     }
   }
   

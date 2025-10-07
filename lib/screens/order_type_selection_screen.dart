@@ -34,8 +34,8 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
 
   // INNOVATIVE FIX: Real-time cross-device sync with feature flags
   static const bool _enableRealTimeCrossDeviceSync = true;
-  static const bool _enablePeriodicRefresh = true;
-  static const Duration _refreshInterval = Duration(seconds: 5);
+  static const bool _enablePeriodicRefresh = false; // DISABLED: Causing orders to disappear
+  static const Duration _refreshInterval = Duration(minutes: 1); // User requested 1-minute refresh
   
   Timer? _autoRefreshTimer;
   UnifiedSyncService? _syncService;
@@ -45,7 +45,6 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
   @override
   void initState() {
     super.initState();
-    debugPrint('🔍 POS DASHBOARD: initState() called');
     
     // CRITICAL: Register for app lifecycle changes to ensure real-time sync
     WidgetsBinding.instance.addObserver(this);
@@ -62,8 +61,8 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
         orderService.addListener(_onOrderServiceChanged);
       }
       
-      // INNOVATIVE FIX: Start real-time order count monitoring
-      _startOrderCountMonitoring();
+      // INNOVATIVE FIX: Start real-time order count monitoring (disabled)
+      // _startOrderCountMonitoring();
       
       // INNOVATIVE FIX: Initialize real-time cross-device sync
       if (_enableRealTimeCrossDeviceSync) {
@@ -78,18 +77,16 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    debugPrint('🔄 POS DASHBOARD: didChangeDependencies() called - DEBOUNCED refresh');
-    
-    // CRITICAL: Ensure real-time sync is active when screen becomes visible
-    if (_enableRealTimeCrossDeviceSync && _syncService != null) {
-      _ensureRealTimeSyncActive();
-    }
-    
-    // INDUSTRY STANDARD: Ensure Firebase real-time listeners are active
-    _startFirebaseRealTimeListeners();
-    
-    // FIXED: Use debounced refresh to prevent infinite loops
-    _debouncedRefresh();
+
+    // On return (e.g., from Admin), force a local reload then refresh UI
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final orderService = Provider.of<OrderService?>(context, listen: false);
+      if (orderService != null) {
+        await orderService.loadOrders();
+      }
+      if (mounted) _refreshOrdersFromService();
+    });
   }
   
   @override
@@ -98,7 +95,6 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
     
     // CRITICAL: Ensure real-time sync is active when app becomes visible
     if (state == AppLifecycleState.resumed && _enableRealTimeCrossDeviceSync) {
-      debugPrint('🔴 APP RESUMED - Ensuring real-time sync is active...');
       _ensureRealTimeSyncActive();
       
       // INDUSTRY STANDARD: Restart Firebase real-time listeners when app resumes
@@ -112,7 +108,6 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
   
   void _debouncedRefresh() {
     if (_isRefreshing) {
-      debugPrint('🔄 Refresh already in progress, skipping...');
       return;
     }
     
@@ -120,7 +115,6 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
     _refreshTimer = Timer(const Duration(milliseconds: 800), () {
       if (mounted && !_isRefreshing) {
         _isRefreshing = true;
-        debugPrint('🔄 Executing debounced refresh in POS dashboard...');
         
         _refreshOrdersFromService();
         
@@ -163,7 +157,6 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
   /// Handle order service changes (e.g., when orders are cancelled/updated)
   void _onOrderServiceChanged() {
     if (mounted) {
-      debugPrint('🔄 OrderService changed - refreshing POS dashboard');
       // Use a delayed refresh to avoid excessive rebuilds
       Future.delayed(const Duration(milliseconds: 100), () {
         if (mounted) {
@@ -178,13 +171,11 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
     try {
       // Check if widget is still mounted before proceeding
       if (!mounted) {
-        debugPrint('⚠️ Widget not mounted - skipping order refresh');
         return;
       }
 
       final orderService = Provider.of<OrderService?>(context, listen: false);
       if (orderService == null) {
-        debugPrint('⚠️ OrderService not available');
         return;
       }
 
@@ -195,7 +186,6 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
       final activeOrders = orderService.activeOrders;
       final completedOrders = orderService.completedOrders;
 
-      debugPrint('📊 Orders refreshed - Total: ${allOrders.length}, Active: ${activeOrders.length}, Completed: ${completedOrders.length}');
 
       // INNOVATIVE FIX: Smart Order Reconciliation System
       final filtered = _smartOrderFiltering(activeOrders);
@@ -203,29 +193,20 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
       // INNOVATIVE FIX: Validate and auto-correct count mismatches (scoped to selected server if any)
       _validateOrderCountConsistency(_scopedSystemActiveCount(orderService), filtered.length);
       
-      debugPrint('🔍 SMART FILTERING DEBUG:');
-      debugPrint('  - _selectedServerId: $_selectedServerId');
-      debugPrint('  - activeOrders.length: ${activeOrders.length}');
-      debugPrint('  - filtered.length: ${filtered.length}');
-      debugPrint('  - All active orders: ${activeOrders.map((o) => '${o.orderNumber}(${o.status})').join(', ')}');
       if (_selectedServerId != null) {
-        debugPrint('  - Filtered by server $_selectedServerId: ${filtered.map((o) => '${o.orderNumber}(${o.status})').join(', ')}');
       }
       
       setState(() {
         _filteredOrders = filtered;
       });
 
-      debugPrint('✅ Orders refreshed successfully with smart reconciliation');
     } catch (e) {
-      debugPrint('❌ Error refreshing orders: $e');
     }
   }
   
   /// INNOVATIVE FIX: Smart Order Filtering with Consistency Validation
   List<Order> _smartOrderFiltering(List<Order> activeOrders) {
     try {
-      debugPrint('🧠 SMART FILTERING: Starting intelligent order processing...');
       
       // 🎯 CORRECT IMPLEMENTATION: Server-based filtering with cross-server management
       // - Each server sees only their own orders by default
@@ -233,14 +214,6 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
       
       if (_selectedServerId == null) {
         // No server filter - return all active orders (admin view)
-        debugPrint('🧠 SMART FILTERING: No server selected - returning all ${activeOrders.length} active orders (admin view)');
-        
-        // Log each order for debugging
-        for (final order in activeOrders) {
-          debugPrint('✅ SMART FILTERING: Order ${order.orderNumber} visible (userId: ${order.userId}) - admin view');
-        }
-        
-        debugPrint('🧠 SMART FILTERING: Processed ${activeOrders.length} orders, showing all ${activeOrders.length} orders');
         return activeOrders;
       }
       
@@ -248,19 +221,17 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
       final filtered = activeOrders.where((order) {
         // Enhanced user ID matching with multiple format support
         if (order.userId == null) {
-          debugPrint('⚠️ SMART FILTERING: Order ${order.orderNumber} has null userId - excluding');
           return false;
         }
-        
+
         // Handle multiple user ID formats
         bool isMatch = false;
-        
+
         // Format 1: Direct match
         if (order.userId == _selectedServerId) {
           isMatch = true;
-          debugPrint('✅ SMART FILTERING: Direct match for order ${order.orderNumber}');
         }
-        
+
         // Format 2: Email-based format (restaurant_email_userid)
         else if (order.userId != null && order.userId!.contains('_')) {
           final parts = order.userId!.split('_');
@@ -268,31 +239,21 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
             final orderUserId = parts.last;
             if (orderUserId == _selectedServerId) {
               isMatch = true;
-              debugPrint('✅ SMART FILTERING: Email-based match for order ${order.orderNumber}');
             }
           }
         }
-        
+
         // Format 3: Check if userId contains the server ID anywhere
         else if (order.userId != null && _selectedServerId != null && order.userId!.contains(_selectedServerId!)) {
           isMatch = true;
-          debugPrint('✅ SMART FILTERING: Contains match for order ${order.orderNumber}');
         }
-        
-        if (isMatch) {
-          debugPrint('✅ SMART FILTERING: Order ${order.orderNumber} matches server $_selectedServerId (userId: ${order.userId})');
-        } else {
-          debugPrint('❌ SMART FILTERING: Order ${order.orderNumber} does not match server $_selectedServerId (userId: ${order.userId})');
-        }
-        
+
         return isMatch;
       }).toList();
       
-      debugPrint('🧠 SMART FILTERING: Processed ${activeOrders.length} orders, filtered to ${filtered.length} orders for server $_selectedServerId');
       return filtered;
       
     } catch (e) {
-      debugPrint('❌ SMART FILTERING: Error during filtering - $e');
       // Fallback to showing all orders (no filtering)
       return activeOrders;
     }
@@ -301,25 +262,20 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
   /// INNOVATIVE FIX: Validate Order Count Consistency and Auto-Correct
   void _validateOrderCountConsistency(int systemCount, int displayedCount) {
     try {
-      debugPrint('🔍 COUNT VALIDATION: System count: $systemCount, Displayed count: $displayedCount');
       
       if (systemCount != displayedCount) {
-        debugPrint('⚠️ COUNT MISMATCH DETECTED: System shows $systemCount orders but UI displays $displayedCount orders');
         
         // INNOVATIVE FIX: Auto-trigger recovery mechanism
         _triggerOrderCountRecovery(systemCount, displayedCount);
       } else {
-        debugPrint('✅ COUNT VALIDATION: System count and displayed count match perfectly');
       }
     } catch (e) {
-      debugPrint('❌ COUNT VALIDATION: Error during validation - $e');
     }
   }
   
   /// INNOVATIVE FIX: Automatic Order Count Recovery System
   void _triggerOrderCountRecovery(int systemCount, int displayedCount) {
     try {
-      debugPrint('🔄 COUNT RECOVERY: Starting automatic recovery for count mismatch...');
       
       // Step 1: Force refresh from database
       _forceRefreshOrdersFromDatabase();
@@ -330,28 +286,23 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
       });
       
     } catch (e) {
-      debugPrint('❌ COUNT RECOVERY: Error during recovery - $e');
     }
   }
   
   /// INNOVATIVE FIX: Force refresh orders from database
   void _forceRefreshOrdersFromDatabase() {
     try {
-      debugPrint('🔄 FORCE REFRESH: Triggering database reload...');
       
       final orderService = Provider.of<OrderService?>(context, listen: false);
       if (orderService != null) {
         // Force reload orders from database
         orderService.loadOrders().then((_) {
-          debugPrint('✅ FORCE REFRESH: Database reload completed');
           // Refresh UI after reload
           _refreshOrdersFromService();
         }).catchError((e) {
-          debugPrint('❌ FORCE REFRESH: Database reload failed - $e');
         });
       }
     } catch (e) {
-      debugPrint('❌ FORCE REFRESH: Error during force refresh - $e');
     }
   }
   
@@ -363,18 +314,14 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
         final systemCount = _scopedSystemActiveCount(orderService);
         final displayedCount = _filteredOrders.length;
         
-        debugPrint('🔍 RECOVERY VALIDATION: After recovery - System: $systemCount, Displayed: $displayedCount');
         
         if (systemCount == displayedCount) {
-          debugPrint('✅ RECOVERY SUCCESS: Count mismatch resolved automatically');
         } else {
-          debugPrint('⚠️ RECOVERY PARTIAL: Count mismatch persists - System: $systemCount, Displayed: $displayedCount');
           // Show user notification about the persistent issue
           _showCountMismatchNotification(systemCount, displayedCount);
         }
       }
     } catch (e) {
-      debugPrint('❌ RECOVERY VALIDATION: Error during validation - $e');
     }
   }
   
@@ -401,7 +348,6 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
         );
       }
     } catch (e) {
-      debugPrint('❌ COUNT NOTIFICATION: Error showing notification - $e');
     }
   }
   
@@ -410,7 +356,6 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
   
   void _startOrderCountMonitoring() {
     try {
-      debugPrint('🔍 COUNT MONITORING: Starting real-time order count monitoring...');
       
       // Cancel any existing timer
       _orderCountMonitorTimer?.cancel();
@@ -424,9 +369,7 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
         }
       });
       
-      debugPrint('✅ COUNT MONITORING: Real-time monitoring started successfully');
     } catch (e) {
-      debugPrint('❌ COUNT MONITORING: Error starting monitoring - $e');
     }
   }
   
@@ -438,20 +381,15 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
         final systemCount = _scopedSystemActiveCount(orderService);
         final displayedCount = _filteredOrders.length;
         
-        debugPrint('🔍 REAL-TIME VALIDATION: System: $systemCount, Displayed: $displayedCount');
         
         // Only trigger recovery if there's a significant mismatch (more than 1 order difference)
         if ((systemCount - displayedCount).abs() > 1) {
-          debugPrint('⚠️ REAL-TIME VALIDATION: Significant count mismatch detected - triggering recovery');
           _triggerOrderCountRecovery(systemCount, displayedCount);
         } else if (systemCount != displayedCount) {
-          debugPrint('ℹ️ REAL-TIME VALIDATION: Minor count difference - monitoring closely');
         } else {
-          debugPrint('✅ REAL-TIME VALIDATION: Count consistency maintained');
         }
       }
     } catch (e) {
-      debugPrint('❌ REAL-TIME VALIDATION: Error during validation - $e');
     }
   }
   
@@ -460,9 +398,7 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
     try {
       _orderCountMonitorTimer?.cancel();
       _orderCountMonitorTimer = null;
-      debugPrint('🛑 COUNT MONITORING: Real-time monitoring stopped');
     } catch (e) {
-      debugPrint('❌ COUNT MONITORING: Error stopping monitoring - $e');
     }
   }
   
@@ -509,7 +445,6 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
               const SizedBox(width: 6),
               GestureDetector(
                 onTap: () {
-                  debugPrint('🔄 Smart widget: Manual refresh triggered by user');
                   _forceRefreshOrdersFromDatabase();
                 },
                 child: Icon(
@@ -523,7 +458,6 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
         ),
       );
     } catch (e) {
-      debugPrint('❌ SMART COUNT WIDGET: Error building widget - $e');
       return const SizedBox.shrink();
     }
   }
@@ -535,7 +469,6 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
     //   final syncTriggerService = AutomaticSyncTriggerService();
     //   await syncTriggerService.triggerImmediateSyncOnInteraction();
     // } catch (e) {
-    //   debugPrint('⚠️ Failed to trigger sync on user interaction: $e');
     // }
   }
 
@@ -545,20 +478,16 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
       setState(() {
         _selectedServerId = null;
       });
-      debugPrint('🎯 Default view set to: All Servers');
     } catch (e) {
-      debugPrint('❌ Error setting default server: $e');
     }
   }
 
   /// Load orders from database
   Future<void> _loadOrders() async {
     try {
-      debugPrint('🔄 Loading orders from database...');
       
       final orderService = Provider.of<OrderService?>(context, listen: false);
       if (orderService == null) {
-        debugPrint('⚠️ OrderService not available');
         return;
       }
       
@@ -570,9 +499,7 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
       await orderService.loadOrders();
       _refreshOrdersFromService();
       
-      debugPrint('✅ Orders loaded successfully');
     } catch (e) {
-      debugPrint('❌ Error loading orders: $e');
     }
   }
 
@@ -581,7 +508,6 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
       _selectedServerId = serverId;
     });
     _loadOrders();
-    debugPrint('🎯 Selected server: $serverId');
   }
 
   void _createDineInOrder() {
@@ -612,7 +538,6 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
         _loadOrders();
       });
     } catch (e) {
-      debugPrint('❌ Error creating dine-in order: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('❌ Unable to create order. Please try again.'),
@@ -650,7 +575,6 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
         _loadOrders();
       });
     } catch (e) {
-      debugPrint('❌ Error creating takeout order: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('❌ Unable to create order. Please try again.'),
@@ -681,43 +605,34 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
 
   void _editOrder(Order order) {
     try {
-      debugPrint('🔍 EDIT_ORDER: Starting edit order process for ${order.orderNumber}');
       
       final userService = Provider.of<UserService?>(context, listen: false);
       
       if (userService == null) {
-        debugPrint('❌ EDIT_ORDER: UserService is null');
         _showServiceNotAvailableError();
         return;
       }
       
-      debugPrint('✅ EDIT_ORDER: UserService found with ${userService.users.length} users');
       
       // Find the user who created the order or use admin as fallback
       User? orderUser;
       try {
         orderUser = userService.users.firstWhere((user) => user.id == order.userId);
-        debugPrint('✅ EDIT_ORDER: Found original user: ${orderUser.name} (${orderUser.id})');
       } catch (e) {
-        debugPrint('⚠️ EDIT_ORDER: Original user not found, looking for admin...');
         // If original user not found, use admin or first available user
         try {
           orderUser = userService.users.firstWhere(
             (user) => user.role == UserRole.admin,
           );
-          debugPrint('✅ EDIT_ORDER: Found admin user: ${orderUser.name} (${orderUser.id})');
         } catch (e) {
-          debugPrint('⚠️ EDIT_ORDER: No admin found, using first available user...');
           // If no admin found, use first available user
           if (userService.users.isNotEmpty) {
             orderUser = userService.users.first;
-            debugPrint('✅ EDIT_ORDER: Using first user: ${orderUser.name} (${orderUser.id})');
           }
         }
       }
       
       if (orderUser == null) {
-        debugPrint('❌ EDIT_ORDER: No valid user found');
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('❌ Unable to edit order: No valid user found'),
@@ -727,12 +642,6 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
         return;
       }
       
-      debugPrint('🔍 EDIT_ORDER: Navigating to OrderCreationScreen with:');
-      debugPrint('  - Order: ${order.orderNumber} (${order.id})');
-      debugPrint('  - User: ${orderUser.name} (${orderUser.id})');
-      debugPrint('  - Order Type: ${order.type}');
-      debugPrint('  - Table ID: ${order.tableId}');
-      debugPrint('  - Items count: ${order.items.length}');
       
       // Convert OrderType enum to string
       String orderTypeString;
@@ -748,29 +657,26 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
           orderTypeString = 'takeout';
       }
       
-      debugPrint('  - Order Type String: $orderTypeString');
       
       Navigator.push(
         context,
         MaterialPageRoute(
           builder: (context) {
-            debugPrint('🏗️ EDIT_ORDER: Building OrderCreationScreen...');
             return OrderCreationScreen(
               user: orderUser!,
               orderType: orderTypeString,
               existingOrder: order, // Pass the existing order for editing
-              table: order.tableId != null ? 
+              table: order.tableId != null ?
                 Provider.of<TableService?>(context, listen: false)?.getTableById(order.tableId!) : null,
               numberOfPeople: order.type == OrderType.dineIn ? order.items.length : null,
               orderNumber: order.orderNumber,
+              selectedServerId: _selectedServerId, // Pass selected server ID
             );
           },
         ),
       ).then((_) {
-        debugPrint('🔄 EDIT_ORDER: Returned from OrderCreationScreen, reloading orders...');
         _loadOrders();
       }).catchError((error) {
-        debugPrint('❌ EDIT_ORDER: Navigation error: $error');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('❌ Navigation failed: $error'),
@@ -779,11 +685,8 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
         );
       });
       
-      debugPrint('✅ EDIT_ORDER: Navigation initiated successfully');
       
     } catch (e, stackTrace) {
-      debugPrint('❌ EDIT_ORDER: Error in _editOrder: $e');
-      debugPrint('❌ EDIT_ORDER: Stack trace: $stackTrace');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('❌ Unable to edit order: $e'),
@@ -811,9 +714,7 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
           adminUser = userService.users.firstWhere(
             (user) => user.role == UserRole.admin && user.isActive,
           );
-          debugPrint('🔧 Found admin user: ${adminUser.name} (${adminUser.id})');
         } catch (e) {
-          debugPrint('❌ No admin user found in system');
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('❌ No admin user found. Please contact system administrator.'),
@@ -827,7 +728,6 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
       
       // At this point, adminUser should not be null, but let's add a safety check
       if (adminUser == null) {
-        debugPrint('❌ Admin user is null after all checks');
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('❌ Unable to find admin user. Please try again.'),
@@ -851,7 +751,6 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
       // Set admin user as current user if not already set
       if (userService.currentUser == null) {
         userService.setCurrentUser(adminUser);
-        debugPrint('✅ Set admin user as current user for admin panel access');
       }
       
       Navigator.push(
@@ -861,7 +760,6 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
         ),
       );
     } catch (e) {
-      debugPrint('❌ Error opening admin panel: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('❌ Unable to open admin panel. Please try again.'),
@@ -873,11 +771,9 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
   
   /// Enhanced admin access verification
   bool _verifyAdminAccess(User adminUser) {
-    debugPrint('🔍 Enhanced admin access verification for: ${adminUser.name}');
     
     // Check role
     if (adminUser.role != UserRole.admin) {
-      debugPrint('❌ Access Denied: User role is ${adminUser.role}, not admin');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('❌ Access Denied: User role ${adminUser.role} cannot access admin panel'),
@@ -890,7 +786,6 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
     
     // Check admin panel access
     if (!adminUser.canAccessAdminPanel) {
-      debugPrint('❌ Access Denied: User does not have admin panel access');
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('❌ Access Denied: You do not have permission to access the admin panel'),
@@ -903,7 +798,6 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
     
     // Check if user is active
     if (!adminUser.isActive) {
-      debugPrint('❌ Access Denied: User account is not active');
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('❌ Access Denied: Your account is not active. Please contact administrator.'),
@@ -914,7 +808,6 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
       return false;
     }
     
-    debugPrint('✅ Admin access verified successfully');
     return true;
   }
 
@@ -1049,7 +942,6 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
         }
       }
     } catch (e) {
-      debugPrint('❌ Logout error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1070,7 +962,6 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
     final isDesktop = screenSize.width >= 1200; // Desktop breakpoint
     
     // Debug: Print screen size for troubleshooting
-    debugPrint('📱 SCREEN SIZE: ${screenSize.width}x${screenSize.height}, isPhone: $isPhone, isTablet: $isTablet, isDesktop: $isDesktop');
     
     return Scaffold(
       backgroundColor: isPhone ? Colors.white : null, // Clean white background for mobile
@@ -1087,7 +978,6 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
             builder: (context, userService, orderService, _) {
               // Show loading if services aren't ready
               if (userService == null || orderService == null) {
-                debugPrint('🔍 BUILD: Services not ready - userService=${userService != null}, orderService=${orderService != null}');
                 return const Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -1106,7 +996,6 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
               final users = userService.users;
               final currentUser = userService.currentUser;
               
-              debugPrint('🔍 BUILD: Services ready - Users: ${users.length}, CurrentUser: ${currentUser?.name}, Orders: ${orderService.allOrders.length}');
               
               // Set default server if none selected
               if (_selectedServerId == null && currentUser != null) {
@@ -1123,11 +1012,9 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
 
               if (isPhone) {
                 // MOBILE-FIRST DESIGN - Clean, modern, world-class layout
-                debugPrint('📱 Using MOBILE layout');
                 return _buildMobileLayout(userService, orderService, users, currentUser);
               } else {
                 // DESKTOP/TABLET DESIGN - Keep existing layout
-                debugPrint('🖥️ Using DESKTOP/TABLET layout');
                 return _buildDesktopLayout(userService, orderService, users, currentUser);
               }
             },
@@ -1192,7 +1079,6 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
                   _buildMobileActionButton(
                     icon: Icons.refresh,
                     onTap: () {
-                      debugPrint('🔄 Manual refresh triggered (mobile)');
                       _isManualRefresh = true;
                       _loadOrders();
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -2592,22 +2478,10 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
         color: Colors.transparent,
         child: InkWell(
           onTap: () {
-            debugPrint('📱 MOBILE: ============ CARD TAP DETECTED ============');
-            debugPrint('📱 MOBILE: Card tapped - Order ${order.orderNumber}');
-            debugPrint('📱 MOBILE: Order ID: ${order.id}');
-            debugPrint('📱 MOBILE: Order Type: ${order.type}');
-            debugPrint('📱 MOBILE: Order Status: ${order.status}');
-            debugPrint('📱 MOBILE: Items Count: ${order.items.length}');
-            debugPrint('📱 MOBILE: User ID: ${order.userId}');
-            debugPrint('📱 MOBILE: Table ID: ${order.tableId}');
-            debugPrint('📱 MOBILE: About to call _editOrder...');
             
             try {
               _editOrder(order);
-              debugPrint('📱 MOBILE: ✅ _editOrder call completed successfully');
             } catch (e, stackTrace) {
-              debugPrint('📱 MOBILE: ❌ Error calling _editOrder: $e');
-              debugPrint('📱 MOBILE: Stack trace: $stackTrace');
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
                   content: Text('❌ Mobile tap error: $e'),
@@ -3159,7 +3033,6 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
   /// Handle server selection change
   void _onServerChanged(String? serverId) {
     try {
-      debugPrint('👤 SERVER CHANGE: Processing server change from $_selectedServerId to $serverId');
       
       setState(() {
         _selectedServerId = serverId;
@@ -3173,10 +3046,8 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
         _performLegacyServerChangeSync(serverId);
       }
       
-      debugPrint('✅ Server change processed successfully');
       
     } catch (e) {
-      debugPrint('❌ Server change failed: $e');
       // Fallback to basic server change
       _performBasicServerChange(serverId);
     }
@@ -3186,7 +3057,6 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
   /// This now calls the SAME comprehensive sync method as the POS dashboard icon
   Future<void> _performEnhancedServerChangeSync(String? serverId) async {
     try {
-      debugPrint('🔄 ENHANCED SERVER CHANGE SYNC: Starting comprehensive sync (same as POS dashboard icon)...');
       
       if (_syncService == null) {
         throw Exception('UnifiedSyncService not available');
@@ -3247,10 +3117,8 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
         );
       }
       
-      debugPrint('✅ Enhanced server change sync completed successfully using comprehensive sync method');
       
     } catch (e) {
-      debugPrint('❌ Enhanced server change sync failed: $e');
       
       // Show error message
       if (mounted) {
@@ -3284,7 +3152,6 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
   /// Legacy server change sync (existing functionality)
   void _performLegacyServerChangeSync(String? serverId) {
     try {
-      debugPrint('🔄 LEGACY SERVER CHANGE SYNC: Using existing functionality...');
       
       // TRIGGER SYNC ON SERVER SELECTION
       _triggerSyncOnUserInteraction();
@@ -3302,10 +3169,8 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
         _ensureRealTimeSyncActive();
       }
       
-      debugPrint('✅ Legacy server change sync completed');
       
     } catch (e) {
-      debugPrint('❌ Legacy server change sync failed: $e');
       // Fallback to basic server change
       _performBasicServerChange(serverId);
     }
@@ -3314,15 +3179,12 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
   /// Basic server change (minimal functionality)
   void _performBasicServerChange(String? serverId) {
     try {
-      debugPrint('🔄 BASIC SERVER CHANGE: Using minimal functionality...');
       
       // Just load orders without sync
       _loadOrders();
       
-      debugPrint('✅ Basic server change completed');
       
     } catch (e) {
-      debugPrint('❌ Basic server change failed: $e');
       // Last resort - just update UI state
       setState(() {
         _selectedServerId = serverId;
@@ -3333,13 +3195,11 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
   /// Trigger comprehensive sync for all servers using existing UnifiedSyncService
   Future<void> _triggerComprehensiveSyncForAllServers() async {
     try {
-      debugPrint('🔄 All Servers selected - triggering comprehensive sync using existing UnifiedSyncService...');
       
       // Use the existing sync service that's already called at login
       final syncService = Provider.of<UnifiedSyncService?>(context, listen: false);
       if (syncService != null) {
         await syncService.forceSyncAllLocalData();
-        debugPrint('✅ Comprehensive sync for all servers completed using existing service');
         
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -3351,10 +3211,8 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
           );
         }
       } else {
-        debugPrint('⚠️ UnifiedSyncService not available for comprehensive sync');
       }
     } catch (e) {
-      debugPrint('❌ Comprehensive sync for all servers failed: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -3382,7 +3240,6 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
       _isManualRefresh = false;
     });
     
-    debugPrint('🔄 Manual refresh completed');
   }
 
   /// Trigger comprehensive sync from Firebase using MultiTenantAuthService
@@ -3394,7 +3251,6 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
     });
     
     try {
-      debugPrint('🚀 Starting comprehensive sync operations using MultiTenantAuthService...');
       
       // Get the MultiTenantAuthService for comprehensive sync
       final authService = Provider.of<MultiTenantAuthService?>(context, listen: false);
@@ -3408,18 +3264,14 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
         throw Exception('No current restaurant available for sync');
       }
       
-      debugPrint('🏪 Using restaurant: ${currentRestaurant.name} (${currentRestaurant.email})');
       
       // STEP 1: Use the comprehensive data sync method from MultiTenantAuthService
-      debugPrint('🔄 STEP 1: Performing comprehensive data sync...');
       await authService.performComprehensiveDataSync(currentRestaurant);
       
       // STEP 2: Also trigger the working comprehensive sync for orders
-      debugPrint('🔄 STEP 2: Performing working comprehensive sync for orders...');
       await authService.triggerWorkingComprehensiveSync(currentRestaurant);
       
       // STEP 3: Reload orders after all sync operations
-      debugPrint('🔄 STEP 3: Reloading orders...');
       _loadOrders();
       
       if (mounted) {
@@ -3432,10 +3284,8 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
         );
       }
       
-      debugPrint('✅ All comprehensive sync operations completed successfully!');
       
     } catch (e) {
-      debugPrint('❌ Comprehensive sync failed: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -3457,21 +3307,16 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
   /// Perform comprehensive timestamp-based sync
   Future<void> _performComprehensiveTimestampSync(OrderService orderService) async {
     try {
-      debugPrint('🔄 Starting comprehensive timestamp-based sync...');
       
       // Get current order count
       final initialOrderCount = orderService.allOrders.length;
-      debugPrint('📊 Initial local orders: $initialOrderCount');
       
       // Trigger the comprehensive sync method
       await orderService.syncOrdersWithFirebase();
       
       final finalOrderCount = orderService.allOrders.length;
-      debugPrint('📊 Final local orders: $finalOrderCount');
-      debugPrint('📥 Orders added: ${finalOrderCount - initialOrderCount}');
       
     } catch (e) {
-      debugPrint('❌ Comprehensive timestamp-based sync failed: $e');
       // Don't throw - continue with other sync methods
     }
   }
@@ -3479,7 +3324,6 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
   /// Perform smart time-based sync
   Future<void> _performSmartTimeBasedSync() async {
     try {
-      debugPrint('🔄 Starting smart time-based sync...');
       
       // Try to get the unified sync service
       try {
@@ -3489,20 +3333,15 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
           final needsSync = await unifiedSyncService.needsSync();
           
           if (needsSync) {
-            debugPrint('🔄 Smart sync needed - performing time-based sync...');
             await unifiedSyncService.performSmartTimeBasedSync();
-            debugPrint('✅ Smart time-based sync completed');
           } else {
-            debugPrint('✅ Smart sync not needed - data is already consistent');
           }
         }
       } catch (e) {
-        debugPrint('⚠️ Unified sync service not available: $e');
         // Continue without unified sync service
       }
       
     } catch (e) {
-      debugPrint('❌ Smart time-based sync failed: $e');
       // Don't throw - continue with other sync methods
     }
   }
@@ -3516,14 +3355,11 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
       if (_enableScopedCountValidation && _selectedServerId != null && _selectedServerId!.trim().isNotEmpty) {
         final serverId = _selectedServerId!.trim();
         final count = orderService.getActiveOrdersCountByServer(serverId);
-        debugPrint('🧮 Scoped system count for server $serverId: $count');
         return count;
       }
       final count = orderService.activeOrders.length;
-      debugPrint('🧮 Global system active count: $count');
       return count;
     } catch (e) {
-      debugPrint('⚠️ _scopedSystemActiveCount error: $e');
       // Fallback to displayedCount to avoid false-positive mismatch
       return _filteredOrders.length;
     }
@@ -3532,14 +3368,12 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
   /// INNOVATIVE FIX: Initialize real-time cross-device sync
   void _initializeRealTimeSync() async {
     try {
-      debugPrint('🔄 REAL-TIME SYNC: Initializing cross-device synchronization...');
       
       _syncService = UnifiedSyncService.instance;
       
       // CRITICAL FIX: Get the current restaurant from MultiTenantAuthService and connect the sync service
       final authService = Provider.of<MultiTenantAuthService?>(context, listen: false);
       if (authService != null && authService.currentRestaurant != null) {
-        debugPrint('🔗 REAL-TIME SYNC: Connecting to restaurant: ${authService.currentRestaurant!.name}');
         
         // Connect the sync service to the restaurant to start Firebase listeners
         if (authService.currentSession != null) {
@@ -3562,39 +3396,31 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
           );
         }
         
-        debugPrint('✅ REAL-TIME SYNC: Successfully connected to restaurant - Firebase listeners active');
       } else {
-        debugPrint('⚠️ REAL-TIME SYNC: No restaurant available - cannot start Firebase listeners');
       }
       
       // Set up callbacks for immediate UI updates
       _syncService!.setOnOrdersUpdated(() {
-        debugPrint('🔴 REAL-TIME SYNC: Orders updated from another device - refreshing UI immediately');
         if (mounted) {
           _handleCrossDeviceOrderUpdate();
         }
       });
       
       _syncService!.setOnSyncProgress((message) {
-        debugPrint('🔄 REAL-TIME SYNC: $message');
       });
       
       _syncService!.setOnSyncError((error) {
-        debugPrint('❌ REAL-TIME SYNC: $error');
       });
       
       // CRITICAL: Check if real-time sync is actually active
       if (_syncService!.isRealTimeSyncActive) {
         _isRealTimeSyncActive = true;
-        debugPrint('✅ REAL-TIME SYNC: Firebase listeners are ACTIVE - new orders will appear instantly');
       } else {
-        debugPrint('⚠️ REAL-TIME SYNC: Firebase listeners are NOT active - manual refresh needed');
       }
       
       setState(() {});
       
     } catch (e) {
-      debugPrint('❌ REAL-TIME SYNC: Error initializing - $e');
       _isRealTimeSyncActive = false;
       setState(() {});
     }
@@ -3603,7 +3429,6 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
   /// CRITICAL: Start continuous real-time sync monitoring
   void _startContinuousRealTimeSyncMonitoring() {
     try {
-      debugPrint('🔴 CONTINUOUS REAL-TIME SYNC MONITORING: Starting continuous monitoring...');
       
       // CRITICAL FIX: Ensure real-time sync is active every 10 seconds
       Timer.periodic(const Duration(seconds: 10), (timer) async {
@@ -3636,28 +3461,22 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
             }
             
             if (isActive) {
-              debugPrint('✅ CONTINUOUS MONITORING: Real-time sync is active and working');
             } else {
-              debugPrint('⚠️ CONTINUOUS MONITORING: Real-time sync is not active - attempting to restart...');
               await _syncService!.restartRealTimeListeners();
             }
           }
         } catch (e) {
-          debugPrint('❌ CONTINUOUS MONITORING: Error during monitoring - $e');
         }
       });
       
-      debugPrint('✅ CONTINUOUS REAL-TIME SYNC MONITORING: Started successfully');
       
     } catch (e) {
-      debugPrint('❌ CONTINUOUS MONITORING: Failed to start - $e');
     }
   }
   
   /// INNOVATIVE FIX: Handle cross-device order updates
   void _handleCrossDeviceOrderUpdate() {
     try {
-      debugPrint('🔄 CROSS-DEVICE UPDATE: Processing order update from another device...');
       
       // 🚫 CRITICAL FIX: Don't show notifications during ghost order cleanup
       // Check if this is likely a ghost order cleanup by looking at recent logs
@@ -3676,13 +3495,10 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
       // 🚫 ONLY show notification if NOT during ghost order cleanup
       if (!_isGhostOrderCleanupActive) {
         _showCrossDeviceUpdateNotification();
-        debugPrint('✅ CROSS-DEVICE UPDATE: UI refreshed with notification - new orders should be visible');
       } else {
-        debugPrint('🚫 CROSS-DEVICE UPDATE: UI refreshed silently (ghost order cleanup detected)');
       }
       
     } catch (e) {
-      debugPrint('❌ CROSS-DEVICE UPDATE: Error handling update - $e');
     }
   }
   
@@ -3695,16 +3511,13 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
       
       if (!_isGhostOrderCleanupActive) {
         _isGhostOrderCleanupActive = true;
-        debugPrint('🚫 GHOST CLEANUP DETECTION: Suppressing cross-device notifications during startup cleanup');
         
         // Re-enable notifications after 60 seconds (startup cleanup should be complete)
         Timer(const Duration(seconds: 60), () {
           _isGhostOrderCleanupActive = false;
-          debugPrint('✅ GHOST CLEANUP DETECTION: Re-enabling cross-device notifications after startup');
         });
       }
     } catch (e) {
-      debugPrint('❌ GHOST CLEANUP DETECTION: Error checking cleanup status - $e');
     }
   }
 
@@ -3734,32 +3547,46 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
         );
       }
     } catch (e) {
-      debugPrint('❌ CROSS-DEVICE NOTIFICATION: Error showing notification - $e');
     }
   }
   
+  /// GENTLE PERIODIC REFRESH: Only refresh local data without aggressive Firebase sync
+  /// This prevents orders from disappearing due to sync conflicts
+  Future<void> _triggerPeriodicSync() async {
+    try {
+      final orderService = Provider.of<OrderService?>(context, listen: false);
+      if (orderService != null) {
+        // Only reload from local database - don't sync with Firebase to prevent data loss
+        await orderService.loadOrders();
+
+        // Refresh UI with updated data
+        _refreshOrdersFromService();
+      }
+    } catch (e) {
+      // Continue with local refresh only
+      _forceRefreshOrdersFromDatabase();
+    }
+  }
+
   /// INNOVATIVE FIX: Start periodic refresh as backup mechanism
   void _startPeriodicRefresh() {
     try {
-      debugPrint('⏰ PERIODIC REFRESH: Starting backup refresh every ${_refreshInterval.inSeconds} seconds...');
       
       _autoRefreshTimer?.cancel();
       _autoRefreshTimer = Timer.periodic(_refreshInterval, (timer) {
         if (mounted && !_isRefreshing) {
-          debugPrint('⏰ PERIODIC REFRESH: Executing scheduled refresh...');
-          _forceRefreshOrdersFromDatabase();
+          // GENTLE REFRESH: Only refresh local data every minute to keep UI in sync
+          _triggerPeriodicSync();
         }
       });
       
     } catch (e) {
-      debugPrint('❌ PERIODIC REFRESH: Error starting periodic refresh - $e');
     }
   }
   
   /// INNOVATIVE FIX: Stop real-time cross-device sync
   void _stopRealTimeSync() {
     try {
-      debugPrint('🛑 REAL-TIME SYNC: Stopping cross-device synchronization...');
       
       _autoRefreshTimer?.cancel();
       _autoRefreshTimer = null;
@@ -3770,10 +3597,8 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
       
       _isRealTimeSyncActive = false;
       
-      debugPrint('✅ REAL-TIME SYNC: Cross-device synchronization stopped');
       
     } catch (e) {
-      debugPrint('❌ REAL-TIME SYNC: Error stopping sync - $e');
     }
   }
 
@@ -3789,7 +3614,6 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
         final serviceCount = _scopedSystemActiveCount(orderService);
         
         if (serviceCount > currentCount) {
-          debugPrint('🆕 NEW ORDERS DETECTED: Service has $serviceCount orders, UI shows $currentCount - Auto-refreshing...');
           
           // Automatically refresh to show new orders
           _forceRefreshOrdersFromDatabase();
@@ -3813,66 +3637,56 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
         }
       }
     } catch (e) {
-      debugPrint('❌ AUTO-REFRESH CHECK: Error checking for new orders - $e');
     }
   }
 
   /// INDUSTRY STANDARD: Start proper Firebase real-time listeners
   void _startFirebaseRealTimeListeners() {
     try {
-      debugPrint('🔥 INDUSTRY STANDARD: Starting Firebase real-time listeners...');
       
       // Cancel any existing timers (clean up non-standard approach)
       _autoRefreshTimer?.cancel();
       
       // INDUSTRY STANDARD: Use Firebase real-time listeners instead of polling
       if (_syncService != null && _syncService!.isRealTimeSyncActive) {
-        debugPrint('✅ Firebase listeners are ACTIVE - using industry standard real-time sync');
         
         // Set up proper Firebase listeners for real-time updates
         _setupFirebaseOrderListeners();
         
       } else {
-        debugPrint('⚠️ Firebase listeners not active - falling back to periodic sync');
-        _startPeriodicSyncAsFallback();
+        // Disabled periodic fallback to avoid UI flicker; rely on manual/local reloads
+        // _startPeriodicSyncAsFallback();
       }
       
     } catch (e) {
-      debugPrint('❌ FIREBASE LISTENERS: Error starting real-time listeners - $e');
-      // Fallback to periodic sync if Firebase fails
-      _startPeriodicSyncAsFallback();
+      // Fallback disabled to avoid loops/flicker
+      // _startPeriodicSyncAsFallback();
     }
   }
   
   /// INDUSTRY STANDARD: Set up Firebase real-time order listeners
   void _setupFirebaseOrderListeners() {
     try {
-      debugPrint('🔥 FIREBASE LISTENERS: Setting up real-time order listeners...');
       
       // This should use the existing UnifiedSyncService Firebase listeners
       // The service should automatically notify us when orders change
       
-      debugPrint('✅ Firebase real-time listeners configured');
       
     } catch (e) {
-      debugPrint('❌ FIREBASE LISTENERS: Error setting up listeners - $e');
     }
   }
   
   /// FALLBACK: Periodic sync only when Firebase listeners fail (not industry standard)
   void _startPeriodicSyncAsFallback() {
     try {
-      debugPrint('⚠️ FALLBACK: Starting periodic sync every 10 seconds (not industry standard)...');
       
       _autoRefreshTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
         if (mounted && !_isRefreshing) {
-          debugPrint('🔄 FALLBACK SYNC: Periodic refresh...');
           _forceRefreshOrdersFromDatabase();
         }
       });
       
     } catch (e) {
-      debugPrint('❌ FALLBACK SYNC: Error starting periodic sync - $e');
     }
   }
 
@@ -4008,19 +3822,15 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
   Future<void> _ensureRealTimeSyncActive() async {
     try {
       if (_syncService != null && !_syncService!.isRealTimeSyncActive) {
-        debugPrint('🔄 REAL-TIME SYNC: Restarting listeners to ensure they are active...');
         await _syncService!.restartRealTimeListeners();
         _isRealTimeSyncActive = _syncService!.isRealTimeSyncActive;
         setState(() {});
         
         if (_isRealTimeSyncActive) {
-          debugPrint('✅ REAL-TIME SYNC: Listeners restarted successfully');
         } else {
-          debugPrint('⚠️ REAL-TIME SYNC: Listeners still not active');
         }
       }
     } catch (e) {
-      debugPrint('❌ REAL-TIME SYNC: Error ensuring listeners are active - $e');
     }
   }
 
@@ -4038,7 +3848,6 @@ class _OrderTypeSelectionScreenState extends State<OrderTypeSelectionScreen> wit
       totalCount += orderService.getActiveOrdersCountByServer(server.id);
     }
     
-    debugPrint('🧮 All servers count calculation: $totalCount (sum of individual server counts)');
     return totalCount;
   }
 

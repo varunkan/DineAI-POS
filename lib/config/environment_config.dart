@@ -18,7 +18,6 @@ class EnvironmentConfig {
   // Set environment (call this in main.dart)
   static void setEnvironment(Environment env) {
     _environment = env;
-    debugPrint('🌍 Environment set to: ${env.name.toUpperCase()}');
   }
   
   // Database configuration

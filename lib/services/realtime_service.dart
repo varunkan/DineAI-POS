@@ -75,7 +75,6 @@ class RealtimeService extends ChangeNotifier {
       _isReconnecting = false;
       _reconnectAttempts = 0;
       
-      debugPrint('RealtimeService: Connected to $_serverUrl');
       
       // Start listening for messages
       _channel!.stream.listen(
@@ -98,7 +97,6 @@ class RealtimeService extends ChangeNotifier {
       notifyListeners();
       
     } catch (e) {
-      debugPrint('RealtimeService: Connection failed: $e');
       _isConnected = false;
       _isReconnecting = false;
       _scheduleReconnect();
@@ -122,7 +120,6 @@ class RealtimeService extends ChangeNotifier {
       final data = jsonDecode(message as String) as Map<String, dynamic>;
       final type = data['type'] as String?;
       
-      debugPrint('RealtimeService: Received message type: $type');
       
       switch (type) {
         case 'order_update':
@@ -141,19 +138,15 @@ class RealtimeService extends ChangeNotifier {
           // Heartbeat acknowledged
           break;
         case 'error':
-          debugPrint('RealtimeService: Server error: ${data['message']}');
           break;
         default:
-          debugPrint('RealtimeService: Unknown message type: $type');
       }
     } catch (e) {
-      debugPrint('RealtimeService: Error parsing message: $e');
     }
   }
 
   /// Handle connection errors
   void _handleError(error) {
-    debugPrint('RealtimeService: WebSocket error: $error');
     _isConnected = false;
     _scheduleReconnect();
     notifyListeners();
@@ -161,7 +154,6 @@ class RealtimeService extends ChangeNotifier {
 
   /// Handle disconnection
   void _handleDisconnection() {
-    debugPrint('RealtimeService: WebSocket disconnected');
     _isConnected = false;
     _heartbeatTimer?.cancel();
     _scheduleReconnect();
@@ -171,14 +163,12 @@ class RealtimeService extends ChangeNotifier {
   /// Schedule reconnection attempt
   void _scheduleReconnect() {
     if (_reconnectAttempts >= _maxReconnectAttempts) {
-      debugPrint('RealtimeService: Max reconnect attempts reached');
       return;
     }
     
     _reconnectAttempts++;
     final delay = Duration(seconds: _reconnectDelay.inSeconds * _reconnectAttempts);
     
-    debugPrint('RealtimeService: Scheduling reconnect in ${delay.inSeconds}s (attempt $_reconnectAttempts)');
     
     _reconnectTimer = Timer(delay, () {
       if (!_isConnected) {
@@ -206,7 +196,6 @@ class RealtimeService extends ChangeNotifier {
       try {
         _channel!.sink.add(jsonEncode(message));
       } catch (e) {
-        debugPrint('RealtimeService: Error sending message: $e');
       }
     }
   }

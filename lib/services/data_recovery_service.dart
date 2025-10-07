@@ -105,7 +105,6 @@ class DataRecoveryService {
           );
           
           if (existingOrder.isNotEmpty) {
-            debugPrint('⏭️ Order already exists: $orderNumber');
             skippedOrders++;
             continue;
           }
@@ -115,12 +114,10 @@ class DataRecoveryService {
           final totalAmount = (orderData['totalAmount'] as num?)?.toDouble() ?? 0.0;
           
           if (items.isEmpty && totalAmount == 0) {
-            debugPrint('🚫 Skipping ghost order: $orderNumber (no items, \$0 total)');
             skippedOrders++;
             continue;
           }
           
-          debugPrint('🔄 Recovering order: $orderNumber (${items.length} items, \$${totalAmount})');
           
           // Convert Firebase data to local database format
           final localOrderData = _convertFirebaseOrderToLocal(orderData, orderId);
@@ -149,7 +146,6 @@ class DataRecoveryService {
           recoveredOrders++;
           
         } catch (e) {
-          debugPrint('❌ Error recovering order ${orderDoc.id}: $e');
           continue;
         }
       }
@@ -188,7 +184,6 @@ class DataRecoveryService {
   
   void _updateStatus(String status) {
     _recoveryStatus = status;
-    debugPrint(status);
   }
   
   Map<String, dynamic> _convertFirebaseOrderToLocal(Map<String, dynamic> firebaseData, String orderId) {

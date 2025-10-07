@@ -163,9 +163,6 @@ class InventoryItem {
         updatedAt: json['updatedAt'] != null ? DateTime.tryParse(json['updatedAt']) ?? DateTime.now() : DateTime.now(),
       );
     } catch (e) {
-      debugPrint('Error parsing InventoryItem from JSON: $e');
-      debugPrint('JSON data: $json');
-      debugPrint('Stack trace: ${StackTrace.current}');
       
       // Return a default error item instead of throwing
       return InventoryItem(
@@ -321,7 +318,6 @@ class InventoryTransaction {
         metadata: json['metadata'] is Map<String, dynamic> ? Map<String, dynamic>.from(json['metadata']) : {},
       );
     } catch (e) {
-      debugPrint('Error parsing InventoryTransaction from JSON: $e, data: $json');
       return InventoryTransaction(
         inventoryItemId: 'error',
         type: 'error',

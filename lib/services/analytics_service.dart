@@ -85,7 +85,6 @@ class AnalyticsService extends ChangeNotifier {
       return dashboardData;
 
     } catch (e) {
-      debugPrint('Error generating dashboard analytics: $e');
       rethrow;
     }
   }
@@ -118,7 +117,6 @@ class AnalyticsService extends ChangeNotifier {
       return insights;
 
     } catch (e) {
-      debugPrint('Error generating AI insights: $e');
       rethrow;
     }
   }
@@ -372,7 +370,6 @@ class AnalyticsService extends ChangeNotifier {
       };
       
     } catch (e) {
-      debugPrint('Error generating revenue optimization insights: $e');
     }
     
     return insights;
@@ -402,7 +399,6 @@ class AnalyticsService extends ChangeNotifier {
       }
       
     } catch (e) {
-      debugPrint('Error generating menu optimization insights: $e');
     }
     
     return insights;
@@ -436,7 +432,6 @@ class AnalyticsService extends ChangeNotifier {
       }
       
     } catch (e) {
-      debugPrint('Error generating operational efficiency insights: $e');
     }
     
     return insights;
@@ -465,7 +460,6 @@ class AnalyticsService extends ChangeNotifier {
       }
       
     } catch (e) {
-      debugPrint('Error generating customer experience insights: $e');
     }
     
     return insights;
@@ -491,7 +485,6 @@ class AnalyticsService extends ChangeNotifier {
       }
       
     } catch (e) {
-      debugPrint('Error generating predictive analytics: $e');
     }
     
     return insights;
@@ -561,7 +554,6 @@ class AnalyticsService extends ChangeNotifier {
       }
       
     } catch (e) {
-      debugPrint('Error generating recommendations: $e');
     }
     
     return recommendations;
@@ -705,7 +697,6 @@ class AnalyticsService extends ChangeNotifier {
       }
       return [];
     } catch (e) {
-      debugPrint('Error getting total sales: $e');
       return [];
     }
   }
@@ -727,7 +718,6 @@ class AnalyticsService extends ChangeNotifier {
       }
       return [];
     } catch (e) {
-      debugPrint('Error getting today sales: $e');
       return [];
     }
   }
@@ -753,7 +743,6 @@ class AnalyticsService extends ChangeNotifier {
       }
       return [];
     } catch (e) {
-      debugPrint('Error getting top selling items: $e');
       return [];
     }
   }
@@ -776,7 +765,6 @@ class AnalyticsService extends ChangeNotifier {
       }
       return [];
     } catch (e) {
-      debugPrint('Error getting orders by hour: $e');
       return [];
     }
   }
@@ -800,7 +788,6 @@ class AnalyticsService extends ChangeNotifier {
       }
       return [];
     } catch (e) {
-      debugPrint('Error getting orders by day: $e');
       return [];
     }
   }
@@ -817,7 +804,6 @@ class AnalyticsService extends ChangeNotifier {
       }
       return [];
     } catch (e) {
-      debugPrint('Error getting orders by status: $e');
       return [];
     }
   }
@@ -834,7 +820,6 @@ class AnalyticsService extends ChangeNotifier {
       }
       return [];
     } catch (e) {
-      debugPrint('Error getting average order value: $e');
       return [];
     }
   }
@@ -861,7 +846,6 @@ class AnalyticsService extends ChangeNotifier {
       }
       return [];
     } catch (e) {
-      debugPrint('Error getting customer analytics: $e');
       return [];
     }
   }
@@ -883,7 +867,6 @@ class AnalyticsService extends ChangeNotifier {
       }
       return [];
     } catch (e) {
-      debugPrint('Error getting payment method analytics: $e');
       return [];
     }
   }
@@ -915,7 +898,6 @@ class AnalyticsService extends ChangeNotifier {
         'active_orders': 0,
       };
     } catch (e) {
-      debugPrint('Error getting dashboard stats: $e');
       return {
         'total_orders': 0,
         'total_revenue': 0.0,
